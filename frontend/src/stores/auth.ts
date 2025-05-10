@@ -1,63 +1,116 @@
 import { defineStore } from 'pinia'
 import { supabase } from '../services/supabase'
 import { ref, computed } from 'vue'
+import type { User, Session } from '@supabase/supabase-js'
+import type { UserProfile } from '../types' // Import the interface
 
 export const useAuthStore = defineStore('auth', () => {
-  const user = ref(null)
-  const session = ref(null)
-  const loading = ref(false)
-  const error = ref(null)
+  // Use proper types for user and session
+  const user = ref<User | null>(null)
+  const userProfile = ref<UserProfile | null>(null)
+  const session = ref<Session | null>(null)
+  const loading = ref<boolean>(false)
+  const error = ref<string | null>(null)
   
   const isAuthenticated = computed(() => !!user.value)
   
-  // Sign in with OTP (One-Time Password via email)
-  async function signInWithOTP(email: string) {
-    loading.value = true
-    error.value = null
-    
+  // Fetch user profile from the profiles table
+  async function fetchUserProfile(userId: string) {
     try {
-      const { error: signInError } = await supabase.auth.signInWithOtp({
-        email,
-      })
+      const { data, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single()
       
-      if (signInError) throw signInError
+      if (profileError) {
+        console.error('Error fetching profile:', profileError)
+        return null
+      }
       
-      return { success: true }
+      userProfile.value = data
+      return data
     } catch (err) {
-      console.error('Error signing in:', err)
-      error.value = err.message || 'Error during sign in'
-      return { success: false, error: err }
-    } finally {
-      loading.value = false
+      console.error('Error fetching profile:', err)
+      return null
     }
   }
   
-  // Verify OTP token
-  async function verifyOTP(email: string, token: string) {
-    loading.value = true
-    error.value = null
+  // Sign in with OTP (One-Time Password via email)
+// Sign in with OTP (One-Time Password via email)
+async function signInWithOTP(email: string) {
+  loading.value = true
+  error.value = null
+  
+  try {
+    const { error: signInError } = await supabase.auth.signInWithOtp({
+      email,
+    })
     
-    try {
-      const { data, error: verifyError } = await supabase.auth.verifyOtp({
-        email,
-        token,
-        type: 'email',
-      })
-      
-      if (verifyError) throw verifyError
-      
-      session.value = data.session
-      user.value = data.user
-      
-      return { success: true }
-    } catch (err) {
-      console.error('Error verifying OTP:', err)
-      error.value = err.message || 'Error verifying code'
-      return { success: false, error: err }
-    } finally {
-      loading.value = false
+    if (signInError) {
+      console.error('Supabase Auth Error:', signInError)
+      const errorMessage = signInError.message || 'Error during sign in'
+      error.value = errorMessage
+      return { success: false, error: signInError, message: errorMessage }
     }
+    
+    return { success: true }
+  } catch (err: any) {
+    console.error('Error signing in:', err)
+    const errorMessage = err.message || 'Error during sign in'
+    error.value = errorMessage
+    return { success: false, error: err, message: errorMessage }
+  } finally {
+    loading.value = false
   }
+}
+  
+  // Verify OTP token
+async function verifyOTP(email: string, token: string) {
+  loading.value = true
+  error.value = null
+  
+  try {
+    console.log(`Attempting to verify OTP for email: ${email}`)
+    
+    const { data, error: verifyError } = await supabase.auth.verifyOtp({
+      email,
+      token,
+      type: 'email',
+    })
+    
+    if (verifyError) {
+      console.error('OTP verification error:', verifyError)
+      throw verifyError
+    }
+    
+    console.log('OTP verification successful:', data)
+    
+    if (!data.user) {
+      console.error('No user returned from OTP verification')
+      throw new Error('Authentication succeeded but no user was returned')
+    }
+    
+    session.value = data.session
+    user.value = data.user
+    
+    console.log('User authenticated:', data.user)
+    
+    // Fetch user profile after successful authentication
+    if (data.user) {
+      const profile = await fetchUserProfile(data.user.id)
+      console.log('User profile fetched:', profile)
+    }
+    
+    return { success: true }
+  } catch (err: any) {
+    console.error('Error verifying OTP:', err)
+    error.value = err.message || 'Error verifying code'
+    return { success: false, error: err }
+  } finally {
+    loading.value = false
+  }
+}
   
   // Log out
   async function logout() {
@@ -71,9 +124,10 @@ export const useAuthStore = defineStore('auth', () => {
       
       user.value = null
       session.value = null
+      userProfile.value = null // Clear profile data
       
       return { success: true }
-    } catch (err) {
+    } catch (err: any) { // Use 'any' as the error type
       console.error('Error logging out:', err)
       error.value = err.message || 'Error during logout'
       return { success: false, error: err }
@@ -94,13 +148,25 @@ export const useAuthStore = defineStore('auth', () => {
         session.value = existingSession
         user.value = existingSession.user
         
+        // Fetch profile for existing user
+        if (existingSession.user) {
+          await fetchUserProfile(existingSession.user.id)
+        }
+        
         // Set up auth state change listener
-        supabase.auth.onAuthStateChange((event, newSession) => {
+        supabase.auth.onAuthStateChange(async (event, newSession) => {
           session.value = newSession
           user.value = newSession?.user || null
+          
+          // Update profile data when auth state changes
+          if (newSession?.user) {
+            await fetchUserProfile(newSession.user.id)
+          } else {
+            userProfile.value = null
+          }
         })
       }
-    } catch (err) {
+    } catch (err: any) { // Use 'any' as the error type
       console.error('Error initializing auth:', err)
       error.value = err.message || 'Error initializing authentication'
     } finally {
@@ -110,6 +176,7 @@ export const useAuthStore = defineStore('auth', () => {
   
   return {
     user,
+    userProfile,
     session,
     loading,
     error,
@@ -117,6 +184,7 @@ export const useAuthStore = defineStore('auth', () => {
     signInWithOTP,
     verifyOTP,
     logout,
-    initialize
+    initialize,
+    fetchUserProfile
   }
 })
