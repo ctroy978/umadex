@@ -1,5 +1,9 @@
+# Updated requirements.txt
 fastapi==0.103.1
 uvicorn==0.23.2
 python-dotenv==1.0.0
-httpx==0.24.1
+httpx>=0.23.0,<0.24.0  # Changed to match supabase's requirements
 pydantic==2.3.0
+supabase==1.0.3
+pyjwt==2.6.0
+python-jose==3.3.0

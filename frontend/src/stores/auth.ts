@@ -13,6 +13,13 @@ export const useAuthStore = defineStore('auth', () => {
   const error = ref<string | null>(null)
   
   const isAuthenticated = computed(() => !!user.value)
+
+
+  // Add role-related computed properties and methods
+const isAdmin = computed(() => userProfile.value?.role_name === 'ADMIN')
+const isTeacher = computed(() => userProfile.value?.role_name === 'TEACHER')
+const isStudent = computed(() => userProfile.value?.role_name === 'STUDENT' || !userProfile.value?.role_name)
+
   
   // Fetch user profile from the profiles table
   async function fetchUserProfile(userId: string) {
@@ -183,6 +190,59 @@ async function verifyOTP(email: string, token: string) {
       loading.value = false
     }
   }
+
+  // Add method to fetch all users (admin only)
+async function fetchAllUsers() {
+  if (!isAdmin.value) {
+    return { success: false, error: 'Admin access required' }
+  }
+  
+  try {
+    const response = await fetch('/api/users', {
+      headers: {
+        'Authorization': `Bearer ${session.value?.access_token}`
+      }
+    })
+    
+    if (!response.ok) {
+      throw new Error(`Error: ${response.status}`)
+    }
+    
+    const data = await response.json()
+    return { success: true, data }
+  } catch (err: any) {
+    console.error('Error fetching users:', err)
+    return { success: false, error: err.message }
+  }
+}
+
+// Add method to promote user (admin only)
+async function promoteUser(userId: string, newRole: string) {
+  if (!isAdmin.value) {
+    return { success: false, error: 'Admin access required' }
+  }
+  
+  try {
+    const response = await fetch('/api/users/promote', {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.value?.access_token}`
+      },
+      body: JSON.stringify({ user_id: userId, new_role: newRole })
+    })
+    
+    if (!response.ok) {
+      const errorData = await response.json()
+      throw new Error(errorData.detail || `Error: ${response.status}`)
+    }
+    
+    return { success: true }
+  } catch (err: any) {
+    console.error('Error promoting user:', err)
+    return { success: false, error: err.message }
+  }
+}
   
   return {
     user,
@@ -195,6 +255,11 @@ async function verifyOTP(email: string, token: string) {
     verifyOTP,
     logout,
     initialize,
-    fetchUserProfile
+    fetchUserProfile,
+    isAdmin,
+    isTeacher,
+    isStudent,
+    fetchAllUsers,
+    promoteUser
   }
 })
