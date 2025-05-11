@@ -36,8 +36,7 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
   
-  // Sign in with OTP (One-Time Password via email)
-// Sign in with OTP (One-Time Password via email)
+//signInWithOTP function in your auth store
 async function signInWithOTP(email: string) {
   loading.value = true
   error.value = null
@@ -49,22 +48,33 @@ async function signInWithOTP(email: string) {
     
     if (signInError) {
       console.error('Supabase Auth Error:', signInError)
-      const errorMessage = signInError.message || 'Error during sign in'
-      error.value = errorMessage
-      return { success: false, error: signInError, message: errorMessage }
+      
+      // Transform the technical error into a user-friendly message
+      let errorMessage = signInError.message || 'Failed to send verification code';
+      
+      // Check for the database error that happens with non-whitelisted emails
+      if (signInError.message.includes('Database error saving new user')) {
+        errorMessage = 'This email is not authorized to register. Please use an approved email address or contact an administrator.';
+      }
+      
+      return { 
+        success: false, 
+        error: { 
+          ...signInError, 
+          message: errorMessage 
+        } 
+      };
     }
     
     return { success: true }
   } catch (err: any) {
     console.error('Error signing in:', err)
-    const errorMessage = err.message || 'Error during sign in'
-    error.value = errorMessage
-    return { success: false, error: err, message: errorMessage }
+    return { success: false, error: err }
   } finally {
     loading.value = false
   }
 }
-  
+
   // Verify OTP token
 async function verifyOTP(email: string, token: string) {
   loading.value = true

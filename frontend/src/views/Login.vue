@@ -101,6 +101,8 @@ const sendOTP = async () => {
   if (success) {
     otpSent.value = true
   } else if (error) {
+    // Keep on the email input screen when there's an error
+    otpSent.value = false  // Make sure we stay on the email input screen
     errorMessage.value = error.message || 'Failed to send verification code'
   }
 }
