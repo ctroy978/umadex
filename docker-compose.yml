@@ -1,14 +1,18 @@
+# docker-compose.yml
 services:
   frontend:
     build: ./frontend
     volumes:
       - ./frontend:/app
-      - /app/node_modules  # Prevents local node_modules overwriting container's
+      - /app/node_modules
     ports:
       - "5173:5173"
     environment:
       - NODE_ENV=development
-    command: npm run dev
+    networks:
+      - app-network
+    depends_on:
+      - backend
 
   backend:
     build: ./backend
@@ -18,7 +22,8 @@ services:
       - "8000:8000"
     env_file:
       - .env
-    command: uvicorn app.main:app --host 0.0.0.0 --reload
+    networks:
+      - app-network
 
   nginx:
     build: ./nginx
@@ -27,3 +32,9 @@ services:
     depends_on:
       - frontend
       - backend
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge

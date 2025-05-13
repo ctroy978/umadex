@@ -1,7 +1,7 @@
+// frontend/vite.config.ts
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 
-// https://vitejs.dev/config/
 export default defineConfig({
   plugins: [vue()],
   server: {
@@ -10,8 +10,13 @@ export default defineConfig({
     watch: {
       usePolling: true
     },
-    hmr: {
-      overlay: false // Disable the error overlay temporarily while debugging
+    proxy: {
+      // Add this proxy configuration
+      '/api': {
+        target: 'http://backend:8000',
+        changeOrigin: true,
+        secure: false
+      }
     }
   }
 })

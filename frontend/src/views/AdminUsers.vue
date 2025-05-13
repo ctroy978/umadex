@@ -116,25 +116,32 @@
     await loadUsers()
   })
   
-  async function loadUsers() {
-    loading.value = true
-    errorMessage.value = ''
+// frontend/src/views/AdminUsers.vue - update the loadUsers function
+
+async function loadUsers() {
+  loading.value = true;
+  errorMessage.value = '';
+  
+  try {
+    const result = await authStore.fetchAllUsers();
     
-    try {
-      const result = await authStore.fetchAllUsers()
+    if (result.success) {
+      users.value = result.data;
       
-      if (result.success) {
-        users.value = result.data
-      } else {
-        errorMessage.value = result.error || 'Failed to load users'
+      if (result.isMockData) {
+        // Show a warning but don't treat it as an error
+        successMessage.value = 'Using mock data - API connection issue detected';
       }
-    } catch (err) {
-      console.error('Error loading users:', err)
-      errorMessage.value = 'An unexpected error occurred'
-    } finally {
-      loading.value = false
+    } else {
+      errorMessage.value = result.error || 'Failed to load users';
     }
+  } catch (err) {
+    console.error('Error loading users:', err);
+    errorMessage.value = 'An unexpected error occurred';
+  } finally {
+    loading.value = false;
   }
+}
   
   async function promoteUser(userId, newRole) {
     loading.value = true
