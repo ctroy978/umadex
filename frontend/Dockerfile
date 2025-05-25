@@ -2,16 +2,18 @@ FROM node:18-alpine
 
 WORKDIR /app
 
-# Install dependencies
-COPY package.json ./
+# Install dependencies first as root
+COPY package*.json ./
 RUN npm install
 
 # Copy app files
 COPY . .
 
-# Create necessary directories and set permissions
-RUN mkdir -p .next && \
-    addgroup -g 1001 -S nodejs && \
+# Create necessary directories
+RUN mkdir -p .next
+
+# Create user and group, then change ownership
+RUN addgroup -g 1001 -S nodejs && \
     adduser -S nextjs -u 1001 && \
     chown -R nextjs:nodejs /app
 

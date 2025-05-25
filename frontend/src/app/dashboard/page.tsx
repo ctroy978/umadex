@@ -3,10 +3,17 @@
 import AuthGuard from '@/components/AuthGuard'
 import { useAuth } from '@/hooks/useAuth'
 import { useRouter } from 'next/navigation'
+import { useEffect } from 'react'
 
 export default function DashboardPage() {
   const { user, logout } = useAuth()
   const router = useRouter()
+
+  useEffect(() => {
+    if (user?.role === 'teacher') {
+      router.push('/teacher/dashboard')
+    }
+  }, [user, router])
 
   const handleLogout = async () => {
     await logout()

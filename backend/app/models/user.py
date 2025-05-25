@@ -1,6 +1,7 @@
 from sqlalchemy import Column, String, Boolean, DateTime, Enum as SQLEnum
 from sqlalchemy.types import Enum
 from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 import enum
 import uuid
@@ -26,3 +27,7 @@ class User(Base):
     is_admin = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    
+    # Relationships
+    classrooms = relationship("Classroom", back_populates="teacher", foreign_keys="Classroom.teacher_id")
+    enrollments = relationship("ClassroomStudent", back_populates="student", foreign_keys="ClassroomStudent.student_id")

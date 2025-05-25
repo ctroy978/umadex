@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 
 from app.core.config import settings
 from app.core.database import engine, Base
-from app.api.v1 import auth, admin
+from app.api.v1 import auth, admin, teacher
 from app.core.redis import redis_client
 
 load_dotenv()
@@ -38,6 +38,7 @@ app.add_middleware(
 # Include routers
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
 app.include_router(admin.router, prefix="/api/v1/admin", tags=["admin"])
+app.include_router(teacher.router, prefix="/api/v1/teacher", tags=["teacher"])
 
 @app.get("/")
 async def root():
