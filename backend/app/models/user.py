@@ -31,3 +31,4 @@ class User(Base):
     # Relationships
     classrooms = relationship("Classroom", back_populates="teacher", foreign_keys="Classroom.teacher_id")
     enrollments = relationship("ClassroomStudent", back_populates="student", foreign_keys="ClassroomStudent.student_id")
+    reading_assignments = relationship("ReadingAssignment", back_populates="teacher")

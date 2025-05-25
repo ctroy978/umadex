@@ -14,6 +14,19 @@ from .admin import (
     EmailWhitelistResponse,
     PromoteToTeacherRequest
 )
+from .reading import (
+    ReadingAssignmentMetadata,
+    ReadingAssignmentCreate,
+    ReadingAssignmentUpdate,
+    AssignmentImageUpload,
+    AssignmentImage,
+    ReadingChunk,
+    ReadingAssignmentBase,
+    ReadingAssignment,
+    ReadingAssignmentList,
+    MarkupValidationResult,
+    PublishResult
+)
 
 __all__ = [
     "OTPRequestSchema",
@@ -25,5 +38,16 @@ __all__ = [
     "UserInDB",
     "EmailWhitelistCreate",
     "EmailWhitelistResponse",
-    "PromoteToTeacherRequest"
+    "PromoteToTeacherRequest",
+    "ReadingAssignmentMetadata",
+    "ReadingAssignmentCreate",
+    "ReadingAssignmentUpdate",
+    "AssignmentImageUpload",
+    "AssignmentImage",
+    "ReadingChunk",
+    "ReadingAssignmentBase",
+    "ReadingAssignment",
+    "ReadingAssignmentList",
+    "MarkupValidationResult",
+    "PublishResult"
 ]
