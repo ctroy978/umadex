@@ -8,7 +8,7 @@ interface AssignmentEditorProps {
   initialContent: string
   images: AssignmentImage[]
   onSave: (content: string, editMode: 'text' | 'image', imageId?: string) => Promise<void>
-  onDelete: () => void
+  onArchive: () => void
 }
 
 type EditMode = 'text' | 'image'
@@ -18,14 +18,14 @@ export default function AssignmentEditor({
   initialContent,
   images,
   onSave,
-  onDelete
+  onArchive
 }: AssignmentEditorProps) {
   const [content, setContent] = useState(initialContent)
   const [editMode, setEditMode] = useState<EditMode>('text')
   const [selectedImageId, setSelectedImageId] = useState<string | null>(null)
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
-  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [showArchiveModal, setShowArchiveModal] = useState(false)
 
   useEffect(() => {
     setContent(initialContent)
@@ -92,13 +92,13 @@ export default function AssignmentEditor({
     }
   }
 
-  const handleDelete = () => {
-    setShowDeleteModal(true)
+  const handleArchive = () => {
+    setShowArchiveModal(true)
   }
 
-  const confirmDelete = () => {
-    onDelete()
-    setShowDeleteModal(false)
+  const confirmArchive = () => {
+    onArchive()
+    setShowArchiveModal(false)
   }
 
   return (
@@ -133,10 +133,10 @@ export default function AssignmentEditor({
                 {isSaving ? 'Saving...' : 'Save'}
               </button>
               <button
-                onClick={handleDelete}
-                className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700"
+                onClick={handleArchive}
+                className="px-4 py-2 text-sm font-medium text-white bg-gray-600 rounded-md hover:bg-gray-700"
               >
-                Delete
+                Archive
               </button>
             </div>
           </div>
@@ -201,26 +201,26 @@ export default function AssignmentEditor({
         </div>
       )}
 
-      {/* Delete Confirmation Modal */}
-      {showDeleteModal && (
+      {/* Archive Confirmation Modal */}
+      {showArchiveModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 max-w-md w-full">
-            <h3 className="text-lg font-medium text-gray-900 mb-4">Delete Assignment</h3>
+            <h3 className="text-lg font-medium text-gray-900 mb-4">Archive Assignment</h3>
             <p className="text-gray-600 mb-6">
-              Are you sure you want to delete this assignment? This action cannot be undone.
+              Archive this assignment? You can restore it later from the archived view.
             </p>
             <div className="flex justify-end space-x-3">
               <button
-                onClick={() => setShowDeleteModal(false)}
+                onClick={() => setShowArchiveModal(false)}
                 className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
               >
                 Cancel
               </button>
               <button
-                onClick={confirmDelete}
-                className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700"
+                onClick={confirmArchive}
+                className="px-4 py-2 text-sm font-medium text-white bg-gray-600 rounded-md hover:bg-gray-700"
               >
-                Delete Assignment
+                Archive Assignment
               </button>
             </div>
           </div>

@@ -136,6 +136,7 @@ class ReadingAssignmentList(BaseModel):
     updated_at: datetime
     start_date: Optional[datetime]
     end_date: Optional[datetime]
+    deleted_at: Optional[datetime]
 
     class Config:
         from_attributes = True
@@ -153,3 +154,11 @@ class PublishResult(BaseModel):
     success: bool
     message: str
     chunk_count: Optional[int] = None
+
+
+class ReadingAssignmentListResponse(BaseModel):
+    assignments: List[ReadingAssignmentList]
+    total: int
+    filtered: int
+    page: int
+    per_page: int

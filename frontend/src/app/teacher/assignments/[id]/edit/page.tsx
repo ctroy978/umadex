@@ -76,13 +76,13 @@ export default function EditAssignmentPage({ params }: { params: { id: string } 
     }
   }
 
-  const handleDelete = async () => {
+  const handleArchive = async () => {
     try {
-      await readingApi.deleteAssignment(params.id)
+      await readingApi.archiveAssignment(params.id)
       router.push('/teacher/uma-read')
     } catch (err) {
-      console.error('Error deleting assignment:', err)
-      alert('Failed to delete assignment')
+      console.error('Error archiving assignment:', err)
+      alert('Failed to archive assignment')
     }
   }
 
@@ -168,7 +168,7 @@ export default function EditAssignmentPage({ params }: { params: { id: string } 
               initialContent={assignment.raw_content}
               images={assignment.images || []}
               onSave={handleSave}
-              onDelete={handleDelete}
+              onArchive={handleArchive}
             />
           ) : (
             <AssignmentMetadataEditor

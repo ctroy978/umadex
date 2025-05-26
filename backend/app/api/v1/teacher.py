@@ -1,11 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, BackgroundTasks, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_, update
-from typing import List, Optional
+from sqlalchemy import select, func, and_, update, or_
+from typing import List, Optional, Dict
 from uuid import UUID
 import os
 import aiofiles
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from app.core.database import get_db
 from app.core.config import settings
@@ -16,7 +16,7 @@ from app.schemas.classroom import (
 from app.schemas.reading import (
     ReadingAssignmentCreate, ReadingAssignmentUpdate, ReadingAssignment,
     ReadingAssignmentBase, ReadingAssignmentList, MarkupValidationResult, 
-    PublishResult, AssignmentImage, AssignmentImageUpload
+    PublishResult, AssignmentImage, AssignmentImageUpload, ReadingAssignmentListResponse
 )
 from app.models import User, Classroom, ClassroomStudent, Assignment, UserRole
 from app.models.reading import ReadingAssignment as ReadingAssignmentModel, AssignmentImage as AssignmentImageModel, ReadingChunk
@@ -531,28 +531,75 @@ async def publish_assignment(
     return result
 
 
-@router.get("/assignments/reading", response_model=List[ReadingAssignmentList])
+@router.get("/assignments/reading", response_model=ReadingAssignmentListResponse)
 async def list_reading_assignments(
     teacher: User = Depends(require_teacher),
     db: AsyncSession = Depends(get_db),
-    skip: int = 0,
-    limit: int = 20
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    search: Optional[str] = Query(None, description="Search in title, work title, or author"),
+    date_from: Optional[datetime] = Query(None, description="Filter by creation date from"),
+    date_to: Optional[datetime] = Query(None, description="Filter by creation date to"),
+    grade_level: Optional[str] = Query(None, description="Filter by grade level"),
+    work_type: Optional[str] = Query(None, description="Filter by work type (fiction/non-fiction)"),
+    include_archived: bool = Query(False, description="Include archived assignments")
 ):
-    """List teacher's reading assignments"""
-    result = await db.execute(
-        select(ReadingAssignmentModel)
-        .where(
-            and_(
-                ReadingAssignmentModel.teacher_id == teacher.id,
-                ReadingAssignmentModel.deleted_at.is_(None)
-            )
-        )
-        .order_by(ReadingAssignmentModel.created_at.desc())
-        .offset(skip)
-        .limit(limit)
+    """List teacher's reading assignments with search and filter options"""
+    
+    # Build base query
+    query = select(ReadingAssignmentModel).where(
+        ReadingAssignmentModel.teacher_id == teacher.id
     )
     
-    return result.scalars().all()
+    # Handle archived/deleted filter
+    if not include_archived:
+        query = query.where(ReadingAssignmentModel.deleted_at.is_(None))
+    
+    # Apply search filter
+    if search:
+        search_term = f"%{search}%"
+        query = query.where(
+            or_(
+                ReadingAssignmentModel.assignment_title.ilike(search_term),
+                ReadingAssignmentModel.work_title.ilike(search_term),
+                ReadingAssignmentModel.author.ilike(search_term)
+            )
+        )
+    
+    # Apply date filters
+    if date_from:
+        query = query.where(ReadingAssignmentModel.created_at >= date_from)
+    if date_to:
+        # Add 1 day to include the entire end date
+        query = query.where(ReadingAssignmentModel.created_at < date_to + timedelta(days=1))
+    
+    # Apply grade level filter
+    if grade_level:
+        query = query.where(ReadingAssignmentModel.grade_level == grade_level)
+    
+    # Apply work type filter
+    if work_type:
+        query = query.where(ReadingAssignmentModel.work_type == work_type.lower())
+    
+    # Get total count before pagination
+    count_query = select(func.count()).select_from(query.subquery())
+    total_result = await db.execute(count_query)
+    total_count = total_result.scalar() or 0
+    
+    # Apply ordering and pagination
+    query = query.order_by(ReadingAssignmentModel.created_at.desc()).offset(skip).limit(limit)
+    
+    # Execute query
+    result = await db.execute(query)
+    assignments = result.scalars().all()
+    
+    return ReadingAssignmentListResponse(
+        assignments=assignments,
+        total=total_count,
+        filtered=total_count,  # Since we're showing filtered results
+        page=(skip // limit) + 1,
+        per_page=limit
+    )
 
 
 @router.get("/assignments/reading/{assignment_id}", response_model=ReadingAssignment)
@@ -756,12 +803,12 @@ async def update_image_description(
 
 
 @router.delete("/assignments/{assignment_id}")
-async def soft_delete_assignment(
+async def archive_assignment(
     assignment_id: UUID,
     teacher: User = Depends(require_teacher),
     db: AsyncSession = Depends(get_db)
 ):
-    """Soft delete an assignment"""
+    """Archive an assignment (soft delete)"""
     result = await db.execute(
         select(ReadingAssignmentModel).where(
             and_(
@@ -783,4 +830,35 @@ async def soft_delete_assignment(
     assignment.deleted_at = datetime.utcnow()
     await db.commit()
     
-    return {"message": "Assignment deleted successfully"}
+    return {"message": "Assignment archived successfully"}
+
+
+@router.post("/assignments/{assignment_id}/restore")
+async def restore_assignment(
+    assignment_id: UUID,
+    teacher: User = Depends(require_teacher),
+    db: AsyncSession = Depends(get_db)
+):
+    """Restore an archived assignment"""
+    result = await db.execute(
+        select(ReadingAssignmentModel).where(
+            and_(
+                ReadingAssignmentModel.id == assignment_id,
+                ReadingAssignmentModel.teacher_id == teacher.id,
+                ReadingAssignmentModel.deleted_at.is_not(None)
+            )
+        )
+    )
+    assignment = result.scalar_one_or_none()
+    
+    if not assignment:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Archived assignment not found"
+        )
+    
+    # Restore
+    assignment.deleted_at = None
+    await db.commit()
+    
+    return {"message": "Assignment restored successfully"}

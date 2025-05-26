@@ -4,6 +4,7 @@ import {
   ReadingAssignmentUpdate,
   ReadingAssignment,
   ReadingAssignmentList,
+  ReadingAssignmentListResponse,
   AssignmentImage,
   MarkupValidationResult,
   PublishResult 
@@ -59,11 +60,18 @@ export const readingApi = {
     return response.data;
   },
 
-  // List teacher's assignments
-  listAssignments: async (skip?: number, limit?: number): Promise<ReadingAssignmentList[]> => {
-    const response = await api.get('/v1/teacher/assignments/reading', {
-      params: { skip, limit },
-    });
+  // List teacher's assignments with search and filters
+  listAssignments: async (params?: {
+    skip?: number;
+    limit?: number;
+    search?: string;
+    date_from?: string;
+    date_to?: string;
+    grade_level?: string;
+    work_type?: string;
+    include_archived?: boolean;
+  }): Promise<ReadingAssignmentListResponse> => {
+    const response = await api.get('/v1/teacher/assignments/reading', { params });
     return response.data;
   },
 
@@ -91,9 +99,15 @@ export const readingApi = {
     return response.data;
   },
 
-  // Delete assignment (soft delete)
-  deleteAssignment: async (id: string): Promise<any> => {
+  // Archive assignment (soft delete)
+  archiveAssignment: async (id: string): Promise<any> => {
     const response = await api.delete(`/v1/teacher/assignments/${id}`);
+    return response.data;
+  },
+
+  // Restore archived assignment
+  restoreAssignment: async (id: string): Promise<any> => {
+    const response = await api.post(`/v1/teacher/assignments/${id}/restore`);
     return response.data;
   },
 };

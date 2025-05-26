@@ -103,6 +103,15 @@ export interface ReadingAssignmentList {
   updated_at: string;
   start_date?: string | null;
   end_date?: string | null;
+  deleted_at?: string | null;
+}
+
+export interface ReadingAssignmentListResponse {
+  assignments: ReadingAssignmentList[];
+  total: number;
+  filtered: number;
+  page: number;
+  per_page: number;
 }
 
 export interface MarkupValidationResult {
