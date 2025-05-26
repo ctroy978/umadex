@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_
+from sqlalchemy import select, func, and_, update
 from typing import List, Optional
 from uuid import UUID
 import os
@@ -487,15 +487,46 @@ async def validate_assignment_markup(
 @router.post("/assignments/reading/{assignment_id}/publish", response_model=PublishResult)
 async def publish_assignment(
     assignment_id: UUID,
+    background_tasks: BackgroundTasks,
     teacher: User = Depends(require_teacher),
     db: AsyncSession = Depends(get_db)
 ):
-    """Parse chunks and publish assignment"""
+    """Parse chunks and publish assignment and trigger image processing"""
+    # First publish the assignment
     result = await ReadingAssignmentAsyncService.publish_assignment(
         db,
         assignment_id,
         teacher.id
     )
+    
+    # If publishing was successful, check for images
+    if result.success:
+        # Check if assignment has images
+        images_result = await db.execute(
+            select(func.count(AssignmentImageModel.id))
+            .where(AssignmentImageModel.assignment_id == assignment_id)
+        )
+        image_count = images_result.scalar() or 0
+        
+        if image_count > 0:
+            # Queue background processing
+            from app.services.assignment_processor import AssignmentImageProcessor
+            processor = AssignmentImageProcessor()
+            background_tasks.add_task(
+                processor.process_assignment_images, 
+                str(assignment_id)
+            )
+            
+            result.message = f"Assignment published. Processing {image_count} images in background."
+        else:
+            # Mark as fully processed if no images
+            await db.execute(
+                update(ReadingAssignmentModel)
+                .where(ReadingAssignmentModel.id == assignment_id)
+                .values(images_processed=True)
+            )
+            await db.commit()
+    
     return result
 
 

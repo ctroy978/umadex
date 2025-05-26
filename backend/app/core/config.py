@@ -31,6 +31,12 @@ class Settings(BaseSettings):
     # Environment
     ENVIRONMENT: str = "development"
     
+    # AI/ML
+    GEMINI_API_KEY: Optional[str] = None
+    
+    # Backend URL for internal requests
+    BACKEND_URL: str = "http://localhost:8000"
+    
     class Config:
         env_file = ".env"
         case_sensitive = True

@@ -23,6 +23,7 @@ class ReadingAssignment(Base):
     raw_content = Column(Text, nullable=False)
     total_chunks = Column(Integer, nullable=True)
     status = Column(String(50), default="draft")
+    images_processed = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -67,6 +68,8 @@ class AssignmentImage(Base):
     height = Column(Integer, nullable=True, default=0)
     file_size = Column(Integer, nullable=True)  # In bytes
     mime_type = Column(String(50), nullable=True)
+    ai_description = Column(Text, nullable=True)  # AI-generated description
+    description_generated_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     uploaded_at = Column(DateTime, default=datetime.utcnow)  # Backward compatibility
     # Legacy columns

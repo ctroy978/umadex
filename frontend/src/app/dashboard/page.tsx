@@ -20,6 +20,17 @@ export default function DashboardPage() {
     router.push('/login')
   }
 
+  // Prevent flash by not rendering content for teachers
+  if (user?.role === 'teacher') {
+    return (
+      <AuthGuard>
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+          <div className="text-gray-500">Redirecting...</div>
+        </div>
+      </AuthGuard>
+    )
+  }
+
   return (
     <AuthGuard>
       <div className="min-h-screen bg-gray-50">
