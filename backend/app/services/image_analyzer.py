@@ -2,6 +2,8 @@ import google.generativeai as genai
 from typing import List, Optional
 import os
 from app.models.image_analysis import ImageAnalysis
+from app.config.ai_models import IMAGE_ANALYSIS_MODEL
+from app.config.ai_config import get_gemini_config
 import logging
 from PIL import Image
 import json
@@ -10,13 +12,16 @@ logger = logging.getLogger(__name__)
 
 class ImageAnalyzer:
     def __init__(self):
+        # Get configuration
+        config = get_gemini_config()
+        
         # Configure Gemini API
-        genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+        genai.configure(api_key=config.api_key)
         
-        # Use Gemini 2.0 Flash model
-        self.model = genai.GenerativeModel('gemini-2.0-flash')
+        # Use configured model
+        self.model = genai.GenerativeModel(IMAGE_ANALYSIS_MODEL)
         
-        logger.info("ImageAnalyzer initialized with Gemini 2.0 Flash model")
+        logger.info(f"ImageAnalyzer initialized with model: {IMAGE_ANALYSIS_MODEL}")
     
     def _get_system_prompt(self) -> str:
         return """You are analyzing an educational image that appears within a reading assignment. Your task is to create a detailed description that will be used to generate comprehension questions and evaluate student answers about this image.

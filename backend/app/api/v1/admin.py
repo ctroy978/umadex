@@ -8,6 +8,7 @@ from app.schemas.auth import UserResponse
 from app.models import User, EmailWhitelist, UserRole
 from app.services.user import UserService
 from app.utils.deps import require_admin
+from app.config.ai_models import get_all_models
 
 router = APIRouter()
 
@@ -100,3 +101,43 @@ async def list_whitelist(
     entries = result.scalars().all()
     
     return [EmailWhitelistResponse.model_validate(entry) for entry in entries]
+
+@router.get("/ai-config")
+async def get_ai_configuration(
+    admin_user: User = Depends(require_admin)
+):
+    """Get current AI model configuration (admin only)
+    
+    Returns the current AI model configuration for debugging and monitoring.
+    This helps administrators verify which models are being used across the platform.
+    """
+    models = get_all_models()
+    
+    # Add status information for each model
+    config_with_status = {}
+    for key, value in models.items():
+        config_with_status[key] = {
+            "model": value,
+            "status": "active" if value and value != "placeholder" else "not_configured",
+            "description": get_model_description(key)
+        }
+    
+    return {
+        "models": config_with_status,
+        "timestamp": "2024-01-26T00:00:00Z",
+        "environment": "production"  # or from config
+    }
+
+def get_model_description(model_type: str) -> str:
+    """Get human-readable description for each model type"""
+    descriptions = {
+        'image_analysis': 'Analyzes uploaded images to extract educational content',
+        'question_generation': 'Generates comprehension questions from reading content',
+        'answer_evaluation': 'Evaluates student free-form responses',
+        'vocab_extraction': 'Identifies challenging vocabulary from texts',
+        'debate_generation': 'Creates debate topics and supporting materials',
+        'speech_analysis': 'Analyzes student speech for pronunciation and fluency',
+        'writing_assistance': 'Provides writing feedback and suggestions',
+        'lecture_generation': 'Creates interactive lecture content',
+    }
+    return descriptions.get(model_type, 'Unknown model type')
