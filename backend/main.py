@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 from app.core.config import settings
 from app.core.database import engine, Base
-from app.api.v1 import auth, admin, teacher
+from app.api.v1 import auth, admin, teacher, student
 from app.core.redis import redis_client
 
 load_dotenv()
@@ -44,6 +44,7 @@ app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
 app.include_router(admin.router, prefix="/api/v1/admin", tags=["admin"])
 app.include_router(teacher.router, prefix="/api/v1/teacher", tags=["teacher"])
+app.include_router(student.router, prefix="/api/v1/student", tags=["student"])
 
 @app.get("/")
 async def root():

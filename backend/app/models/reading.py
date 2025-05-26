@@ -27,10 +27,16 @@ class ReadingAssignment(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     deleted_at = Column(DateTime, nullable=True)
+    start_date = Column(DateTime(timezone=True), nullable=True)
+    end_date = Column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (
         CheckConstraint(work_type.in_(['fiction', 'non-fiction'])),
         CheckConstraint(literary_form.in_(['prose', 'poetry', 'drama', 'mixed'])),
+        CheckConstraint(
+            "(start_date IS NULL OR end_date IS NULL) OR (end_date > start_date)",
+            name="check_date_order"
+        ),
     )
 
     # Relationships

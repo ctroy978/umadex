@@ -5,8 +5,9 @@ import { useRouter } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import TeacherGuard from '@/components/TeacherGuard'
 import AssignmentEditor from '@/components/AssignmentEditor'
+import AssignmentMetadataEditor from '@/components/AssignmentMetadataEditor'
 import { readingApi } from '@/lib/readingApi'
-import { ReadingAssignment } from '@/types/reading'
+import { ReadingAssignment, ReadingAssignmentUpdate } from '@/types/reading'
 
 export default function EditAssignmentPage({ params }: { params: { id: string } }) {
   const router = useRouter()
@@ -14,6 +15,7 @@ export default function EditAssignmentPage({ params }: { params: { id: string } 
   const [assignment, setAssignment] = useState<ReadingAssignment | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [editMode, setEditMode] = useState<'content' | 'metadata'>('content')
 
   useEffect(() => {
     if (user) {
@@ -84,6 +86,17 @@ export default function EditAssignmentPage({ params }: { params: { id: string } 
     }
   }
 
+  const handleMetadataSave = async (data: ReadingAssignmentUpdate) => {
+    try {
+      const updated = await readingApi.updateAssignment(params.id, data)
+      setAssignment(updated)
+      setEditMode('content')
+    } catch (err) {
+      console.error('Error saving metadata:', err)
+      throw err
+    }
+  }
+
   if (loading) {
     return (
       <TeacherGuard>
@@ -114,24 +127,56 @@ export default function EditAssignmentPage({ params }: { params: { id: string } 
               <h1 className="text-2xl font-semibold text-gray-900">Edit Assignment</h1>
               <p className="text-sm text-gray-600 mt-1">{assignment.assignment_title}</p>
             </div>
-            <button
-              onClick={() => router.push('/teacher/uma-read')}
-              className="text-sm text-gray-600 hover:text-gray-900"
-            >
-              ← Back to assignments
-            </button>
+            <div className="flex items-center space-x-4">
+              <div className="flex space-x-2">
+                <button
+                  onClick={() => setEditMode('content')}
+                  className={`px-4 py-2 text-sm font-medium rounded-md ${
+                    editMode === 'content'
+                      ? 'bg-blue-100 text-blue-700'
+                      : 'text-gray-700 hover:bg-gray-100'
+                  }`}
+                >
+                  Edit Content
+                </button>
+                <button
+                  onClick={() => setEditMode('metadata')}
+                  className={`px-4 py-2 text-sm font-medium rounded-md ${
+                    editMode === 'metadata'
+                      ? 'bg-blue-100 text-blue-700'
+                      : 'text-gray-700 hover:bg-gray-100'
+                  }`}
+                >
+                  Edit Metadata
+                </button>
+              </div>
+              <button
+                onClick={() => router.push('/teacher/uma-read')}
+                className="text-sm text-gray-600 hover:text-gray-900"
+              >
+                ← Back to assignments
+              </button>
+            </div>
           </div>
         </div>
 
         {/* Editor */}
         <div className="flex-1 overflow-hidden">
-          <AssignmentEditor
-            assignmentId={params.id}
-            initialContent={assignment.raw_content}
-            images={assignment.images || []}
-            onSave={handleSave}
-            onDelete={handleDelete}
-          />
+          {editMode === 'content' ? (
+            <AssignmentEditor
+              assignmentId={params.id}
+              initialContent={assignment.raw_content}
+              images={assignment.images || []}
+              onSave={handleSave}
+              onDelete={handleDelete}
+            />
+          ) : (
+            <AssignmentMetadataEditor
+              assignment={assignment}
+              onSave={handleMetadataSave}
+              onCancel={() => setEditMode('content')}
+            />
+          )}
         </div>
       </div>
     </TeacherGuard>

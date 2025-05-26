@@ -1,13 +1,13 @@
 'use client';
 
-import React from 'react';
-import { ReadingAssignmentMetadata } from '@/types/reading';
+import React, { useState } from 'react';
+import { ReadingAssignment, ReadingAssignmentUpdate } from '@/types/reading';
 import DatePicker from 'react-datepicker';
 
-interface MetadataFormProps {
-  data: Partial<ReadingAssignmentMetadata>;
-  onChange: (data: Partial<ReadingAssignmentMetadata>) => void;
-  onNext: () => void;
+interface AssignmentMetadataEditorProps {
+  assignment: ReadingAssignment;
+  onSave: (data: ReadingAssignmentUpdate) => Promise<void>;
+  onCancel: () => void;
 }
 
 const GRADE_LEVELS = ['K-2', '3-5', '6-8', '9-10', '11-12', 'College', 'Adult Education'] as const;
@@ -18,28 +18,58 @@ const GENRES = [
 ] as const;
 const SUBJECTS = ['English Literature', 'History', 'Science', 'Social Studies', 'ESL/ELL', 'Other'] as const;
 
-export default function MetadataForm({ data, onChange, onNext }: MetadataFormProps) {
-  const handleInputChange = (field: keyof ReadingAssignmentMetadata, value: any) => {
-    onChange({ ...data, [field]: value });
+export default function AssignmentMetadataEditor({ assignment, onSave, onCancel }: AssignmentMetadataEditorProps) {
+  const [formData, setFormData] = useState<ReadingAssignmentUpdate>({
+    assignment_title: assignment.assignment_title,
+    work_title: assignment.work_title,
+    author: assignment.author,
+    grade_level: assignment.grade_level as any,
+    work_type: assignment.work_type as any,
+    literary_form: assignment.literary_form as any,
+    genre: assignment.genre as any,
+    subject: assignment.subject as any,
+    start_date: assignment.start_date,
+    end_date: assignment.end_date,
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleInputChange = (field: keyof ReadingAssignmentUpdate, value: any) => {
+    setFormData({ ...formData, [field]: value });
   };
 
-  const isFormValid = () => {
-    return !!(
-      data.assignment_title &&
-      data.work_title &&
-      data.grade_level &&
-      data.work_type &&
-      data.literary_form &&
-      data.genre &&
-      data.subject
-    );
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    // Validate dates
+    if (formData.start_date && formData.end_date) {
+      const start = new Date(formData.start_date);
+      const end = new Date(formData.end_date);
+      if (end <= start) {
+        setError('End date must be after start date');
+        return;
+      }
+    }
+    
+    setSaving(true);
+    setError('');
+    
+    try {
+      await onSave(formData);
+    } catch (err) {
+      setError('Failed to save metadata');
+      console.error('Error saving metadata:', err);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
-    <div className="max-w-2xl mx-auto p-6">
-      <h2 className="text-2xl font-bold mb-6">Create Reading Assignment - Step 1: Metadata</h2>
-      
-      <form className="space-y-6">
+    <div className="h-full overflow-y-auto">
+      <div className="max-w-2xl mx-auto p-6">
+        <h2 className="text-2xl font-bold mb-6">Edit Assignment Metadata</h2>
+        
+        <form onSubmit={handleSubmit} className="space-y-6">
         <div>
           <label htmlFor="assignment_title" className="block text-sm font-medium text-gray-700 mb-2">
             Assignment Title *
@@ -47,10 +77,10 @@ export default function MetadataForm({ data, onChange, onNext }: MetadataFormPro
           <input
             type="text"
             id="assignment_title"
-            value={data.assignment_title || ''}
+            value={formData.assignment_title || ''}
             onChange={(e) => handleInputChange('assignment_title', e.target.value)}
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            placeholder="e.g., Greek Mythology Reading"
+            required
           />
         </div>
 
@@ -61,29 +91,28 @@ export default function MetadataForm({ data, onChange, onNext }: MetadataFormPro
           <input
             type="text"
             id="work_title"
-            value={data.work_title || ''}
+            value={formData.work_title || ''}
             onChange={(e) => handleInputChange('work_title', e.target.value)}
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            placeholder="e.g., Tales of Ancient Greece"
+            required
           />
         </div>
 
         <div>
           <label htmlFor="author" className="block text-sm font-medium text-gray-700 mb-2">
-            Author (Optional)
+            Author
           </label>
           <input
             type="text"
             id="author"
-            value={data.author || ''}
+            value={formData.author || ''}
             onChange={(e) => handleInputChange('author', e.target.value)}
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            placeholder="e.g., Jane Smith"
           />
         </div>
 
         <div className="border-t pt-6 mt-6">
-          <h3 className="text-lg font-medium mb-4">Assignment Availability (Optional)</h3>
+          <h3 className="text-lg font-medium mb-4">Assignment Availability</h3>
           <p className="text-sm text-gray-600 mb-4">Control when students can access this assignment. Leave blank for immediate and permanent availability.</p>
           
           <div className="grid md:grid-cols-2 gap-6">
@@ -92,7 +121,7 @@ export default function MetadataForm({ data, onChange, onNext }: MetadataFormPro
                 Assignment Available From
               </label>
               <DatePicker
-                selected={data.start_date ? new Date(data.start_date) : null}
+                selected={formData.start_date ? new Date(formData.start_date) : null}
                 onChange={(date: Date | null) => handleInputChange('start_date', date?.toISOString() || null)}
                 showTimeSelect
                 timeFormat="HH:mm"
@@ -110,7 +139,7 @@ export default function MetadataForm({ data, onChange, onNext }: MetadataFormPro
                 Assignment Available Until
               </label>
               <DatePicker
-                selected={data.end_date ? new Date(data.end_date) : null}
+                selected={formData.end_date ? new Date(formData.end_date) : null}
                 onChange={(date: Date | null) => handleInputChange('end_date', date?.toISOString() || null)}
                 showTimeSelect
                 timeFormat="HH:mm"
@@ -118,14 +147,14 @@ export default function MetadataForm({ data, onChange, onNext }: MetadataFormPro
                 dateFormat="MMMM d, yyyy h:mm aa"
                 placeholderText="Leave blank to keep available indefinitely"
                 isClearable
-                minDate={data.start_date ? new Date(data.start_date) : new Date()}
+                minDate={formData.start_date ? new Date(formData.start_date) : new Date()}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
               <p className="text-xs text-gray-500 mt-1">Students cannot access the assignment after this time</p>
             </div>
           </div>
           
-          {data.start_date && data.end_date && new Date(data.end_date) <= new Date(data.start_date) && (
+          {formData.start_date && formData.end_date && new Date(formData.end_date) <= new Date(formData.start_date) && (
             <p className="text-red-600 text-sm mt-2">End date must be after start date</p>
           )}
         </div>
@@ -140,9 +169,10 @@ export default function MetadataForm({ data, onChange, onNext }: MetadataFormPro
           </label>
           <select
             id="grade_level"
-            value={data.grade_level || ''}
+            value={formData.grade_level || ''}
             onChange={(e) => handleInputChange('grade_level', e.target.value)}
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            required
           >
             <option value="">Select a grade level</option>
             {GRADE_LEVELS.map(level => (
@@ -161,7 +191,7 @@ export default function MetadataForm({ data, onChange, onNext }: MetadataFormPro
                 type="radio"
                 name="work_type"
                 value="fiction"
-                checked={data.work_type === 'fiction'}
+                checked={formData.work_type === 'fiction'}
                 onChange={(e) => handleInputChange('work_type', e.target.value)}
                 className="mr-2"
               />
@@ -172,7 +202,7 @@ export default function MetadataForm({ data, onChange, onNext }: MetadataFormPro
                 type="radio"
                 name="work_type"
                 value="non-fiction"
-                checked={data.work_type === 'non-fiction'}
+                checked={formData.work_type === 'non-fiction'}
                 onChange={(e) => handleInputChange('work_type', e.target.value)}
                 className="mr-2"
               />
@@ -192,7 +222,7 @@ export default function MetadataForm({ data, onChange, onNext }: MetadataFormPro
                   type="radio"
                   name="literary_form"
                   value={form}
-                  checked={data.literary_form === form}
+                  checked={formData.literary_form === form}
                   onChange={(e) => handleInputChange('literary_form', e.target.value)}
                   className="mr-2"
                 />
@@ -208,9 +238,10 @@ export default function MetadataForm({ data, onChange, onNext }: MetadataFormPro
           </label>
           <select
             id="genre"
-            value={data.genre || ''}
+            value={formData.genre || ''}
             onChange={(e) => handleInputChange('genre', e.target.value)}
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            required
           >
             <option value="">Select a genre</option>
             {GENRES.map(genre => (
@@ -225,9 +256,10 @@ export default function MetadataForm({ data, onChange, onNext }: MetadataFormPro
           </label>
           <select
             id="subject"
-            value={data.subject || ''}
+            value={formData.subject || ''}
             onChange={(e) => handleInputChange('subject', e.target.value)}
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            required
           >
             <option value="">Select a subject</option>
             {SUBJECTS.map(subject => (
@@ -236,21 +268,32 @@ export default function MetadataForm({ data, onChange, onNext }: MetadataFormPro
           </select>
         </div>
 
-        <div className="flex justify-end pt-6">
+        {error && (
+          <div className="text-red-600 text-sm">{error}</div>
+        )}
+
+        <div className="flex justify-end space-x-4 pt-6">
           <button
             type="button"
-            onClick={onNext}
-            disabled={!isFormValid()}
+            onClick={onCancel}
+            className="px-6 py-3 border border-gray-300 rounded-lg font-medium text-gray-700 hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={saving}
             className={`px-6 py-3 rounded-lg font-medium ${
-              isFormValid()
-                ? 'bg-blue-600 text-white hover:bg-blue-700'
-                : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+              saving
+                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                : 'bg-blue-600 text-white hover:bg-blue-700'
             }`}
           >
-            Next: Add Content
+            {saving ? 'Saving...' : 'Save Changes'}
           </button>
         </div>
       </form>
+    </div>
     </div>
   );
 }

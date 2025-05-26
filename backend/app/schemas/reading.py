@@ -17,6 +17,14 @@ class ReadingAssignmentMetadata(BaseModel):
         "Informational", "Science", "Other"
     ]
     subject: Literal["English Literature", "History", "Science", "Social Studies", "ESL/ELL", "Other"]
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
+
+    @validator('end_date')
+    def validate_end_date(cls, v, values):
+        if v and 'start_date' in values and values['start_date'] and v <= values['start_date']:
+            raise ValueError('End date must be after start date')
+        return v
 
 
 class ReadingAssignmentCreate(ReadingAssignmentMetadata):
@@ -37,6 +45,14 @@ class ReadingAssignmentUpdate(BaseModel):
     ]] = None
     subject: Optional[Literal["English Literature", "History", "Science", "Social Studies", "ESL/ELL", "Other"]] = None
     raw_content: Optional[str] = Field(default=None, min_length=0)
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
+
+    @validator('end_date')
+    def validate_end_date(cls, v, values):
+        if v and 'start_date' in values and values['start_date'] and v <= values['start_date']:
+            raise ValueError('End date must be after start date')
+        return v
 
 
 class AssignmentImageUpload(BaseModel):
@@ -92,6 +108,8 @@ class ReadingAssignmentBase(BaseModel):
     status: str
     created_at: datetime
     updated_at: datetime
+    start_date: Optional[datetime]
+    end_date: Optional[datetime]
 
     class Config:
         from_attributes = True
@@ -116,6 +134,8 @@ class ReadingAssignmentList(BaseModel):
     total_chunks: Optional[int]
     created_at: datetime
     updated_at: datetime
+    start_date: Optional[datetime]
+    end_date: Optional[datetime]
 
     class Config:
         from_attributes = True

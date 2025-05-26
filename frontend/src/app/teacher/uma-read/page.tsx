@@ -58,6 +58,45 @@ export default function UmaReadPage() {
     )
   }
 
+  const getAvailabilityStatus = (assignment: ReadingAssignmentList) => {
+    const now = new Date()
+    const startDate = assignment.start_date ? new Date(assignment.start_date) : null
+    const endDate = assignment.end_date ? new Date(assignment.end_date) : null
+
+    if (assignment.status !== 'published') {
+      return null
+    }
+
+    if (startDate && startDate > now) {
+      return {
+        status: 'scheduled',
+        label: 'Not yet available',
+        color: 'bg-yellow-100 text-yellow-800',
+        tooltip: `Available from ${startDate.toLocaleString()}`
+      }
+    }
+
+    if (endDate && endDate < now) {
+      return {
+        status: 'expired',
+        label: 'Expired',
+        color: 'bg-red-100 text-red-800',
+        tooltip: `Expired on ${endDate.toLocaleString()}`
+      }
+    }
+
+    if (startDate || endDate) {
+      return {
+        status: 'active',
+        label: 'Currently available',
+        color: 'bg-green-100 text-green-800',
+        tooltip: endDate ? `Available until ${endDate.toLocaleString()}` : 'Always available'
+      }
+    }
+
+    return null
+  }
+
   return (
     <div className="p-8">
       <div className="mb-8">
@@ -115,6 +154,9 @@ export default function UmaReadPage() {
                     Status
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Availability
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Created
                   </th>
                   <th className="relative px-6 py-3">
@@ -149,6 +191,22 @@ export default function UmaReadPage() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       {getStatusBadge(assignment.status)}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      {(() => {
+                        const availability = getAvailabilityStatus(assignment)
+                        if (!availability) {
+                          return <span className="text-sm text-gray-500">Always available</span>
+                        }
+                        return (
+                          <span 
+                            className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${availability.color}`}
+                            title={availability.tooltip}
+                          >
+                            {availability.label}
+                          </span>
+                        )
+                      })()}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {formatDate(assignment.created_at)}
