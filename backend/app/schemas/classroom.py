@@ -1,80 +1,103 @@
-from pydantic import BaseModel, Field
-from typing import Optional, List
 from datetime import datetime
+from typing import List, Optional
 from uuid import UUID
+from pydantic import BaseModel, Field
 
-from app.models.classroom import UmaType
 
+# Base schemas
 class ClassroomBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
-    subject: Optional[str] = Field(None, max_length=255)
-    grade_level: Optional[str] = Field(None, max_length=50)
-    school_year: Optional[str] = Field(None, max_length=20)
+
 
 class ClassroomCreate(ClassroomBase):
     pass
 
+
 class ClassroomUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=255)
-    subject: Optional[str] = Field(None, max_length=255)
-    grade_level: Optional[str] = Field(None, max_length=50)
-    school_year: Optional[str] = Field(None, max_length=20)
 
-class ClassroomResponse(ClassroomBase):
+
+class ClassroomInDB(ClassroomBase):
     id: UUID
     teacher_id: UUID
+    class_code: str
     created_at: datetime
-    updated_at: datetime
-    student_count: Optional[int] = 0
-    
+    deleted_at: Optional[datetime] = None
+
     class Config:
         from_attributes = True
 
-class ClassroomStudentResponse(BaseModel):
+
+class ClassroomResponse(ClassroomInDB):
+    student_count: int = 0
+    assignment_count: int = 0
+
+
+class ClassroomDetailResponse(ClassroomResponse):
+    students: List["StudentInClassroom"] = []
+    assignments: List["AssignmentInClassroom"] = []
+
+
+# Student enrollment schemas
+class StudentInClassroom(BaseModel):
     id: UUID
-    student_id: UUID
-    first_name: str
-    last_name: str
     email: str
-    enrolled_at: datetime
-    status: str
-    
+    full_name: str
+    joined_at: datetime
+    removed_at: Optional[datetime] = None
+
     class Config:
         from_attributes = True
 
-class AssignmentBase(BaseModel):
-    title: str = Field(..., min_length=1, max_length=255)
-    uma_type: UmaType
-    classroom_id: Optional[UUID] = None
-    description: Optional[str] = None
-    content: Optional[dict] = None
+
+class JoinClassroomRequest(BaseModel):
+    class_code: str = Field(..., min_length=6, max_length=8)
+
+
+class JoinClassroomResponse(BaseModel):
+    classroom: ClassroomResponse
+    message: str
+
+
+# Assignment in classroom schemas
+class AssignmentInClassroom(BaseModel):
+    assignment_id: UUID
+    title: str
+    assignment_type: str
+    assigned_at: datetime
+    display_order: Optional[int] = None
+    start_date: Optional[datetime] = None
     due_date: Optional[datetime] = None
-    is_published: bool = False
 
-class AssignmentCreate(AssignmentBase):
-    pass
+    class Config:
+        from_attributes = True
 
-class AssignmentUpdate(BaseModel):
-    title: Optional[str] = Field(None, min_length=1, max_length=255)
-    description: Optional[str] = None
-    content: Optional[dict] = None
-    due_date: Optional[datetime] = None
-    is_published: Optional[bool] = None
 
-class AssignmentResponse(AssignmentBase):
+class UpdateClassroomAssignmentsRequest(BaseModel):
+    assignment_ids: List[UUID]
+
+
+class UpdateClassroomAssignmentsResponse(BaseModel):
+    added: List[UUID]
+    removed: List[UUID]
+    total: int
+
+
+# Teacher's available assignments
+class AvailableAssignment(BaseModel):
     id: UUID
-    teacher_id: UUID
+    assignment_title: str
+    work_title: str
+    author: str
+    assignment_type: str
+    grade_level: str
+    work_type: str
     created_at: datetime
-    updated_at: datetime
-    
+    is_assigned: bool = False
+
     class Config:
         from_attributes = True
 
-class DashboardStats(BaseModel):
-    total_classrooms: int
-    total_students: int
-    active_assignments: int
-    recent_assignments: List[AssignmentResponse]
 
-class EnrollStudentRequest(BaseModel):
-    student_email: str
+# Forward references update
+ClassroomDetailResponse.model_rebuild()

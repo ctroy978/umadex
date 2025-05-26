@@ -7,9 +7,14 @@ from uuid import UUID
 from datetime import datetime
 
 from app.core.database import get_db
-from app.models import User, UserRole
+from app.models import User, UserRole, Classroom, ClassroomStudent
+from app.models.classroom import ClassroomAssignment
 from app.models.reading import ReadingAssignment as ReadingAssignmentModel
 from app.schemas.reading import ReadingAssignment, ReadingAssignmentList
+from app.schemas.classroom import (
+    ClassroomResponse, JoinClassroomRequest, JoinClassroomResponse,
+    AssignmentInClassroom
+)
 from app.utils.deps import get_current_user
 
 router = APIRouter()
@@ -32,18 +37,13 @@ async def list_available_assignments(
     skip: int = 0,
     limit: int = 20
 ):
-    """List reading assignments available to the student based on date visibility"""
-    current_time = datetime.utcnow()
-    
+    """List all published reading assignments available to the student"""
     result = await db.execute(
         select(ReadingAssignmentModel)
         .where(
             and_(
                 ReadingAssignmentModel.status == "published",
-                ReadingAssignmentModel.deleted_at.is_(None),
-                # Date-based visibility
-                (ReadingAssignmentModel.start_date.is_(None) | (ReadingAssignmentModel.start_date <= current_time)),
-                (ReadingAssignmentModel.end_date.is_(None) | (ReadingAssignmentModel.end_date >= current_time))
+                ReadingAssignmentModel.deleted_at.is_(None)
             )
         )
         .order_by(ReadingAssignmentModel.created_at.desc())
@@ -61,8 +61,6 @@ async def get_assignment_details(
     db: AsyncSession = Depends(get_db)
 ):
     """Get a specific reading assignment with chunks and images"""
-    current_time = datetime.utcnow()
-    
     result = await db.execute(
         select(ReadingAssignmentModel)
         .options(
@@ -73,10 +71,7 @@ async def get_assignment_details(
             and_(
                 ReadingAssignmentModel.id == assignment_id,
                 ReadingAssignmentModel.status == "published",
-                ReadingAssignmentModel.deleted_at.is_(None),
-                # Date-based visibility
-                (ReadingAssignmentModel.start_date.is_(None) | (ReadingAssignmentModel.start_date <= current_time)),
-                (ReadingAssignmentModel.end_date.is_(None) | (ReadingAssignmentModel.end_date >= current_time))
+                ReadingAssignmentModel.deleted_at.is_(None)
             )
         )
     )
@@ -91,56 +86,231 @@ async def get_assignment_details(
     return assignment
 
 
-@router.get("/assignments/reading/{assignment_id}/availability")
-async def check_assignment_availability(
-    assignment_id: UUID,
+# Classroom endpoints
+
+@router.post("/join-classroom", response_model=JoinClassroomResponse)
+async def join_classroom(
+    request: JoinClassroomRequest,
     student: User = Depends(require_student),
     db: AsyncSession = Depends(get_db)
 ):
-    """Check if an assignment is currently available and when it expires"""
-    current_time = datetime.utcnow()
-    
+    """Join a classroom using a class code"""
+    # Find classroom by code
     result = await db.execute(
-        select(ReadingAssignmentModel)
-        .where(
+        select(Classroom).where(Classroom.class_code == request.class_code)
+    )
+    classroom = result.scalar_one_or_none()
+    
+    if not classroom:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Invalid class code"
+        )
+    
+    # Check if already enrolled
+    enrollment_result = await db.execute(
+        select(ClassroomStudent).where(
             and_(
-                ReadingAssignmentModel.id == assignment_id,
-                ReadingAssignmentModel.status == "published",
-                ReadingAssignmentModel.deleted_at.is_(None)
+                ClassroomStudent.classroom_id == classroom.id,
+                ClassroomStudent.student_id == student.id,
+                ClassroomStudent.removed_at.is_(None)
             )
         )
     )
-    assignment = result.scalar_one_or_none()
+    existing_enrollment = enrollment_result.scalar_one_or_none()
     
-    if not assignment:
+    if existing_enrollment:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Assignment not found"
+            status_code=status.HTTP_409_CONFLICT,
+            detail="You are already enrolled in this classroom"
         )
     
-    # Check availability
-    is_available = True
-    availability_message = "Assignment is currently available"
-    expires_in_hours = None
+    # Create enrollment
+    enrollment = ClassroomStudent(
+        classroom_id=classroom.id,
+        student_id=student.id,
+        joined_at=datetime.utcnow()
+    )
+    db.add(enrollment)
+    await db.commit()
     
-    if assignment.start_date and assignment.start_date > current_time:
-        is_available = False
-        availability_message = f"Assignment will be available from {assignment.start_date.isoformat()}"
-    elif assignment.end_date and assignment.end_date < current_time:
-        is_available = False
-        availability_message = "Assignment is no longer available"
-    elif assignment.end_date:
-        # Calculate hours until expiration
-        time_until_expiry = assignment.end_date - current_time
-        expires_in_hours = time_until_expiry.total_seconds() / 3600
+    # Get counts for response
+    student_count_result = await db.execute(
+        select(func.count(ClassroomStudent.id)).where(
+            and_(
+                ClassroomStudent.classroom_id == classroom.id,
+                ClassroomStudent.removed_at.is_(None)
+            )
+        )
+    )
+    student_count = student_count_result.scalar() or 0
+    
+    assignment_count_result = await db.execute(
+        select(func.count(ClassroomAssignment.id)).where(
+            ClassroomAssignment.classroom_id == classroom.id
+        )
+    )
+    assignment_count = assignment_count_result.scalar() or 0
+    
+    classroom_response = ClassroomResponse(
+        id=classroom.id,
+        name=classroom.name,
+        teacher_id=classroom.teacher_id,
+        class_code=classroom.class_code,
+        created_at=classroom.created_at,
+        deleted_at=classroom.deleted_at,
+        student_count=student_count,
+        assignment_count=assignment_count
+    )
+    
+    return JoinClassroomResponse(
+        classroom=classroom_response,
+        message="Successfully joined classroom"
+    )
+
+
+@router.get("/classrooms", response_model=List[ClassroomResponse])
+async def list_my_classrooms(
+    student: User = Depends(require_student),
+    db: AsyncSession = Depends(get_db)
+):
+    """List all classrooms the student is enrolled in"""
+    # Get classrooms student is enrolled in
+    result = await db.execute(
+        select(Classroom)
+        .join(ClassroomStudent)
+        .where(
+            and_(
+                ClassroomStudent.student_id == student.id,
+                ClassroomStudent.removed_at.is_(None)
+            )
+        )
+        .order_by(Classroom.created_at.desc())
+    )
+    classrooms = result.scalars().all()
+    
+    classroom_responses = []
+    for classroom in classrooms:
+        # Get student count
+        student_count_result = await db.execute(
+            select(func.count(ClassroomStudent.id)).where(
+                and_(
+                    ClassroomStudent.classroom_id == classroom.id,
+                    ClassroomStudent.removed_at.is_(None)
+                )
+            )
+        )
+        student_count = student_count_result.scalar() or 0
         
-        if expires_in_hours <= 24:
-            availability_message = f"Assignment expires in {expires_in_hours:.1f} hours"
+        # Get assignment count
+        assignment_count_result = await db.execute(
+            select(func.count(ClassroomAssignment.id)).where(
+                ClassroomAssignment.classroom_id == classroom.id
+            )
+        )
+        assignment_count = assignment_count_result.scalar() or 0
+        
+        response = ClassroomResponse(
+            id=classroom.id,
+            name=classroom.name,
+            teacher_id=classroom.teacher_id,
+            class_code=classroom.class_code,
+            created_at=classroom.created_at,
+            deleted_at=classroom.deleted_at,
+            student_count=student_count,
+            assignment_count=assignment_count
+        )
+        classroom_responses.append(response)
     
-    return {
-        "is_available": is_available,
-        "message": availability_message,
-        "start_date": assignment.start_date,
-        "end_date": assignment.end_date,
-        "expires_in_hours": expires_in_hours
-    }
+    return classroom_responses
+
+
+@router.delete("/classrooms/{classroom_id}/leave")
+async def leave_classroom(
+    classroom_id: UUID,
+    student: User = Depends(require_student),
+    db: AsyncSession = Depends(get_db)
+):
+    """Leave a classroom"""
+    # Find enrollment
+    result = await db.execute(
+        select(ClassroomStudent).where(
+            and_(
+                ClassroomStudent.classroom_id == classroom_id,
+                ClassroomStudent.student_id == student.id,
+                ClassroomStudent.removed_at.is_(None)
+            )
+        )
+    )
+    enrollment = result.scalar_one_or_none()
+    
+    if not enrollment:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="You are not enrolled in this classroom"
+        )
+    
+    # Mark as removed
+    enrollment.removed_at = datetime.utcnow()
+    await db.commit()
+    
+    return {"message": "Successfully left classroom"}
+
+
+@router.get("/classrooms/{classroom_id}/assignments", response_model=List[AssignmentInClassroom])
+async def list_classroom_assignments(
+    classroom_id: UUID,
+    student: User = Depends(require_student),
+    db: AsyncSession = Depends(get_db)
+):
+    """List assignments in a classroom the student is enrolled in"""
+    # Verify student is enrolled
+    enrollment_result = await db.execute(
+        select(ClassroomStudent).where(
+            and_(
+                ClassroomStudent.classroom_id == classroom_id,
+                ClassroomStudent.student_id == student.id,
+                ClassroomStudent.removed_at.is_(None)
+            )
+        )
+    )
+    enrollment = enrollment_result.scalar_one_or_none()
+    
+    if not enrollment:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not enrolled in this classroom"
+        )
+    
+    # Get assignments with classroom assignment details
+    result = await db.execute(
+        select(
+            ClassroomAssignment,
+            ReadingAssignmentModel
+        )
+        .join(
+            ReadingAssignmentModel,
+            ClassroomAssignment.assignment_id == ReadingAssignmentModel.id
+        )
+        .where(
+            and_(
+                ClassroomAssignment.classroom_id == classroom_id,
+                ReadingAssignmentModel.deleted_at.is_(None)
+            )
+        )
+        .order_by(ClassroomAssignment.display_order.asc(), ClassroomAssignment.assigned_at.desc())
+    )
+    
+    assignment_list = []
+    for ca, assignment in result:
+        assignment_list.append(AssignmentInClassroom(
+            assignment_id=assignment.id,
+            title=assignment.assignment_title,
+            assignment_type=assignment.assignment_type,
+            assigned_at=ca.assigned_at,
+            display_order=ca.display_order,
+            start_date=ca.start_date,
+            due_date=ca.due_date
+        ))
+    
+    return assignment_list

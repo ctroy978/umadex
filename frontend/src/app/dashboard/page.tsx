@@ -3,17 +3,35 @@
 import AuthGuard from '@/components/AuthGuard'
 import { useAuth } from '@/hooks/useAuth'
 import { useRouter } from 'next/navigation'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
+import { studentClassroomApi } from '@/lib/classroomApi'
+import { AcademicCapIcon, PlusIcon, ClipboardDocumentListIcon } from '@heroicons/react/24/outline'
+import type { Classroom } from '@/types/classroom'
 
 export default function DashboardPage() {
   const { user, logout } = useAuth()
   const router = useRouter()
+  const [classrooms, setClassrooms] = useState<Classroom[]>([])
+  const [loadingClassrooms, setLoadingClassrooms] = useState(true)
 
   useEffect(() => {
     if (user?.role === 'teacher') {
       router.push('/teacher/dashboard')
+    } else if (user?.role === 'student') {
+      fetchClassrooms()
     }
   }, [user, router])
+
+  const fetchClassrooms = async () => {
+    try {
+      const data = await studentClassroomApi.listMyClassrooms()
+      setClassrooms(data)
+    } catch (error) {
+      console.error('Failed to fetch classrooms:', error)
+    } finally {
+      setLoadingClassrooms(false)
+    }
+  }
 
   const handleLogout = async () => {
     await logout()
@@ -92,24 +110,66 @@ export default function DashboardPage() {
                   </div>
                 </div>
 
-                <div className="mt-6">
-                  <h3 className="text-sm font-medium text-gray-900 mb-2">Quick Actions</h3>
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    {user?.role === 'teacher' && (
-                      <button className="inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500">
-                        Create Assignment
-                      </button>
-                    )}
-                    {user?.role === 'student' && (
-                      <button className="inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500">
-                        View Assignments
-                      </button>
-                    )}
-                    <button className="inline-flex items-center justify-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500">
-                      Profile Settings
-                    </button>
-                  </div>
-                </div>
+                {user?.role === 'student' && (
+                  <>
+                    <div className="mt-8">
+                      <div className="flex justify-between items-center mb-4">
+                        <h3 className="text-lg font-medium text-gray-900">My Classrooms</h3>
+                        <button
+                          onClick={() => router.push('/student/join')}
+                          className="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700"
+                        >
+                          <PlusIcon className="h-4 w-4 mr-1" />
+                          Join Class
+                        </button>
+                      </div>
+
+                      {loadingClassrooms ? (
+                        <div className="flex justify-center py-8">
+                          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+                        </div>
+                      ) : classrooms.length === 0 ? (
+                        <div className="text-center py-8 bg-gray-50 rounded-lg">
+                          <AcademicCapIcon className="h-12 w-12 mx-auto mb-3 text-gray-400" />
+                          <p className="text-gray-500 mb-2">No classrooms yet</p>
+                          <p className="text-sm text-gray-400">Join a classroom using the code from your teacher</p>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                          {classrooms.map((classroom) => (
+                            <div
+                              key={classroom.id}
+                              className="bg-gray-50 p-4 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
+                              onClick={() => router.push(`/student/classrooms/${classroom.id}`)}
+                            >
+                              <h4 className="font-medium text-gray-900">{classroom.name}</h4>
+                              <p className="text-sm text-gray-500 mt-1">Code: {classroom.class_code}</p>
+                              <div className="mt-3 flex items-center text-sm text-gray-600">
+                                <ClipboardDocumentListIcon className="h-4 w-4 mr-1" />
+                                <span>{classroom.assignment_count} assignments</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="mt-6 pt-6 border-t">
+                      <h3 className="text-sm font-medium text-gray-900 mb-2">Quick Actions</h3>
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <button 
+                          onClick={() => router.push('/student/join')}
+                          className="inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+                        >
+                          Join New Classroom
+                        </button>
+                        <button className="inline-flex items-center justify-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500">
+                          Profile Settings
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           </div>

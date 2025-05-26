@@ -1,24 +1,20 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
-import api from '@/lib/api'
-import { UserGroupIcon, PlusIcon } from '@heroicons/react/24/outline'
-
-interface Classroom {
-  id: string
-  name: string
-  subject: string
-  grade_level: string
-  school_year: string
-  student_count: number
-  created_at: string
-}
+import { teacherClassroomApi } from '@/lib/classroomApi'
+import { UserGroupIcon, PlusIcon, AcademicCapIcon, ClipboardDocumentListIcon } from '@heroicons/react/24/outline'
+import type { Classroom, ClassroomCreateRequest } from '@/types/classroom'
 
 export default function ClassroomsPage() {
   const { user } = useAuth()
+  const router = useRouter()
   const [classrooms, setClassrooms] = useState<Classroom[]>([])
   const [loading, setLoading] = useState(true)
+  const [showCreateModal, setShowCreateModal] = useState(false)
+  const [createLoading, setCreateLoading] = useState(false)
+  const [classroomName, setClassroomName] = useState('')
 
   useEffect(() => {
     fetchClassrooms()
@@ -26,13 +22,38 @@ export default function ClassroomsPage() {
 
   const fetchClassrooms = async () => {
     try {
-      const response = await api.get('/v1/teacher/classrooms')
-      setClassrooms(response.data)
+      const data = await teacherClassroomApi.listClassrooms()
+      setClassrooms(data)
     } catch (error) {
       console.error('Failed to fetch classrooms:', error)
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleCreateClassroom = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!classroomName.trim()) return
+
+    setCreateLoading(true)
+    try {
+      const newClassroom = await teacherClassroomApi.createClassroom({ name: classroomName })
+      setClassrooms([newClassroom, ...classrooms])
+      setShowCreateModal(false)
+      setClassroomName('')
+      
+      // Show success message with class code
+      alert(`Classroom created successfully!\nClass Code: ${newClassroom.class_code}\n\nShare this code with your students.`)
+    } catch (error) {
+      console.error('Failed to create classroom:', error)
+      alert('Failed to create classroom. Please try again.')
+    } finally {
+      setCreateLoading(false)
+    }
+  }
+
+  const handleClassroomClick = (classroomId: string) => {
+    router.push(`/teacher/classrooms/${classroomId}`)
   }
 
   return (
@@ -43,7 +64,10 @@ export default function ClassroomsPage() {
       </div>
 
       <div className="mb-6">
-        <button className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500">
+        <button 
+          onClick={() => setShowCreateModal(true)}
+          className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+        >
           <PlusIcon className="h-5 w-5 mr-2" />
           Create New Classroom
         </button>
@@ -62,33 +86,87 @@ export default function ClassroomsPage() {
       ) : (
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {classrooms.map((classroom) => (
-            <div key={classroom.id} className="bg-white rounded-lg shadow hover:shadow-lg transition-shadow p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">{classroom.name}</h3>
-              <p className="text-gray-600 text-sm mb-4">{classroom.subject}</p>
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Grade Level:</span>
-                  <span className="text-gray-900">{classroom.grade_level || 'N/A'}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500">School Year:</span>
-                  <span className="text-gray-900">{classroom.school_year || 'N/A'}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Students:</span>
-                  <span className="text-gray-900">{classroom.student_count}</span>
+            <div 
+              key={classroom.id} 
+              className="bg-white rounded-lg shadow hover:shadow-lg transition-shadow p-6 cursor-pointer"
+              onClick={() => handleClassroomClick(classroom.id)}
+            >
+              <div className="mb-4">
+                <h3 className="text-lg font-semibold text-gray-900 mb-1">{classroom.name}</h3>
+                <div className="bg-gray-100 inline-block px-3 py-1 rounded-full">
+                  <span className="text-sm font-medium text-gray-700">Code: {classroom.class_code}</span>
                 </div>
               </div>
-              <div className="mt-4 flex space-x-2">
-                <button className="flex-1 px-3 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
-                  View Details
-                </button>
-                <button className="flex-1 px-3 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
-                  Manage
+              
+              <div className="space-y-3">
+                <div className="flex items-center text-gray-600">
+                  <UserGroupIcon className="h-5 w-5 mr-2" />
+                  <span className="text-sm">{classroom.student_count} Students</span>
+                </div>
+                <div className="flex items-center text-gray-600">
+                  <ClipboardDocumentListIcon className="h-5 w-5 mr-2" />
+                  <span className="text-sm">{classroom.assignment_count} Assignments</span>
+                </div>
+              </div>
+              
+              <div className="mt-4 pt-4 border-t">
+                <button 
+                  className="w-full px-3 py-2 text-sm font-medium text-primary-600 hover:text-primary-700"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleClassroomClick(classroom.id)
+                  }}
+                >
+                  Manage Classroom →
                 </button>
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Create Classroom Modal */}
+      {showCreateModal && (
+        <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full">
+            <h3 className="text-lg font-medium text-gray-900 mb-4">Create New Classroom</h3>
+            <form onSubmit={handleCreateClassroom}>
+              <div className="mb-4">
+                <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-2">
+                  Classroom Name
+                </label>
+                <input
+                  type="text"
+                  id="name"
+                  value={classroomName}
+                  onChange={(e) => setClassroomName(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                  placeholder="e.g., English 101, Math Period 3"
+                  required
+                  autoFocus
+                />
+              </div>
+              <div className="flex justify-end space-x-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowCreateModal(false)
+                    setClassroomName('')
+                  }}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={createLoading}
+                  className="px-4 py-2 text-sm font-medium text-white bg-primary-600 border border-transparent rounded-md hover:bg-primary-700 disabled:opacity-50"
+                >
+                  {createLoading ? 'Creating...' : 'Create Classroom'}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </div>

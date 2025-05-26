@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, BackgroundTasks, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_, update, or_
+from sqlalchemy import select, func, and_, update, or_, delete
 from typing import List, Optional, Dict
 from uuid import UUID
 import os
@@ -11,18 +11,22 @@ from app.core.database import get_db
 from app.core.config import settings
 from app.schemas.classroom import (
     ClassroomCreate, ClassroomResponse, ClassroomUpdate,
-    DashboardStats, ClassroomStudentResponse, EnrollStudentRequest
+    ClassroomDetailResponse, StudentInClassroom, AssignmentInClassroom,
+    UpdateClassroomAssignmentsRequest, UpdateClassroomAssignmentsResponse,
+    AvailableAssignment
 )
 from app.schemas.reading import (
     ReadingAssignmentCreate, ReadingAssignmentUpdate, ReadingAssignment,
     ReadingAssignmentBase, ReadingAssignmentList, MarkupValidationResult, 
     PublishResult, AssignmentImage, AssignmentImageUpload, ReadingAssignmentListResponse
 )
-from app.models import User, Classroom, ClassroomStudent, Assignment, UserRole
+from app.models import User, Classroom, ClassroomStudent, UserRole
+from app.models.classroom import ClassroomAssignment
 from app.models.reading import ReadingAssignment as ReadingAssignmentModel, AssignmentImage as AssignmentImageModel, ReadingChunk
 from app.services.reading_async import ReadingAssignmentAsyncService
 from app.services.reading import MarkupParser
 from app.services.image_processing import ImageProcessor
+from app.services import classroom as classroom_service
 from app.utils.deps import get_current_user
 
 router = APIRouter()
@@ -36,52 +40,6 @@ def require_teacher(current_user: User = Depends(get_current_user)) -> User:
         )
     return current_user
 
-@router.get("/dashboard-stats", response_model=DashboardStats)
-async def get_dashboard_stats(
-    teacher: User = Depends(require_teacher),
-    db: AsyncSession = Depends(get_db)
-):
-    """Get dashboard statistics for teacher"""
-    # Count classrooms
-    classrooms_result = await db.execute(
-        select(func.count(Classroom.id)).where(Classroom.teacher_id == teacher.id)
-    )
-    total_classrooms = classrooms_result.scalar() or 0
-    
-    # Count unique students across all classrooms
-    students_result = await db.execute(
-        select(func.count(func.distinct(ClassroomStudent.student_id)))
-        .select_from(ClassroomStudent)
-        .join(Classroom)
-        .where(Classroom.teacher_id == teacher.id)
-    )
-    total_students = students_result.scalar() or 0
-    
-    # Count active (published) assignments
-    assignments_result = await db.execute(
-        select(func.count(Assignment.id))
-        .where(and_(
-            Assignment.teacher_id == teacher.id,
-            Assignment.is_published == True
-        ))
-    )
-    active_assignments = assignments_result.scalar() or 0
-    
-    # Get recent assignments
-    recent_assignments_result = await db.execute(
-        select(Assignment)
-        .where(Assignment.teacher_id == teacher.id)
-        .order_by(Assignment.created_at.desc())
-        .limit(5)
-    )
-    recent_assignments = recent_assignments_result.scalars().all()
-    
-    return DashboardStats(
-        total_classrooms=total_classrooms,
-        total_students=total_students,
-        active_assignments=active_assignments,
-        recent_assignments=recent_assignments
-    )
 
 @router.get("/classrooms", response_model=List[ClassroomResponse])
 async def list_classrooms(
@@ -93,24 +51,50 @@ async def list_classrooms(
     """List all teacher's classrooms"""
     result = await db.execute(
         select(Classroom)
-        .where(Classroom.teacher_id == teacher.id)
+        .where(
+            and_(
+                Classroom.teacher_id == teacher.id,
+                Classroom.deleted_at.is_(None)
+            )
+        )
         .order_by(Classroom.created_at.desc())
         .offset(skip)
         .limit(limit)
     )
     classrooms = result.scalars().all()
     
-    # Add student count to each classroom
+    # Add counts to each classroom
     classroom_responses = []
     for classroom in classrooms:
-        count_result = await db.execute(
-            select(func.count(ClassroomStudent.id))
-            .where(ClassroomStudent.classroom_id == classroom.id)
+        # Count students
+        student_count_result = await db.execute(
+            select(func.count(ClassroomStudent.student_id))
+            .where(
+                and_(
+                    ClassroomStudent.classroom_id == classroom.id,
+                    ClassroomStudent.removed_at.is_(None)
+                )
+            )
         )
-        student_count = count_result.scalar() or 0
+        student_count = student_count_result.scalar() or 0
         
-        response = ClassroomResponse.model_validate(classroom)
-        response.student_count = student_count
+        # Count assignments
+        assignment_count_result = await db.execute(
+            select(func.count(ClassroomAssignment.assignment_id))
+            .where(ClassroomAssignment.classroom_id == classroom.id)
+        )
+        assignment_count = assignment_count_result.scalar() or 0
+        
+        response = ClassroomResponse(
+            id=classroom.id,
+            name=classroom.name,
+            teacher_id=classroom.teacher_id,
+            class_code=classroom.class_code,
+            created_at=classroom.created_at,
+            deleted_at=classroom.deleted_at,
+            student_count=student_count,
+            assignment_count=assignment_count
+        )
         classroom_responses.append(response)
     
     return classroom_responses
@@ -121,17 +105,37 @@ async def create_classroom(
     teacher: User = Depends(require_teacher),
     db: AsyncSession = Depends(get_db)
 ):
-    """Create a new classroom"""
+    """Create a new classroom with auto-generated class code"""
+    # Generate unique class code
+    while True:
+        class_code = classroom_service.generate_class_code()
+        existing = await db.execute(
+            select(Classroom).where(
+                and_(Classroom.class_code == class_code, Classroom.deleted_at.is_(None))
+            )
+        )
+        if not existing.scalar_one_or_none():
+            break
+    
     classroom = Classroom(
+        name=classroom_data.name,
         teacher_id=teacher.id,
-        **classroom_data.model_dump()
+        class_code=class_code
     )
     db.add(classroom)
     await db.commit()
     await db.refresh(classroom)
     
-    response = ClassroomResponse.model_validate(classroom)
-    response.student_count = 0
+    response = ClassroomResponse(
+        id=classroom.id,
+        name=classroom.name,
+        teacher_id=classroom.teacher_id,
+        class_code=classroom.class_code,
+        created_at=classroom.created_at,
+        deleted_at=classroom.deleted_at,
+        student_count=0,
+        assignment_count=0
+    )
     return response
 
 @router.put("/classrooms/{classroom_id}", response_model=ClassroomResponse)
@@ -173,27 +177,41 @@ async def update_classroom(
     )
     student_count = count_result.scalar() or 0
     
-    response = ClassroomResponse.model_validate(classroom)
-    response.student_count = student_count
+    response = ClassroomResponse(
+        id=classroom.id,
+        name=classroom.name,
+        teacher_id=classroom.teacher_id,
+        class_code=classroom.class_code,
+        created_at=classroom.created_at,
+        deleted_at=classroom.deleted_at,
+        student_count=student_count,
+        assignment_count=0
+    )
     return response
 
-@router.get("/classrooms/{classroom_id}/students", response_model=List[ClassroomStudentResponse])
-async def list_classroom_students(
+
+
+
+# New Classroom Management Endpoints
+
+@router.get("/classrooms/{classroom_id}", response_model=ClassroomDetailResponse)
+async def get_classroom_details(
     classroom_id: UUID,
     teacher: User = Depends(require_teacher),
     db: AsyncSession = Depends(get_db)
 ):
-    """List students in a classroom"""
-    # Verify classroom belongs to teacher
-    classroom_result = await db.execute(
+    """Get detailed classroom information including students and assignments"""
+    # Get classroom
+    result = await db.execute(
         select(Classroom).where(
             and_(
                 Classroom.id == classroom_id,
-                Classroom.teacher_id == teacher.id
+                Classroom.teacher_id == teacher.id,
+                Classroom.deleted_at.is_(None)
             )
         )
     )
-    classroom = classroom_result.scalar_one_or_none()
+    classroom = result.scalar_one_or_none()
     
     if not classroom:
         raise HTTPException(
@@ -201,46 +219,81 @@ async def list_classroom_students(
             detail="Classroom not found"
         )
     
-    # Get students
-    result = await db.execute(
-        select(ClassroomStudent, User)
-        .join(User, User.id == ClassroomStudent.student_id)
-        .where(ClassroomStudent.classroom_id == classroom_id)
+    # Get students with user info
+    students_result = await db.execute(
+        select(User, ClassroomStudent)
+        .join(ClassroomStudent, ClassroomStudent.student_id == User.id)
+        .where(
+            and_(
+                ClassroomStudent.classroom_id == classroom_id,
+                ClassroomStudent.removed_at.is_(None)
+            )
+        )
         .order_by(User.last_name, User.first_name)
     )
     
-    students = []
-    for enrollment, student in result:
-        students.append(ClassroomStudentResponse(
-            id=enrollment.id,
-            student_id=student.id,
-            first_name=student.first_name,
-            last_name=student.last_name,
-            email=student.email,
-            enrolled_at=enrollment.enrolled_at,
-            status=enrollment.status
+    student_list = []
+    for user, enrollment in students_result:
+        student_list.append(StudentInClassroom(
+            id=user.id,
+            email=user.email,
+            full_name=f"{user.first_name} {user.last_name}",
+            joined_at=enrollment.joined_at,
+            removed_at=enrollment.removed_at
         ))
     
-    return students
+    # Get assignments with reading assignment info
+    assignments_result = await db.execute(
+        select(ReadingAssignmentModel, ClassroomAssignment)
+        .join(ClassroomAssignment, ClassroomAssignment.assignment_id == ReadingAssignmentModel.id)
+        .where(ClassroomAssignment.classroom_id == classroom_id)
+        .order_by(ClassroomAssignment.display_order, ClassroomAssignment.assigned_at)
+    )
+    
+    assignment_list = []
+    for assignment, ca in assignments_result:
+        assignment_list.append(AssignmentInClassroom(
+            assignment_id=assignment.id,
+            title=assignment.assignment_title,
+            assignment_type=assignment.assignment_type,
+            assigned_at=ca.assigned_at,
+            display_order=ca.display_order,
+            start_date=ca.start_date,
+            due_date=ca.due_date
+        ))
+    
+    return ClassroomDetailResponse(
+        id=classroom.id,
+        name=classroom.name,
+        teacher_id=classroom.teacher_id,
+        class_code=classroom.class_code,
+        created_at=classroom.created_at,
+        deleted_at=classroom.deleted_at,
+        student_count=len(student_list),
+        assignment_count=len(assignment_list),
+        students=student_list,
+        assignments=assignment_list
+    )
 
-@router.post("/classrooms/{classroom_id}/students")
-async def enroll_student(
+
+@router.delete("/classrooms/{classroom_id}")
+async def delete_classroom(
     classroom_id: UUID,
-    request: EnrollStudentRequest,
     teacher: User = Depends(require_teacher),
     db: AsyncSession = Depends(get_db)
 ):
-    """Enroll a student in a classroom"""
-    # Verify classroom belongs to teacher
-    classroom_result = await db.execute(
+    """Soft delete a classroom"""
+    # Verify classroom exists and belongs to teacher
+    result = await db.execute(
         select(Classroom).where(
             and_(
                 Classroom.id == classroom_id,
-                Classroom.teacher_id == teacher.id
+                Classroom.teacher_id == teacher.id,
+                Classroom.deleted_at.is_(None)
             )
         )
     )
-    classroom = classroom_result.scalar_one_or_none()
+    classroom = result.scalar_one_or_none()
     
     if not classroom:
         raise HTTPException(
@@ -248,47 +301,235 @@ async def enroll_student(
             detail="Classroom not found"
         )
     
-    # Find student by email
-    student_result = await db.execute(
-        select(User).where(
+    # Soft delete the classroom
+    classroom.deleted_at = datetime.utcnow()
+    await db.commit()
+    
+    return {"message": "Classroom deleted successfully"}
+
+
+@router.delete("/classrooms/{classroom_id}/students/{student_id}")
+async def remove_student_from_classroom(
+    classroom_id: UUID,
+    student_id: UUID,
+    teacher: User = Depends(require_teacher),
+    db: AsyncSession = Depends(get_db)
+):
+    """Remove a student from a classroom"""
+    # Verify classroom exists and belongs to teacher
+    result = await db.execute(
+        select(Classroom).where(
             and_(
-                User.email == request.student_email,
-                User.role == UserRole.STUDENT
+                Classroom.id == classroom_id,
+                Classroom.teacher_id == teacher.id,
+                Classroom.deleted_at.is_(None)
             )
         )
     )
-    student = student_result.scalar_one_or_none()
+    classroom = result.scalar_one_or_none()
     
-    if not student:
+    if not classroom:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Student not found"
+            detail="Classroom not found"
         )
     
-    # Check if already enrolled
-    existing_result = await db.execute(
+    # Find and soft delete the student enrollment
+    enrollment_result = await db.execute(
         select(ClassroomStudent).where(
             and_(
                 ClassroomStudent.classroom_id == classroom_id,
-                ClassroomStudent.student_id == student.id
+                ClassroomStudent.student_id == student_id,
+                ClassroomStudent.removed_at.is_(None)
             )
         )
     )
-    if existing_result.scalar_one_or_none():
+    enrollment = enrollment_result.scalar_one_or_none()
+    
+    if not enrollment:
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Student already enrolled"
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Student not found in classroom"
         )
     
-    # Create enrollment
-    enrollment = ClassroomStudent(
-        classroom_id=classroom_id,
-        student_id=student.id
-    )
-    db.add(enrollment)
+    # Soft delete by setting removed_at
+    enrollment.removed_at = datetime.utcnow()
     await db.commit()
     
-    return {"message": "Student enrolled successfully"}
+    return {"message": "Student removed successfully"}
+
+
+@router.get("/classrooms/{classroom_id}/assignments", response_model=List[AssignmentInClassroom])
+async def list_classroom_assignments(
+    classroom_id: UUID,
+    teacher: User = Depends(require_teacher),
+    db: AsyncSession = Depends(get_db)
+):
+    """List all assignments in a classroom"""
+    # Verify classroom exists and belongs to teacher
+    result = await db.execute(
+        select(Classroom).where(
+            and_(
+                Classroom.id == classroom_id,
+                Classroom.teacher_id == teacher.id,
+                Classroom.deleted_at.is_(None)
+            )
+        )
+    )
+    classroom = result.scalar_one_or_none()
+    
+    if not classroom:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Classroom not found"
+        )
+    
+    # Get assignments with their classroom assignment data
+    assignments_result = await db.execute(
+        select(ReadingAssignmentModel, ClassroomAssignment)
+        .join(ClassroomAssignment, ClassroomAssignment.assignment_id == ReadingAssignmentModel.id)
+        .where(ClassroomAssignment.classroom_id == classroom_id)
+        .order_by(ClassroomAssignment.display_order, ClassroomAssignment.assigned_at)
+    )
+    
+    assignment_list = []
+    for assignment, ca in assignments_result:
+        assignment_list.append(AssignmentInClassroom(
+            assignment_id=assignment.id,
+            title=assignment.assignment_title,
+            assignment_type=assignment.assignment_type,
+            assigned_at=ca.assigned_at,
+            display_order=ca.display_order,
+            start_date=ca.start_date,
+            due_date=ca.due_date
+        ))
+    
+    return assignment_list
+
+
+@router.put("/classrooms/{classroom_id}/assignments", response_model=UpdateClassroomAssignmentsResponse)
+async def update_classroom_assignments(
+    classroom_id: UUID,
+    request: UpdateClassroomAssignmentsRequest,
+    teacher: User = Depends(require_teacher),
+    db: AsyncSession = Depends(get_db)
+):
+    """Update the assignments in a classroom (bulk add/remove)"""
+    # Verify classroom exists and belongs to teacher
+    result = await db.execute(
+        select(Classroom).where(
+            and_(
+                Classroom.id == classroom_id,
+                Classroom.teacher_id == teacher.id,
+                Classroom.deleted_at.is_(None)
+            )
+        )
+    )
+    classroom = result.scalar_one_or_none()
+    
+    if not classroom:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Classroom not found"
+        )
+    
+    # Get current assignments
+    current_result = await db.execute(
+        select(ClassroomAssignment.assignment_id)
+        .where(ClassroomAssignment.classroom_id == classroom_id)
+    )
+    current_assignment_ids = {row[0] for row in current_result}
+    
+    # Calculate changes
+    requested_ids = set(request.assignment_ids)
+    to_add = requested_ids - current_assignment_ids
+    to_remove = current_assignment_ids - requested_ids
+    
+    # Remove assignments
+    if to_remove:
+        from sqlalchemy import delete
+        await db.execute(
+            delete(ClassroomAssignment).where(
+                and_(
+                    ClassroomAssignment.classroom_id == classroom_id,
+                    ClassroomAssignment.assignment_id.in_(to_remove)
+                )
+            )
+        )
+    
+    # Add new assignments
+    for idx, assignment_id in enumerate(to_add):
+        # Verify assignment exists and belongs to teacher
+        assignment_result = await db.execute(
+            select(ReadingAssignmentModel).where(
+                and_(
+                    ReadingAssignmentModel.id == assignment_id,
+                    ReadingAssignmentModel.teacher_id == teacher.id,
+                    ReadingAssignmentModel.deleted_at.is_(None)
+                )
+            )
+        )
+        if assignment_result.scalar_one_or_none():
+            ca = ClassroomAssignment(
+                classroom_id=classroom_id,
+                assignment_id=assignment_id,
+                display_order=idx + len(current_assignment_ids) - len(to_remove)
+            )
+            db.add(ca)
+    
+    await db.commit()
+    
+    return UpdateClassroomAssignmentsResponse(
+        added=list(to_add),
+        removed=list(to_remove),
+        total=len(requested_ids)
+    )
+
+
+@router.get("/assignments/available", response_model=List[AvailableAssignment])
+async def get_available_assignments(
+    teacher: User = Depends(require_teacher),
+    classroom_id: Optional[UUID] = Query(None, description="Get assignment status for specific classroom"),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get all teacher's assignments with assignment status for a specific classroom"""
+    # Get all teacher's assignments
+    assignments_query = select(ReadingAssignmentModel).where(
+        and_(
+            ReadingAssignmentModel.teacher_id == teacher.id,
+            ReadingAssignmentModel.deleted_at.is_(None),
+            ReadingAssignmentModel.status == "published"
+        )
+    ).order_by(ReadingAssignmentModel.created_at.desc())
+    
+    assignments_result = await db.execute(assignments_query)
+    assignments = assignments_result.scalars().all()
+    
+    # If classroom_id provided, get assigned status
+    assigned_ids = set()
+    if classroom_id:
+        assigned_result = await db.execute(
+            select(ClassroomAssignment.assignment_id)
+            .where(ClassroomAssignment.classroom_id == classroom_id)
+        )
+        assigned_ids = {row[0] for row in assigned_result}
+    
+    # Build response
+    available_assignments = []
+    for assignment in assignments:
+        available_assignments.append(AvailableAssignment(
+            id=assignment.id,
+            assignment_title=assignment.assignment_title,
+            work_title=assignment.work_title,
+            author=assignment.author,
+            assignment_type=assignment.assignment_type,
+            grade_level=assignment.grade_level,
+            work_type=assignment.work_type,
+            created_at=assignment.created_at,
+            is_assigned=assignment.id in assigned_ids
+        ))
+    
+    return available_assignments
 
 
 # Reading Assignment Endpoints
@@ -711,12 +952,12 @@ async def update_assignment_content(
         )
         
         # Create new chunks
-        for idx, chunk_data in enumerate(chunks):
+        for idx, (chunk_content, has_important) in enumerate(chunks):
             chunk = ReadingChunk(
                 assignment_id=assignment_id,
                 chunk_order=idx + 1,
-                content=chunk_data["content"],
-                has_important_sections=chunk_data["has_important_sections"]
+                content=chunk_content,
+                has_important_sections=has_important
             )
             db.add(chunk)
         

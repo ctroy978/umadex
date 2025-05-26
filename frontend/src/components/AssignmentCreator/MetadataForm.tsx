@@ -2,7 +2,6 @@
 
 import React from 'react';
 import { ReadingAssignmentMetadata } from '@/types/reading';
-import DatePicker from 'react-datepicker';
 
 interface MetadataFormProps {
   data: Partial<ReadingAssignmentMetadata>;
@@ -80,58 +79,6 @@ export default function MetadataForm({ data, onChange, onNext }: MetadataFormPro
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             placeholder="e.g., Jane Smith"
           />
-        </div>
-
-        <div className="border-t pt-6 mt-6">
-          <h3 className="text-lg font-medium mb-4">Assignment Availability (Optional)</h3>
-          <p className="text-sm text-gray-600 mb-4">Control when students can access this assignment. Leave blank for immediate and permanent availability.</p>
-          
-          <div className="grid md:grid-cols-2 gap-6">
-            <div>
-              <label htmlFor="start_date" className="block text-sm font-medium text-gray-700 mb-2">
-                Assignment Available From
-              </label>
-              <DatePicker
-                selected={data.start_date ? new Date(data.start_date) : null}
-                onChange={(date: Date | null) => handleInputChange('start_date', date?.toISOString() || null)}
-                showTimeSelect
-                timeFormat="HH:mm"
-                timeIntervals={15}
-                dateFormat="MMMM d, yyyy h:mm aa"
-                placeholderText="Leave blank for immediate availability"
-                isClearable
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-              <p className="text-xs text-gray-500 mt-1">Students cannot see the assignment before this time</p>
-            </div>
-            
-            <div>
-              <label htmlFor="end_date" className="block text-sm font-medium text-gray-700 mb-2">
-                Assignment Available Until
-              </label>
-              <DatePicker
-                selected={data.end_date ? new Date(data.end_date) : null}
-                onChange={(date: Date | null) => handleInputChange('end_date', date?.toISOString() || null)}
-                showTimeSelect
-                timeFormat="HH:mm"
-                timeIntervals={15}
-                dateFormat="MMMM d, yyyy h:mm aa"
-                placeholderText="Leave blank to keep available indefinitely"
-                isClearable
-                minDate={data.start_date ? new Date(data.start_date) : new Date()}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-              <p className="text-xs text-gray-500 mt-1">Students cannot access the assignment after this time</p>
-            </div>
-          </div>
-          
-          {data.start_date && data.end_date && new Date(data.end_date) <= new Date(data.start_date) && (
-            <p className="text-red-600 text-sm mt-2">End date must be after start date</p>
-          )}
-        </div>
-
-        <div className="border-t pt-6 mt-6">
-          <h3 className="text-lg font-medium mb-4">Assignment Categories</h3>
         </div>
 
         <div>

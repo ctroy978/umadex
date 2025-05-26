@@ -19,8 +19,6 @@ export interface ReadingAssignmentMetadata {
     | 'Science' 
     | 'Other';
   subject: 'English Literature' | 'History' | 'Science' | 'Social Studies' | 'ESL/ELL' | 'Other';
-  start_date?: string | null;
-  end_date?: string | null;
 }
 
 export interface ReadingAssignmentCreate extends ReadingAssignmentMetadata {
@@ -37,8 +35,6 @@ export interface ReadingAssignmentUpdate {
   genre?: ReadingAssignmentMetadata['genre'];
   subject?: ReadingAssignmentMetadata['subject'];
   raw_content?: string;
-  start_date?: string | null;
-  end_date?: string | null;
 }
 
 export interface AssignmentImage {
@@ -84,8 +80,6 @@ export interface ReadingAssignment {
   status: string;
   created_at: string;
   updated_at: string;
-  start_date?: string | null;
-  end_date?: string | null;
   chunks: ReadingChunk[];
   images: AssignmentImage[];
 }
@@ -101,8 +95,6 @@ export interface ReadingAssignmentList {
   total_chunks?: number;
   created_at: string;
   updated_at: string;
-  start_date?: string | null;
-  end_date?: string | null;
   deleted_at?: string | null;
 }
 

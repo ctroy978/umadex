@@ -2,7 +2,6 @@
 
 import React, { useState } from 'react';
 import { ReadingAssignment, ReadingAssignmentUpdate } from '@/types/reading';
-import DatePicker from 'react-datepicker';
 
 interface AssignmentMetadataEditorProps {
   assignment: ReadingAssignment;
@@ -28,8 +27,6 @@ export default function AssignmentMetadataEditor({ assignment, onSave, onCancel 
     literary_form: assignment.literary_form as any,
     genre: assignment.genre as any,
     subject: assignment.subject as any,
-    start_date: assignment.start_date,
-    end_date: assignment.end_date,
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -40,16 +37,6 @@ export default function AssignmentMetadataEditor({ assignment, onSave, onCancel 
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // Validate dates
-    if (formData.start_date && formData.end_date) {
-      const start = new Date(formData.start_date);
-      const end = new Date(formData.end_date);
-      if (end <= start) {
-        setError('End date must be after start date');
-        return;
-      }
-    }
     
     setSaving(true);
     setError('');
@@ -109,58 +96,6 @@ export default function AssignmentMetadataEditor({ assignment, onSave, onCancel 
             onChange={(e) => handleInputChange('author', e.target.value)}
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />
-        </div>
-
-        <div className="border-t pt-6 mt-6">
-          <h3 className="text-lg font-medium mb-4">Assignment Availability</h3>
-          <p className="text-sm text-gray-600 mb-4">Control when students can access this assignment. Leave blank for immediate and permanent availability.</p>
-          
-          <div className="grid md:grid-cols-2 gap-6">
-            <div>
-              <label htmlFor="start_date" className="block text-sm font-medium text-gray-700 mb-2">
-                Assignment Available From
-              </label>
-              <DatePicker
-                selected={formData.start_date ? new Date(formData.start_date) : null}
-                onChange={(date: Date | null) => handleInputChange('start_date', date?.toISOString() || null)}
-                showTimeSelect
-                timeFormat="HH:mm"
-                timeIntervals={15}
-                dateFormat="MMMM d, yyyy h:mm aa"
-                placeholderText="Leave blank for immediate availability"
-                isClearable
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-              <p className="text-xs text-gray-500 mt-1">Students cannot see the assignment before this time</p>
-            </div>
-            
-            <div>
-              <label htmlFor="end_date" className="block text-sm font-medium text-gray-700 mb-2">
-                Assignment Available Until
-              </label>
-              <DatePicker
-                selected={formData.end_date ? new Date(formData.end_date) : null}
-                onChange={(date: Date | null) => handleInputChange('end_date', date?.toISOString() || null)}
-                showTimeSelect
-                timeFormat="HH:mm"
-                timeIntervals={15}
-                dateFormat="MMMM d, yyyy h:mm aa"
-                placeholderText="Leave blank to keep available indefinitely"
-                isClearable
-                minDate={formData.start_date ? new Date(formData.start_date) : new Date()}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-              <p className="text-xs text-gray-500 mt-1">Students cannot access the assignment after this time</p>
-            </div>
-          </div>
-          
-          {formData.start_date && formData.end_date && new Date(formData.end_date) <= new Date(formData.start_date) && (
-            <p className="text-red-600 text-sm mt-2">End date must be after start date</p>
-          )}
-        </div>
-
-        <div className="border-t pt-6 mt-6">
-          <h3 className="text-lg font-medium mb-4">Assignment Categories</h3>
         </div>
 
         <div>

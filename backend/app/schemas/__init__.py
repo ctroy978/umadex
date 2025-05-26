@@ -27,6 +27,20 @@ from .reading import (
     MarkupValidationResult,
     PublishResult
 )
+from .classroom import (
+    ClassroomBase,
+    ClassroomCreate,
+    ClassroomUpdate,
+    ClassroomResponse,
+    ClassroomDetailResponse,
+    StudentInClassroom,
+    JoinClassroomRequest,
+    JoinClassroomResponse,
+    AssignmentInClassroom,
+    UpdateClassroomAssignmentsRequest,
+    UpdateClassroomAssignmentsResponse,
+    AvailableAssignment
+)
 
 __all__ = [
     "OTPRequestSchema",
@@ -49,5 +63,17 @@ __all__ = [
     "ReadingAssignment",
     "ReadingAssignmentList",
     "MarkupValidationResult",
-    "PublishResult"
+    "PublishResult",
+    "ClassroomBase",
+    "ClassroomCreate",
+    "ClassroomUpdate",
+    "ClassroomResponse",
+    "ClassroomDetailResponse",
+    "StudentInClassroom",
+    "JoinClassroomRequest",
+    "JoinClassroomResponse",
+    "AssignmentInClassroom",
+    "UpdateClassroomAssignmentsRequest",
+    "UpdateClassroomAssignmentsResponse",
+    "AvailableAssignment"
 ]
