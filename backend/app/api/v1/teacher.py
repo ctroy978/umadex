@@ -22,6 +22,7 @@ from app.models import User, Classroom, ClassroomStudent, Assignment, UserRole
 from app.models.reading import ReadingAssignment as ReadingAssignmentModel, AssignmentImage as AssignmentImageModel
 from app.services.reading_async import ReadingAssignmentAsyncService
 from app.services.reading import MarkupParser
+from app.services.image_processing import ImageProcessor
 from app.utils.deps import get_current_user
 
 router = APIRouter()
@@ -337,7 +338,6 @@ async def update_reading_assignment(
 async def upload_assignment_image(
     assignment_id: UUID,
     file: UploadFile = File(...),
-    custom_name: Optional[str] = Form(None),
     teacher: User = Depends(require_teacher),
     db: AsyncSession = Depends(get_db)
 ):
@@ -359,44 +359,53 @@ async def upload_assignment_image(
             detail="Assignment not found"
         )
     
-    # Validate file type
-    allowed_types = ["image/jpeg", "image/png", "image/gif", "image/webp"]
-    if file.content_type not in allowed_types:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid file type. Allowed types: {', '.join(allowed_types)}"
-        )
-    
-    # Generate image key
+    # Check image count limit
     existing_images = await db.execute(
         select(AssignmentImageModel).where(
             AssignmentImageModel.assignment_id == assignment_id
         )
     )
     image_count = len(existing_images.scalars().all())
-    image_key = f"image-{image_count + 1}"
     
-    # Create upload directory if it doesn't exist
-    upload_dir = f"uploads/assignments/{assignment_id}"
-    os.makedirs(upload_dir, exist_ok=True)
+    if image_count >= 10:  # Max 10 images per assignment
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Maximum 10 images allowed per assignment"
+        )
     
-    # Save file
-    file_extension = file.filename.split('.')[-1]
-    file_name = f"{image_key}.{file_extension}"
-    file_path = os.path.join(upload_dir, file_name)
+    # Generate next image number
+    image_number = image_count + 1
     
-    async with aiofiles.open(file_path, 'wb') as f:
-        content = await file.read()
-        await f.write(content)
+    # Process and validate image
+    processor = ImageProcessor()
+    try:
+        image_data = await processor.validate_and_process_image(
+            file=file,
+            assignment_id=str(assignment_id),
+            image_number=image_number
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Error processing image: {str(e)}"
+        )
     
     # Create database record
     image = AssignmentImageModel(
         assignment_id=assignment_id,
-        image_key=image_key,
-        custom_name=custom_name,
-        file_url=f"/uploads/assignments/{assignment_id}/{file_name}",
-        file_size=len(content),
-        mime_type=file.content_type
+        image_tag=image_data["image_tag"],
+        image_key=image_data["image_key"],
+        file_name=image_data["file_name"],
+        original_url=image_data["original_url"],
+        display_url=image_data["display_url"],
+        thumbnail_url=image_data["thumbnail_url"],
+        image_url=image_data["image_url"],  # Backward compatibility
+        width=image_data["width"],
+        height=image_data["height"],
+        file_size=image_data["file_size"],
+        mime_type=image_data["mime_type"]
     )
     
     db.add(image)
@@ -446,10 +455,12 @@ async def delete_assignment_image(
             detail="Image not found"
         )
     
-    # Delete file
-    file_path = image.file_url.lstrip('/')
-    if os.path.exists(file_path):
-        os.remove(file_path)
+    # Delete all three image versions
+    for url_attr in ['original_url', 'display_url', 'thumbnail_url']:
+        if hasattr(image, url_attr):
+            file_path = getattr(image, url_attr).lstrip('/')
+            if os.path.exists(file_path):
+                os.remove(file_path)
     
     # Delete database record
     await db.delete(image)

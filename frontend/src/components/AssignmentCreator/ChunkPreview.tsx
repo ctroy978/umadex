@@ -2,8 +2,11 @@
 
 import React, { useMemo } from 'react';
 
+import { AssignmentImage } from '@/types/reading';
+
 interface ChunkPreviewProps {
   content: string;
+  images?: AssignmentImage[];
 }
 
 interface ParsedChunk {
@@ -12,7 +15,7 @@ interface ParsedChunk {
   order: number;
 }
 
-export default function ChunkPreview({ content }: ChunkPreviewProps) {
+export default function ChunkPreview({ content, images = [] }: ChunkPreviewProps) {
   const chunks = useMemo(() => {
     const chunkRegex = /<chunk>([\s\S]*?)<\/chunk>/g;
     const parsedChunks: ParsedChunk[] = [];
@@ -34,15 +37,31 @@ export default function ChunkPreview({ content }: ChunkPreviewProps) {
   }, [content]);
 
   const renderChunkContent = (chunkContent: string) => {
-    // Replace important tags with styled spans
+    // First, preserve line breaks by converting them to <br> tags
     let processedContent = chunkContent
+      .split('\n\n')
+      .map(paragraph => `<p>${paragraph.trim()}</p>`)
+      .join('')
+      .replace(/\n/g, '<br />');
+    
+    // Replace important tags with styled spans
+    processedContent = processedContent
       .replace(/<important>/g, '<span class="bg-yellow-200 font-semibold px-1">')
-      .replace(/<\/important>/g, '</span>')
-      .replace(/<image>(.*?)<\/image>/g, '<span class="inline-block bg-blue-100 text-blue-700 px-2 py-1 rounded text-sm">📷 $1</span>');
+      .replace(/<\/important>/g, '</span>');
+    
+    // Replace image tags with actual images with floating
+    processedContent = processedContent.replace(/<image>(.*?)<\/image>/g, (match, imageTag) => {
+      const image = images.find(img => img.image_tag === imageTag.trim());
+      if (image && image.display_url) {
+        const imageUrl = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost'}${image.display_url.startsWith('/api') ? image.display_url.replace('/api', '') : image.display_url}`;
+        return `<img src="${imageUrl}" alt="${imageTag}" class="float-right ml-4 mb-2 w-48 h-auto object-cover rounded shadow-md" title="${image.file_name || imageTag}" />`;
+      }
+      return `<span class="inline-block bg-red-100 text-red-700 px-2 py-1 rounded text-sm">⚠️ ${imageTag} not found</span>`;
+    });
     
     return (
       <div 
-        className="text-sm text-gray-700 leading-relaxed"
+        className="text-sm text-gray-700 leading-relaxed prose prose-sm max-w-none [&>p]:mb-3 [&>p:last-child]:mb-0"
         dangerouslySetInnerHTML={{ __html: processedContent }}
       />
     );
@@ -61,7 +80,7 @@ export default function ChunkPreview({ content }: ChunkPreviewProps) {
           {chunks.map((chunk, index) => (
             <div
               key={index}
-              className="border border-gray-200 rounded-lg p-3 hover:border-blue-300 transition-colors"
+              className="border border-gray-200 rounded-lg p-3 hover:border-blue-300 transition-colors overflow-hidden"
             >
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-medium text-gray-500">
@@ -74,9 +93,7 @@ export default function ChunkPreview({ content }: ChunkPreviewProps) {
                 )}
               </div>
               
-              <div className="prose prose-sm max-w-none">
-                {renderChunkContent(chunk.content)}
-              </div>
+              {renderChunkContent(chunk.content)}
             </div>
           ))}
         </div>

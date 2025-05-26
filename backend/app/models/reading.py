@@ -56,12 +56,22 @@ class AssignmentImage(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     assignment_id = Column(UUID(as_uuid=True), ForeignKey("reading_assignments.id", ondelete="CASCADE"), nullable=False)
-    image_key = Column(String(50), nullable=False)
-    custom_name = Column(String(100), nullable=True)
-    file_url = Column(Text, nullable=False)
-    file_size = Column(Integer, nullable=True)
+    image_tag = Column(String(50), nullable=True)  # 'image-1', 'image-2', etc.
+    image_key = Column(String(100), nullable=False)  # Unique file identifier
+    file_name = Column(String(255), nullable=True)  # Original filename
+    original_url = Column(Text, nullable=True)  # 2000x2000 max
+    display_url = Column(Text, nullable=True)   # 800x600 max (for student view)
+    thumbnail_url = Column(Text, nullable=True)  # 200x150 max (for teacher sidebar)
+    image_url = Column(Text, nullable=True)  # Backward compatibility (alias for display_url)
+    width = Column(Integer, nullable=True, default=0)  # Original dimensions
+    height = Column(Integer, nullable=True, default=0)
+    file_size = Column(Integer, nullable=True)  # In bytes
     mime_type = Column(String(50), nullable=True)
-    uploaded_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    uploaded_at = Column(DateTime, default=datetime.utcnow)  # Backward compatibility
+    # Legacy columns
+    file_url = Column(Text, nullable=True)
+    custom_name = Column(String(100), nullable=True)
 
     # Relationships
     assignment = relationship("ReadingAssignment", back_populates="images")

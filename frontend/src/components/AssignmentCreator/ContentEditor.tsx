@@ -66,23 +66,6 @@ export default function ContentEditor({
     }, 0);
   };
 
-  const insertImage = (imageKey: string) => {
-    const textarea = textareaRef.current;
-    if (!textarea) return;
-
-    const start = textarea.selectionStart;
-    const imageTag = `<image>${imageKey}</image>`;
-    
-    const newContent = content.substring(0, start) + imageTag + content.substring(start);
-    onChange(newContent);
-    
-    // Position cursor after the inserted tag
-    setTimeout(() => {
-      textarea.selectionStart = start + imageTag.length;
-      textarea.selectionEnd = start + imageTag.length;
-      textarea.focus();
-    }, 0);
-  };
 
   const handleValidate = async () => {
     setIsValidating(true);
@@ -210,11 +193,10 @@ export default function ContentEditor({
             images={images}
             onUpload={onImageUpload}
             onDelete={onImageDelete}
-            onInsert={insertImage}
           />
 
           {/* Chunk Preview */}
-          <ChunkPreview content={content} />
+          <ChunkPreview content={content} images={images} />
         </div>
       </div>
     </div>

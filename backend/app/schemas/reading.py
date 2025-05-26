@@ -45,12 +45,19 @@ class AssignmentImageUpload(BaseModel):
 
 class AssignmentImage(BaseModel):
     id: UUID
-    image_key: str
-    custom_name: Optional[str]
-    file_url: str
-    file_size: Optional[int]
-    mime_type: Optional[str]
-    uploaded_at: datetime
+    image_tag: str  # 'image-1', 'image-2', etc.
+    image_key: str  # Unique file identifier
+    file_name: Optional[str]  # Original filename
+    original_url: str  # 2000x2000 max
+    display_url: str   # 800x600 max
+    thumbnail_url: str  # 200x150 max
+    image_url: str  # Backward compatibility (same as display_url)
+    width: int  # Original dimensions
+    height: int
+    file_size: int  # In bytes
+    mime_type: str
+    created_at: datetime
+    uploaded_at: datetime  # Backward compatibility
 
     class Config:
         from_attributes = True

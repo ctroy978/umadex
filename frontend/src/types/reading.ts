@@ -39,12 +39,19 @@ export interface ReadingAssignmentUpdate {
 
 export interface AssignmentImage {
   id: string;
-  image_key: string;
-  custom_name?: string;
-  file_url: string;
-  file_size?: number;
-  mime_type?: string;
-  uploaded_at: string;
+  image_tag: string;  // 'image-1', 'image-2', etc.
+  image_key: string;  // Unique file identifier
+  file_name?: string;  // Original filename
+  original_url: string;  // 2000x2000 max
+  display_url: string;   // 800x600 max
+  thumbnail_url: string;  // 200x150 max
+  image_url: string;  // Backward compatibility (same as display_url)
+  width: number;  // Original dimensions
+  height: number;
+  file_size: number;  // In bytes
+  mime_type: string;
+  created_at: string;
+  uploaded_at: string;  // Backward compatibility
 }
 
 export interface ReadingChunk {

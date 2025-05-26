@@ -115,7 +115,7 @@ class ReadingAssignmentAsyncService:
             )
         )
         images = images_result.scalars().all()
-        available_images = [img.image_key for img in images]
+        available_images = [img.image_tag for img in images]
         
         return MarkupParser.validate_markup(assignment.raw_content, available_images)
     
@@ -148,7 +148,7 @@ class ReadingAssignmentAsyncService:
             )
         )
         images = images_result.scalars().all()
-        available_images = [img.image_key for img in images]
+        available_images = [img.image_tag for img in images]
         
         validation_result = MarkupParser.validate_markup(
             assignment.raw_content, 
