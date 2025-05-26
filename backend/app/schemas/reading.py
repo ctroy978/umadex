@@ -56,6 +56,8 @@ class AssignmentImage(BaseModel):
     height: int
     file_size: int  # In bytes
     mime_type: str
+    ai_description: Optional[str] = None  # AI-generated description
+    description_generated_at: Optional[datetime] = None
     created_at: datetime
     uploaded_at: datetime  # Backward compatibility
 

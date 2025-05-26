@@ -26,6 +26,7 @@ class ReadingAssignment(Base):
     images_processed = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    deleted_at = Column(DateTime, nullable=True)
 
     __table_args__ = (
         CheckConstraint(work_type.in_(['fiction', 'non-fiction'])),

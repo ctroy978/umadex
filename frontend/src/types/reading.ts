@@ -48,6 +48,8 @@ export interface AssignmentImage {
   image_url: string;  // Backward compatibility (same as display_url)
   width: number;  // Original dimensions
   height: number;
+  ai_description?: string;  // AI-generated description
+  description_generated_at?: string;
   file_size: number;  // In bytes
   mime_type: string;
   created_at: string;

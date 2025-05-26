@@ -34,7 +34,7 @@ export default function UmaReadPage() {
   }
 
   const handleEdit = (id: string) => {
-    router.push(`/teacher/assignments/reading/${id}/edit`)
+    router.push(`/teacher/assignments/${id}/edit`)
   }
 
   const formatDate = (dateString: string) => {

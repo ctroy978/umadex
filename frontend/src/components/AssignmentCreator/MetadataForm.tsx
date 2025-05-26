@@ -23,7 +23,7 @@ export default function MetadataForm({ data, onChange, onNext }: MetadataFormPro
   };
 
   const isFormValid = () => {
-    return (
+    return !!(
       data.assignment_title &&
       data.work_title &&
       data.grade_level &&

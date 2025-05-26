@@ -19,7 +19,7 @@ from app.schemas.reading import (
     PublishResult, AssignmentImage, AssignmentImageUpload
 )
 from app.models import User, Classroom, ClassroomStudent, Assignment, UserRole
-from app.models.reading import ReadingAssignment as ReadingAssignmentModel, AssignmentImage as AssignmentImageModel
+from app.models.reading import ReadingAssignment as ReadingAssignmentModel, AssignmentImage as AssignmentImageModel, ReadingChunk
 from app.services.reading_async import ReadingAssignmentAsyncService
 from app.services.reading import MarkupParser
 from app.services.image_processing import ImageProcessor
@@ -347,7 +347,8 @@ async def upload_assignment_image(
         select(ReadingAssignmentModel).where(
             and_(
                 ReadingAssignmentModel.id == assignment_id,
-                ReadingAssignmentModel.teacher_id == teacher.id
+                ReadingAssignmentModel.teacher_id == teacher.id,
+                ReadingAssignmentModel.deleted_at.is_(None)
             )
         )
     )
@@ -540,7 +541,12 @@ async def list_reading_assignments(
     """List teacher's reading assignments"""
     result = await db.execute(
         select(ReadingAssignmentModel)
-        .where(ReadingAssignmentModel.teacher_id == teacher.id)
+        .where(
+            and_(
+                ReadingAssignmentModel.teacher_id == teacher.id,
+                ReadingAssignmentModel.deleted_at.is_(None)
+            )
+        )
         .order_by(ReadingAssignmentModel.created_at.desc())
         .offset(skip)
         .limit(limit)
@@ -556,12 +562,19 @@ async def get_reading_assignment(
     db: AsyncSession = Depends(get_db)
 ):
     """Get a specific reading assignment with chunks and images"""
+    from sqlalchemy.orm import selectinload
+    
     result = await db.execute(
         select(ReadingAssignmentModel)
+        .options(
+            selectinload(ReadingAssignmentModel.chunks),
+            selectinload(ReadingAssignmentModel.images)
+        )
         .where(
             and_(
                 ReadingAssignmentModel.id == assignment_id,
-                ReadingAssignmentModel.teacher_id == teacher.id
+                ReadingAssignmentModel.teacher_id == teacher.id,
+                ReadingAssignmentModel.deleted_at.is_(None)
             )
         )
     )
@@ -574,3 +587,200 @@ async def get_reading_assignment(
         )
     
     return assignment
+
+@router.get("/assignments/{assignment_id}/edit", response_model=ReadingAssignment)
+async def get_assignment_for_edit(
+    assignment_id: UUID,
+    teacher: User = Depends(require_teacher),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get assignment with all chunks and images for editing"""
+    from sqlalchemy.orm import selectinload
+    
+    result = await db.execute(
+        select(ReadingAssignmentModel)
+        .options(
+            selectinload(ReadingAssignmentModel.chunks),
+            selectinload(ReadingAssignmentModel.images)
+        )
+        .where(
+            and_(
+                ReadingAssignmentModel.id == assignment_id,
+                ReadingAssignmentModel.teacher_id == teacher.id,
+                ReadingAssignmentModel.deleted_at.is_(None)
+            )
+        )
+    )
+    assignment = result.scalar_one_or_none()
+    
+    if not assignment:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Assignment not found"
+        )
+    
+    return assignment
+
+
+@router.put("/assignments/{assignment_id}/content")
+async def update_assignment_content(
+    assignment_id: UUID,
+    content: dict,
+    teacher: User = Depends(require_teacher),
+    db: AsyncSession = Depends(get_db)
+):
+    """Update assignment text content and re-parse chunks"""
+    # Verify assignment ownership
+    result = await db.execute(
+        select(ReadingAssignmentModel).where(
+            and_(
+                ReadingAssignmentModel.id == assignment_id,
+                ReadingAssignmentModel.teacher_id == teacher.id,
+                ReadingAssignmentModel.deleted_at.is_(None)
+            )
+        )
+    )
+    assignment = result.scalar_one_or_none()
+    
+    if not assignment:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Assignment not found"
+        )
+    
+    # Update raw content
+    assignment.raw_content = content["raw_content"]
+    assignment.updated_at = datetime.utcnow()
+    
+    # If published, re-parse chunks
+    if assignment.status == "published":
+        parser = MarkupParser()
+        chunks = parser.parse_chunks(content["raw_content"])
+        
+        # Delete existing chunks
+        from sqlalchemy import delete
+        await db.execute(
+            delete(ReadingChunk).where(ReadingChunk.assignment_id == assignment_id)
+        )
+        
+        # Create new chunks
+        for idx, chunk_data in enumerate(chunks):
+            chunk = ReadingChunk(
+                assignment_id=assignment_id,
+                chunk_order=idx + 1,
+                content=chunk_data["content"],
+                has_important_sections=chunk_data["has_important_sections"]
+            )
+            db.add(chunk)
+        
+        assignment.total_chunks = len(chunks)
+    
+    await db.commit()
+    return {"message": "Content updated successfully"}
+
+
+@router.put("/assignments/{assignment_id}/images/{image_id}/description")
+async def update_image_description(
+    assignment_id: UUID,
+    image_id: UUID,
+    description: dict,
+    teacher: User = Depends(require_teacher),
+    db: AsyncSession = Depends(get_db)
+):
+    """Update AI description for a specific image"""
+    # Verify assignment ownership
+    assignment_result = await db.execute(
+        select(ReadingAssignmentModel).where(
+            and_(
+                ReadingAssignmentModel.id == assignment_id,
+                ReadingAssignmentModel.teacher_id == teacher.id,
+                ReadingAssignmentModel.deleted_at.is_(None)
+            )
+        )
+    )
+    if not assignment_result.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Assignment not found"
+        )
+    
+    # Get and update image
+    image_result = await db.execute(
+        select(AssignmentImageModel).where(
+            and_(
+                AssignmentImageModel.id == image_id,
+                AssignmentImageModel.assignment_id == assignment_id
+            )
+        )
+    )
+    image = image_result.scalar_one_or_none()
+    
+    if not image:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Image not found"
+        )
+    
+    # Validate description length
+    new_description = description.get("ai_description", "").strip()
+    if len(new_description) < 50:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Description must be at least 50 characters"
+        )
+    
+    # Preserve JSON structure if it exists
+    import json
+    if image.ai_description:
+        try:
+            # Try to parse existing description
+            existing_data = json.loads(image.ai_description)
+            if isinstance(existing_data, dict) and 'description' in existing_data:
+                # Update only the description field, preserve other AI analysis data
+                existing_data['description'] = new_description
+                image.ai_description = json.dumps(existing_data)
+            else:
+                # Not a structured format, just save as plain text
+                image.ai_description = new_description
+        except json.JSONDecodeError:
+            # Not JSON, just save as plain text
+            image.ai_description = new_description
+    else:
+        # No existing description, save as plain text
+        image.ai_description = new_description
+    
+    image.description_generated_at = datetime.utcnow()
+    
+    await db.commit()
+    return {"message": "Image description updated successfully"}
+
+
+@router.delete("/assignments/{assignment_id}")
+async def soft_delete_assignment(
+    assignment_id: UUID,
+    teacher: User = Depends(require_teacher),
+    db: AsyncSession = Depends(get_db)
+):
+    """Soft delete an assignment"""
+    result = await db.execute(
+        select(ReadingAssignmentModel).where(
+            and_(
+                ReadingAssignmentModel.id == assignment_id,
+                ReadingAssignmentModel.teacher_id == teacher.id,
+                ReadingAssignmentModel.deleted_at.is_(None)
+            )
+        )
+    )
+    assignment = result.scalar_one_or_none()
+    
+    if not assignment:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Assignment not found"
+        )
+    
+    # Soft delete
+    assignment.deleted_at = datetime.utcnow()
+    await db.commit()
+    
+    return {"message": "Assignment deleted successfully"}

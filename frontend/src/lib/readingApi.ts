@@ -72,4 +72,28 @@ export const readingApi = {
     const response = await api.get(`/v1/teacher/assignments/reading/${id}`);
     return response.data;
   },
+
+  // Get assignment for editing
+  getAssignmentForEdit: async (id: string): Promise<ReadingAssignment> => {
+    const response = await api.get(`/v1/teacher/assignments/${id}/edit`);
+    return response.data;
+  },
+
+  // Update assignment content
+  updateAssignmentContent: async (id: string, data: { raw_content: string }): Promise<any> => {
+    const response = await api.put(`/v1/teacher/assignments/${id}/content`, data);
+    return response.data;
+  },
+
+  // Update image description
+  updateImageDescription: async (assignmentId: string, imageId: string, data: { ai_description: string }): Promise<any> => {
+    const response = await api.put(`/v1/teacher/assignments/${assignmentId}/images/${imageId}/description`, data);
+    return response.data;
+  },
+
+  // Delete assignment (soft delete)
+  deleteAssignment: async (id: string): Promise<any> => {
+    const response = await api.delete(`/v1/teacher/assignments/${id}`);
+    return response.data;
+  },
 };
