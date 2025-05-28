@@ -432,19 +432,19 @@ async def get_classroom_available_assignments(
             detail="Classroom not found"
         )
     
-    # Get currently assigned assignment IDs
+    # Get currently assigned assignments with their schedules
     assigned_result = await db.execute(
-        select(ClassroomAssignment.assignment_id).where(
+        select(ClassroomAssignment).where(
             ClassroomAssignment.classroom_id == classroom_id
         )
     )
-    assigned_ids = set(row[0] for row in assigned_result)
+    assigned_assignments = {ca.assignment_id: ca for ca in assigned_result.scalars()}
+    assigned_ids = set(assigned_assignments.keys())
     
-    # Build query for all teacher's assignments (exclude drafts by default)
+    # Build query for all teacher's assignments (include archived)
     query = select(ReadingAssignmentModel).where(
         and_(
             ReadingAssignmentModel.teacher_id == teacher.id,
-            ReadingAssignmentModel.deleted_at.is_(None),
             ReadingAssignmentModel.status == "published"
         )
     )
@@ -487,7 +487,8 @@ async def get_classroom_available_assignments(
     # Format response
     available_assignments = []
     for assignment in assignments:
-        available_assignments.append({
+        # Build assignment dict
+        assignment_dict = {
             "id": assignment.id,
             "assignment_title": assignment.assignment_title,
             "work_title": assignment.work_title,
@@ -497,8 +498,19 @@ async def get_classroom_available_assignments(
             "work_type": assignment.work_type,
             "status": assignment.status,
             "created_at": assignment.created_at,
-            "is_assigned": assignment.id in assigned_ids
-        })
+            "is_assigned": assignment.id in assigned_ids,
+            "is_archived": assignment.deleted_at is not None
+        }
+        
+        # Add schedule info if assigned
+        if assignment.id in assigned_ids:
+            ca = assigned_assignments[assignment.id]
+            assignment_dict["current_schedule"] = {
+                "start_date": ca.start_date,
+                "end_date": ca.end_date
+            }
+        
+        available_assignments.append(assignment_dict)
     
     return {
         "assignments": available_assignments,
@@ -536,15 +548,20 @@ async def update_classroom_assignments(
     
     # Get current assignments
     current_result = await db.execute(
-        select(ClassroomAssignment.assignment_id)
+        select(ClassroomAssignment)
         .where(ClassroomAssignment.classroom_id == classroom_id)
     )
-    current_assignment_ids = {row[0] for row in current_result}
+    current_assignments = {ca.assignment_id: ca for ca in current_result.scalars()}
+    current_assignment_ids = set(current_assignments.keys())
+    
+    # Build lookup map for requested assignments with their schedules
+    requested_schedules = {sched.assignment_id: sched for sched in request.assignments}
+    requested_ids = set(requested_schedules.keys())
     
     # Calculate changes
-    requested_ids = set(request.assignment_ids)
     to_add = requested_ids - current_assignment_ids
     to_remove = current_assignment_ids - requested_ids
+    to_update = requested_ids & current_assignment_ids
     
     # Remove assignments
     if to_remove:
@@ -557,6 +574,13 @@ async def update_classroom_assignments(
                 )
             )
         )
+    
+    # Update existing assignments with new dates
+    for assignment_id in to_update:
+        ca = current_assignments[assignment_id]
+        schedule = requested_schedules[assignment_id]
+        ca.start_date = schedule.start_date
+        ca.end_date = schedule.end_date
     
     # Add new assignments
     for idx, assignment_id in enumerate(to_add):
@@ -571,10 +595,13 @@ async def update_classroom_assignments(
             )
         )
         if assignment_result.scalar_one_or_none():
+            schedule = requested_schedules[assignment_id]
             ca = ClassroomAssignment(
                 classroom_id=classroom_id,
                 assignment_id=assignment_id,
-                display_order=idx + len(current_assignment_ids) - len(to_remove)
+                display_order=idx + len(current_assignment_ids) - len(to_remove),
+                start_date=schedule.start_date,
+                end_date=schedule.end_date
             )
             db.add(ca)
     

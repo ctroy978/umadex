@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { teacherClassroomApi } from '@/lib/classroomApi'
@@ -20,8 +20,11 @@ import {
 import type {
   ClassroomDetail,
   AvailableAssignment,
-  AvailableAssignmentsResponse
+  AvailableAssignmentsResponse,
+  AssignmentSchedule
 } from '@/types/classroom'
+import { format } from 'date-fns'
+import { CalendarIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline'
 
 const ASSIGNMENT_TYPES = [
   { value: 'all', label: 'All Types' },
@@ -60,6 +63,8 @@ export default function AssignmentManagementPage() {
   const [assignments, setAssignments] = useState<AvailableAssignment[]>([])
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [originalIds, setOriginalIds] = useState<Set<string>>(new Set())
+  const [schedules, setSchedules] = useState<Map<string, AssignmentSchedule>>(new Map())
+  const [originalSchedules, setOriginalSchedules] = useState<Map<string, AssignmentSchedule>>(new Map())
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [filters, setFilters] = useState({
@@ -109,12 +114,32 @@ export default function AssignmentManagementPage() {
       setAssignments(response.assignments)
       setPagination(prev => ({ ...prev, total_count: response.total_count }))
       
-      // Initialize selected IDs on first load
+      // Initialize selected IDs and schedules on first load
       if (pagination.page === 1 && filters.search === '' && filters.assignment_type === 'all' && 
           filters.grade_level === 'all' && filters.status === 'all') {
-        const assignedIds = new Set(response.assignments.filter(a => a.is_assigned).map(a => a.id))
+        const assignedAssignments = response.assignments.filter(a => a.is_assigned)
+        const assignedIds = new Set(assignedAssignments.map(a => a.id))
         setSelectedIds(assignedIds)
-        setOriginalIds(assignedIds)
+        setOriginalIds(new Set(assignedIds))
+        
+        // Initialize schedules for ALL assigned assignments
+        const initialSchedules = new Map<string, AssignmentSchedule>()
+        assignedAssignments.forEach(assignment => {
+          initialSchedules.set(assignment.id, {
+            assignment_id: assignment.id,
+            start_date: assignment.current_schedule?.start_date || null,
+            end_date: assignment.current_schedule?.end_date || null
+          })
+        })
+        setSchedules(new Map(initialSchedules))
+        setOriginalSchedules(new Map(initialSchedules))
+        
+        console.log('Assigned assignments:', assignedAssignments)
+        console.log('Initialized schedules:', Array.from(initialSchedules.entries()).map(([id, sched]) => ({
+          id,
+          start_date: sched.start_date,
+          end_date: sched.end_date
+        })))
       }
     } catch (error) {
       console.error('Failed to fetch assignments:', error)
@@ -138,40 +163,130 @@ export default function AssignmentManagementPage() {
   }
 
   const toggleAssignment = (assignmentId: string) => {
-    const newSelected = new Set(selectedIds)
-    if (newSelected.has(assignmentId)) {
-      newSelected.delete(assignmentId)
-    } else {
-      newSelected.add(assignmentId)
-    }
-    setSelectedIds(newSelected)
+    setSelectedIds(prev => {
+      const newSelected = new Set(prev)
+      if (newSelected.has(assignmentId)) {
+        newSelected.delete(assignmentId)
+      } else {
+        newSelected.add(assignmentId)
+      }
+      return newSelected
+    })
+    
+    setSchedules(prev => {
+      const newSchedules = new Map(prev)
+      if (selectedIds.has(assignmentId)) {
+        // Removing - delete schedule
+        newSchedules.delete(assignmentId)
+      } else {
+        // Adding - set schedule with existing dates if available
+        const assignment = assignments.find(a => a.id === assignmentId)
+        newSchedules.set(assignmentId, {
+          assignment_id: assignmentId,
+          start_date: assignment?.current_schedule?.start_date || null,
+          end_date: assignment?.current_schedule?.end_date || null
+        })
+      }
+      console.log('Toggle assignment schedules:', Array.from(newSchedules.entries()))
+      return newSchedules
+    })
   }
 
   const toggleAll = () => {
     const visibleIds = assignments.map(a => a.id)
     const allSelected = visibleIds.every(id => selectedIds.has(id))
     
-    const newSelected = new Set(selectedIds)
-    if (allSelected) {
-      visibleIds.forEach(id => newSelected.delete(id))
-    } else {
-      visibleIds.forEach(id => newSelected.add(id))
-    }
-    setSelectedIds(newSelected)
+    setSelectedIds(prev => {
+      const newSelected = new Set(prev)
+      if (allSelected) {
+        visibleIds.forEach(id => newSelected.delete(id))
+      } else {
+        visibleIds.forEach(id => newSelected.add(id))
+      }
+      return newSelected
+    })
+    
+    setSchedules(prev => {
+      const newSchedules = new Map(prev)
+      if (allSelected) {
+        visibleIds.forEach(id => newSchedules.delete(id))
+      } else {
+        visibleIds.forEach(id => {
+          if (!newSchedules.has(id)) {
+            const assignment = assignments.find(a => a.id === id)
+            newSchedules.set(id, {
+              assignment_id: id,
+              start_date: assignment?.current_schedule?.start_date || null,
+              end_date: assignment?.current_schedule?.end_date || null
+            })
+          }
+        })
+      }
+      return newSchedules
+    })
   }
 
   const getChanges = () => {
     const added = [...selectedIds].filter(id => !originalIds.has(id))
     const removed = [...originalIds].filter(id => !selectedIds.has(id))
-    return { added, removed, hasChanges: added.length > 0 || removed.length > 0 }
+    
+    // Check for date changes on existing assignments
+    let dateChanges = false
+    for (const id of selectedIds) {
+      if (originalIds.has(id)) {
+        const current = schedules.get(id)
+        const original = originalSchedules.get(id)
+        
+        // Compare dates, treating null/undefined as equivalent
+        const currentStart = current?.start_date || null
+        const currentEnd = current?.end_date || null
+        const originalStart = original?.start_date || null
+        const originalEnd = original?.end_date || null
+        
+        if (currentStart !== originalStart || currentEnd !== originalEnd) {
+          console.log('Date change detected:', { 
+            id, 
+            currentStart, 
+            originalStart, 
+            currentEnd, 
+            originalEnd 
+          })
+          dateChanges = true
+          break
+        }
+      }
+    }
+    
+    console.log('Changes:', { added: added.length, removed: removed.length, dateChanges })
+    return { added, removed, hasChanges: added.length > 0 || removed.length > 0 || dateChanges }
+  }
+
+  const updateSchedule = (assignmentId: string, field: 'start_date' | 'end_date', value: string | null) => {
+    console.log('Updating schedule:', { assignmentId, field, value })
+    setSchedules(prev => {
+      const newSchedules = new Map(prev)
+      const current = newSchedules.get(assignmentId) || { assignment_id: assignmentId, start_date: null, end_date: null }
+      newSchedules.set(assignmentId, {
+        ...current,
+        [field]: value
+      })
+      console.log('New schedules:', Array.from(newSchedules.entries()))
+      return newSchedules
+    })
   }
 
   const handleSave = async () => {
     setSaving(true)
     try {
-      const assignmentIds = Array.from(selectedIds)
+      const assignments = Array.from(selectedIds).map(id => {
+        const schedule = schedules.get(id) || { assignment_id: id, start_date: null, end_date: null }
+        return schedule
+      })
+      
+      console.log('Saving assignments with schedules:', assignments)
+      
       await teacherClassroomApi.updateClassroomAssignments(classroomId, {
-        assignment_ids: assignmentIds
+        assignments
       })
       router.push(`/teacher/classrooms/${classroomId}`)
     } catch (error) {
@@ -187,6 +302,7 @@ export default function AssignmentManagementPage() {
   }
 
   const { added, removed, hasChanges } = getChanges()
+  const archivedCount = assignments.filter(a => a.is_archived && selectedIds.has(a.id)).length
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -283,6 +399,21 @@ export default function AssignmentManagementPage() {
           </div>
         </div>
 
+        {/* Archived Assignments Warning */}
+        {archivedCount > 0 && (
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6 flex items-start">
+            <ExclamationTriangleIcon className="h-5 w-5 text-amber-600 mt-0.5 mr-3 flex-shrink-0" />
+            <div>
+              <p className="text-sm text-amber-800 font-medium">
+                {archivedCount} archived assignment{archivedCount > 1 ? 's' : ''} in this classroom
+              </p>
+              <p className="text-sm text-amber-700 mt-1">
+                Students can still access these until you remove them.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Assignment List */}
         <div className="bg-white rounded-lg shadow">
           {loading ? (
@@ -314,50 +445,179 @@ export default function AssignmentManagementPage() {
               
               {/* Assignment Items */}
               <div className="divide-y divide-gray-200">
-                {assignments.map((assignment) => (
-                  <label
-                    key={assignment.id}
-                    className="flex items-start p-4 hover:bg-gray-50 cursor-pointer"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selectedIds.has(assignment.id)}
-                      onChange={() => toggleAssignment(assignment.id)}
-                      className="mt-1 h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
-                    />
-                    <div className="ml-3 flex-1">
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <h4 className="text-sm font-medium text-gray-900">
-                            {assignment.assignment_title}
-                          </h4>
-                          <p className="text-sm text-gray-600 mt-1">
-                            {assignment.work_title}
-                            {assignment.author && ` • By ${assignment.author}`}
-                          </p>
-                          <p className="text-xs text-gray-500 mt-1">
-                            {assignment.assignment_type} • {assignment.grade_level} • 
-                            <span className={`ml-1 ${
-                              assignment.status === 'published' ? 'text-green-600' : 'text-amber-600'
-                            }`}>
-                              {assignment.status}
-                            </span>
-                          </p>
+                {assignments.map((assignment) => {
+                  const isSelected = selectedIds.has(assignment.id)
+                  const schedule = schedules.get(assignment.id)
+                  
+                  if (isSelected && !schedule) {
+                    console.log('Selected assignment missing schedule:', assignment.id)
+                  }
+                  
+                  return (
+                    <div
+                      key={assignment.id}
+                      className={`p-4 ${
+                        isSelected ? 'bg-blue-50 border-l-4 border-blue-500' : 'hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className="flex items-start">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleAssignment(assignment.id)}
+                          className="mt-1 h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                        />
+                        <div className="ml-3 flex-1">
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1">
+                              <h4 className="text-sm font-medium text-gray-900">
+                                {assignment.assignment_title}
+                                {assignment.is_archived && (
+                                  <span className="ml-2 text-xs text-amber-600 bg-amber-100 px-2 py-0.5 rounded">
+                                    Archived
+                                  </span>
+                                )}
+                              </h4>
+                              <p className="text-sm text-gray-600 mt-1">
+                                {assignment.work_title}
+                                {assignment.author && ` • By ${assignment.author}`}
+                              </p>
+                              <p className="text-xs text-gray-500 mt-1">
+                                {assignment.assignment_type} • {assignment.grade_level}
+                              </p>
+                              
+                              {/* Date display and inputs - only shown when selected */}
+                              {isSelected && (
+                                <div className="mt-3 space-y-2">
+                                  {/* Debug info */}
+                                  <div className="text-xs text-gray-500 bg-yellow-50 p-1 rounded">
+                                    Schedule exists: {schedule ? 'Yes' : 'No'}, 
+                                    Start: {schedule?.start_date || 'null'}, 
+                                    End: {schedule?.end_date || 'null'}
+                                  </div>
+                                  
+                                  {/* Display current dates if set */}
+                                  {(schedule?.start_date || schedule?.end_date) && (
+                                    <div className="text-sm text-gray-600 bg-gray-100 rounded p-2">
+                                      {schedule?.start_date && (
+                                        <div>Start: {format(new Date(schedule.start_date), 'MMM d, yyyy h:mm a')}</div>
+                                      )}
+                                      {schedule?.end_date && (
+                                        <div>End: {format(new Date(schedule.end_date), 'MMM d, yyyy h:mm a')}</div>
+                                      )}
+                                    </div>
+                                  )}
+                                  
+                                  {/* Date input controls */}
+                                  <div className="space-y-3">
+                                    <div className="flex items-center gap-2">
+                                      <CalendarIcon className="h-4 w-4 text-gray-400" />
+                                      <label className="text-sm text-gray-600 w-16">Start:</label>
+                                      <input
+                                        type="date"
+                                        defaultValue={schedule?.start_date ? new Date(schedule.start_date).toISOString().slice(0, 10) : ''}
+                                        onChange={(e) => {
+                                          if (e.target.value) {
+                                            // Set to beginning of day in user's timezone
+                                            const date = new Date(e.target.value + 'T00:00:00')
+                                            console.log('Start date changed:', date.toISOString())
+                                            updateSchedule(assignment.id, 'start_date', date.toISOString())
+                                          } else {
+                                            updateSchedule(assignment.id, 'start_date', null)
+                                          }
+                                        }}
+                                        className="text-sm border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                                      />
+                                      <select
+                                        defaultValue={schedule?.start_date ? new Date(schedule.start_date).getHours().toString() : '9'}
+                                        onChange={(e) => {
+                                          const existingDate = schedule?.start_date ? new Date(schedule.start_date) : new Date()
+                                          existingDate.setHours(parseInt(e.target.value), 0, 0, 0)
+                                          updateSchedule(assignment.id, 'start_date', existingDate.toISOString())
+                                        }}
+                                        className="text-sm border border-gray-300 rounded px-2 py-1"
+                                      >
+                                        {Array.from({length: 24}, (_, i) => (
+                                          <option key={i} value={i}>{i.toString().padStart(2, '0')}:00</option>
+                                        ))}
+                                      </select>
+                                      {schedule?.start_date && (
+                                        <button
+                                          onClick={() => updateSchedule(assignment.id, 'start_date', null)}
+                                          className="text-xs text-red-600 hover:text-red-800"
+                                        >
+                                          Clear
+                                        </button>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <CalendarIcon className="h-4 w-4 text-gray-400" />
+                                      <label className="text-sm text-gray-600 w-16">End:</label>
+                                      <input
+                                        type="date"
+                                        defaultValue={schedule?.end_date ? new Date(schedule.end_date).toISOString().slice(0, 10) : ''}
+                                        onChange={(e) => {
+                                          if (e.target.value) {
+                                            // Set to end of day (23:59) in user's timezone
+                                            const date = new Date(e.target.value + 'T23:59:00')
+                                            console.log('End date changed:', date.toISOString())
+                                            updateSchedule(assignment.id, 'end_date', date.toISOString())
+                                          } else {
+                                            updateSchedule(assignment.id, 'end_date', null)
+                                          }
+                                        }}
+                                        className="text-sm border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                                      />
+                                      <select
+                                        defaultValue={schedule?.end_date ? new Date(schedule.end_date).getHours().toString() : '23'}
+                                        onChange={(e) => {
+                                          const existingDate = schedule?.end_date ? new Date(schedule.end_date) : new Date()
+                                          existingDate.setHours(parseInt(e.target.value), 59, 59, 999)
+                                          updateSchedule(assignment.id, 'end_date', existingDate.toISOString())
+                                        }}
+                                        className="text-sm border border-gray-300 rounded px-2 py-1"
+                                      >
+                                        {Array.from({length: 24}, (_, i) => (
+                                          <option key={i} value={i}>{i.toString().padStart(2, '0')}:59</option>
+                                        ))}
+                                      </select>
+                                      {schedule?.end_date && (
+                                        <button
+                                          onClick={() => updateSchedule(assignment.id, 'end_date', null)}
+                                          className="text-xs text-red-600 hover:text-red-800"
+                                        >
+                                          Clear
+                                        </button>
+                                      )}
+                                    </div>
+                                    {schedule?.start_date && schedule?.end_date && 
+                                     new Date(schedule.end_date) <= new Date(schedule.start_date) && (
+                                      <span className="text-xs text-red-600">
+                                        End date must be after start date
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                            <div className="ml-4 flex-shrink-0">
+                              {assignment.is_assigned && !isSelected && (
+                                <span className="text-xs text-red-600 bg-red-50 px-2 py-1 rounded">
+                                  Will be removed
+                                </span>
+                              )}
+                              {!assignment.is_assigned && isSelected && (
+                                <span className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded">
+                                  Will be added
+                                </span>
+                              )}
+                            </div>
+                          </div>
                         </div>
-                        {assignment.is_assigned && !selectedIds.has(assignment.id) && (
-                          <span className="text-xs text-red-600 bg-red-50 px-2 py-1 rounded">
-                            Will be removed
-                          </span>
-                        )}
-                        {!assignment.is_assigned && selectedIds.has(assignment.id) && (
-                          <span className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded">
-                            Will be added
-                          </span>
-                        )}
                       </div>
                     </div>
-                  </label>
-                ))}
+                  )
+                })}
               </div>
               
               {/* Pagination */}

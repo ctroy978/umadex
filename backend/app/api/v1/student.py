@@ -4,7 +4,7 @@ from sqlalchemy import select, and_, func
 from sqlalchemy.orm import selectinload
 from typing import List
 from uuid import UUID
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.core.database import get_db
 from app.models import User, UserRole, Classroom, ClassroomStudent
@@ -282,6 +282,9 @@ async def list_classroom_assignments(
             detail="You are not enrolled in this classroom"
         )
     
+    # Get current time for date filtering
+    current_time = datetime.now(timezone.utc)
+    
     # Get assignments with classroom assignment details
     result = await db.execute(
         select(
@@ -295,7 +298,11 @@ async def list_classroom_assignments(
         .where(
             and_(
                 ClassroomAssignment.classroom_id == classroom_id,
-                ReadingAssignmentModel.deleted_at.is_(None)
+                ReadingAssignmentModel.deleted_at.is_(None),
+                # Filter by start date - either no start date or already started
+                (ClassroomAssignment.start_date.is_(None) | (ClassroomAssignment.start_date <= current_time)),
+                # Filter by end date - either no end date or not yet ended
+                (ClassroomAssignment.end_date.is_(None) | (ClassroomAssignment.end_date > current_time))
             )
         )
         .order_by(ClassroomAssignment.display_order.asc(), ClassroomAssignment.assigned_at.desc())
@@ -310,7 +317,7 @@ async def list_classroom_assignments(
             assigned_at=ca.assigned_at,
             display_order=ca.display_order,
             start_date=ca.start_date,
-            due_date=ca.due_date
+            end_date=ca.end_date
         ))
     
     return assignment_list

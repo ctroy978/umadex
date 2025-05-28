@@ -28,6 +28,8 @@ export interface AssignmentInClassroom {
   assignment_type: string;
   assigned_at: string;
   display_order?: number;
+  start_date?: string;
+  end_date?: string;
 }
 
 export interface ClassroomCreateRequest {
@@ -47,14 +49,25 @@ export interface JoinClassroomResponse {
   message: string;
 }
 
+export interface AssignmentSchedule {
+  assignment_id: string;
+  start_date?: string | null;
+  end_date?: string | null;
+}
+
 export interface UpdateClassroomAssignmentsRequest {
-  assignment_ids: string[];
+  assignments: AssignmentSchedule[];
 }
 
 export interface UpdateClassroomAssignmentsResponse {
   added: string[];
   removed: string[];
   total: number;
+}
+
+export interface CurrentSchedule {
+  start_date?: string | null;
+  end_date?: string | null;
 }
 
 export interface AvailableAssignment {
@@ -68,6 +81,8 @@ export interface AvailableAssignment {
   status: string;
   created_at: string;
   is_assigned: boolean;
+  is_archived?: boolean;
+  current_schedule?: CurrentSchedule;
 }
 
 export interface AvailableAssignmentsResponse {

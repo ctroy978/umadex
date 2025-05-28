@@ -66,13 +66,21 @@ class AssignmentInClassroom(BaseModel):
     assignment_type: str
     assigned_at: datetime
     display_order: Optional[int] = None
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
 
     class Config:
         from_attributes = True
 
 
+class AssignmentSchedule(BaseModel):
+    assignment_id: UUID
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
+
+
 class UpdateClassroomAssignmentsRequest(BaseModel):
-    assignment_ids: List[UUID]
+    assignments: List[AssignmentSchedule]
 
 
 class UpdateClassroomAssignmentsResponse(BaseModel):
@@ -82,6 +90,11 @@ class UpdateClassroomAssignmentsResponse(BaseModel):
 
 
 # Teacher's available assignments
+class CurrentSchedule(BaseModel):
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
+
+
 class AvailableAssignment(BaseModel):
     id: UUID
     assignment_title: str
@@ -92,6 +105,8 @@ class AvailableAssignment(BaseModel):
     work_type: str
     created_at: datetime
     is_assigned: bool = False
+    is_archived: bool = False
+    current_schedule: Optional[CurrentSchedule] = None
 
     class Config:
         from_attributes = True
