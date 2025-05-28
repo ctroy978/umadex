@@ -9,6 +9,7 @@ import type {
   UpdateClassroomAssignmentsRequest,
   UpdateClassroomAssignmentsResponse,
   AvailableAssignment,
+  AvailableAssignmentsResponse,
   AssignmentInClassroom,
   StudentInClassroom
 } from '@/types/classroom';
@@ -67,6 +68,21 @@ export const teacherClassroomApi = {
   async getAvailableAssignments(classroomId?: string): Promise<AvailableAssignment[]> {
     const params = classroomId ? { classroom_id: classroomId } : {};
     const response = await api.get('/v1/teacher/assignments/available', { params });
+    return response.data;
+  },
+
+  async getClassroomAvailableAssignments(
+    classroomId: string,
+    params?: {
+      search?: string;
+      assignment_type?: string;
+      grade_level?: string;
+      status?: string;
+      page?: number;
+      per_page?: number;
+    }
+  ): Promise<AvailableAssignmentsResponse> {
+    const response = await api.get(`/v1/teacher/classrooms/${classroomId}/assignments/available`, { params });
     return response.data;
   }
 };

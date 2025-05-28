@@ -28,8 +28,6 @@ export interface AssignmentInClassroom {
   assignment_type: string;
   assigned_at: string;
   display_order?: number;
-  start_date?: string;
-  due_date?: string;
 }
 
 export interface ClassroomCreateRequest {
@@ -61,8 +59,20 @@ export interface UpdateClassroomAssignmentsResponse {
 
 export interface AvailableAssignment {
   id: string;
-  title: string;
+  assignment_title: string;
+  work_title: string;
+  author: string;
   assignment_type: string;
+  grade_level: string;
+  work_type: string;
+  status: string;
   created_at: string;
   is_assigned: boolean;
+}
+
+export interface AvailableAssignmentsResponse {
+  assignments: AvailableAssignment[];
+  total_count: number;
+  page: number;
+  per_page: number;
 }

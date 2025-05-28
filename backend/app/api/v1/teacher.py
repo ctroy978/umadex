@@ -257,9 +257,7 @@ async def get_classroom_details(
             title=assignment.assignment_title,
             assignment_type=assignment.assignment_type,
             assigned_at=ca.assigned_at,
-            display_order=ca.display_order,
-            start_date=ca.start_date,
-            due_date=ca.due_date
+            display_order=ca.display_order
         ))
     
     return ClassroomDetailResponse(
@@ -399,12 +397,115 @@ async def list_classroom_assignments(
             title=assignment.assignment_title,
             assignment_type=assignment.assignment_type,
             assigned_at=ca.assigned_at,
-            display_order=ca.display_order,
-            start_date=ca.start_date,
-            due_date=ca.due_date
+            display_order=ca.display_order
         ))
     
     return assignment_list
+
+
+@router.get("/classrooms/{classroom_id}/assignments/available")
+async def get_classroom_available_assignments(
+    classroom_id: UUID,
+    teacher: User = Depends(require_teacher),
+    db: AsyncSession = Depends(get_db),
+    search: Optional[str] = Query(None),
+    assignment_type: Optional[str] = Query(None),
+    grade_level: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(20, ge=1, le=100)
+):
+    """Get all teacher's assignments with their assignment status for this classroom"""
+    # Verify classroom ownership
+    classroom_result = await db.execute(
+        select(Classroom).where(
+            and_(
+                Classroom.id == classroom_id,
+                Classroom.teacher_id == teacher.id
+            )
+        )
+    )
+    classroom = classroom_result.scalar_one_or_none()
+    if not classroom:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Classroom not found"
+        )
+    
+    # Get currently assigned assignment IDs
+    assigned_result = await db.execute(
+        select(ClassroomAssignment.assignment_id).where(
+            ClassroomAssignment.classroom_id == classroom_id
+        )
+    )
+    assigned_ids = set(row[0] for row in assigned_result)
+    
+    # Build query for all teacher's assignments (exclude drafts by default)
+    query = select(ReadingAssignmentModel).where(
+        and_(
+            ReadingAssignmentModel.teacher_id == teacher.id,
+            ReadingAssignmentModel.deleted_at.is_(None),
+            ReadingAssignmentModel.status == "published"
+        )
+    )
+    
+    # Apply filters
+    if search:
+        query = query.where(
+            or_(
+                ReadingAssignmentModel.assignment_title.ilike(f"%{search}%"),
+                ReadingAssignmentModel.work_title.ilike(f"%{search}%"),
+                ReadingAssignmentModel.author.ilike(f"%{search}%")
+            )
+        )
+    
+    if assignment_type and assignment_type != "all":
+        query = query.where(ReadingAssignmentModel.assignment_type == assignment_type)
+    
+    if grade_level and grade_level != "all":
+        query = query.where(ReadingAssignmentModel.grade_level == grade_level)
+    
+    if status:
+        if status == "assigned":
+            query = query.where(ReadingAssignmentModel.id.in_(assigned_ids))
+        elif status == "unassigned":
+            query = query.where(ReadingAssignmentModel.id.notin_(assigned_ids))
+        # Note: published filter is already applied by default
+    
+    # Get total count
+    count_result = await db.execute(select(func.count()).select_from(query.subquery()))
+    total_count = count_result.scalar() or 0
+    
+    # Apply pagination and sorting
+    query = query.order_by(ReadingAssignmentModel.created_at.desc())
+    query = query.offset((page - 1) * per_page).limit(per_page)
+    
+    # Execute query
+    result = await db.execute(query)
+    assignments = result.scalars().all()
+    
+    # Format response
+    available_assignments = []
+    for assignment in assignments:
+        available_assignments.append({
+            "id": assignment.id,
+            "assignment_title": assignment.assignment_title,
+            "work_title": assignment.work_title,
+            "author": assignment.author or "",
+            "assignment_type": assignment.assignment_type,
+            "grade_level": assignment.grade_level,
+            "work_type": assignment.work_type,
+            "status": assignment.status,
+            "created_at": assignment.created_at,
+            "is_assigned": assignment.id in assigned_ids
+        })
+    
+    return {
+        "assignments": available_assignments,
+        "total_count": total_count,
+        "page": page,
+        "per_page": per_page
+    }
 
 
 @router.put("/classrooms/{classroom_id}/assignments", response_model=UpdateClassroomAssignmentsResponse)

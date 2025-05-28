@@ -90,6 +90,7 @@ class ReadingAssignmentBase(BaseModel):
     raw_content: str
     total_chunks: Optional[int]
     status: str
+    assignment_type: str = "UMARead"
     created_at: datetime
     updated_at: datetime
 
@@ -113,6 +114,7 @@ class ReadingAssignmentList(BaseModel):
     grade_level: str
     subject: str
     status: str
+    assignment_type: str = "UMARead"
     total_chunks: Optional[int]
     created_at: datetime
     updated_at: datetime

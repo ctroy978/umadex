@@ -66,8 +66,6 @@ class AssignmentInClassroom(BaseModel):
     assignment_type: str
     assigned_at: datetime
     display_order: Optional[int] = None
-    start_date: Optional[datetime] = None
-    due_date: Optional[datetime] = None
 
     class Config:
         from_attributes = True

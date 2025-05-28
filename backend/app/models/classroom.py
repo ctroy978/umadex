@@ -51,8 +51,6 @@ class ClassroomAssignment(Base):
     assignment_id = Column(UUID(as_uuid=True), ForeignKey("reading_assignments.id"), primary_key=True)
     assigned_at = Column(DateTime(timezone=True), server_default=func.now())
     display_order = Column(Integer, nullable=True)
-    start_date = Column(DateTime(timezone=True), nullable=True)
-    due_date = Column(DateTime(timezone=True), nullable=True)
     
     # Relationships
     classroom = relationship("Classroom", back_populates="assignments")

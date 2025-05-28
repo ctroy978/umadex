@@ -15,8 +15,7 @@ import {
 import type {
   ClassroomDetail,
   StudentInClassroom,
-  AssignmentInClassroom,
-  AvailableAssignment
+  AssignmentInClassroom
 } from '@/types/classroom'
 
 export default function ClassroomDetailPage() {
@@ -28,10 +27,6 @@ export default function ClassroomDetailPage() {
   const [classroom, setClassroom] = useState<ClassroomDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<'students' | 'assignments'>('students')
-  const [showAssignmentModal, setShowAssignmentModal] = useState(false)
-  const [availableAssignments, setAvailableAssignments] = useState<AvailableAssignment[]>([])
-  const [selectedAssignments, setSelectedAssignments] = useState<Set<string>>(new Set())
-  const [updateLoading, setUpdateLoading] = useState(false)
 
   useEffect(() => {
     fetchClassroomDetails()
@@ -73,48 +68,8 @@ export default function ClassroomDetailPage() {
     }
   }
 
-  const handleManageAssignments = async () => {
-    setShowAssignmentModal(true)
-    try {
-      const assignments = await teacherClassroomApi.getAvailableAssignments(classroomId)
-      setAvailableAssignments(assignments)
-      
-      // Pre-select currently assigned items
-      const assigned = new Set(assignments.filter(a => a.is_assigned).map(a => a.id))
-      setSelectedAssignments(assigned)
-    } catch (error) {
-      console.error('Failed to fetch available assignments:', error)
-    }
-  }
-
-  const handleUpdateAssignments = async () => {
-    setUpdateLoading(true)
-    try {
-      const result = await teacherClassroomApi.updateClassroomAssignments(classroomId, {
-        assignment_ids: Array.from(selectedAssignments)
-      })
-      
-      // Refresh classroom details to get updated assignment list
-      await fetchClassroomDetails()
-      setShowAssignmentModal(false)
-      
-      alert(`Assignments updated! Added: ${result.added.length}, Removed: ${result.removed.length}`)
-    } catch (error) {
-      console.error('Failed to update assignments:', error)
-      alert('Failed to update assignments. Please try again.')
-    } finally {
-      setUpdateLoading(false)
-    }
-  }
-
-  const toggleAssignment = (assignmentId: string) => {
-    const newSelected = new Set(selectedAssignments)
-    if (newSelected.has(assignmentId)) {
-      newSelected.delete(assignmentId)
-    } else {
-      newSelected.add(assignmentId)
-    }
-    setSelectedAssignments(newSelected)
+  const handleManageAssignments = () => {
+    router.push(`/teacher/classrooms/${classroomId}/assignments`)
   }
 
   if (loading) {
@@ -250,7 +205,7 @@ export default function ClassroomDetailPage() {
               className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700"
             >
               <PlusIcon className="h-5 w-5 mr-2" />
-              Manage Assignments
+              Manage Assignments ({classroom.assignment_count})
             </button>
           </div>
 
@@ -269,11 +224,8 @@ export default function ClassroomDetailPage() {
                       <div>
                         <p className="text-sm font-medium text-gray-900">{assignment.title}</p>
                         <p className="text-sm text-gray-500 capitalize">{assignment.assignment_type}</p>
-                        <div className="text-xs text-gray-400 mt-1 space-x-4">
+                        <div className="text-xs text-gray-400 mt-1">
                           <span>Assigned {new Date(assignment.assigned_at).toLocaleDateString()}</span>
-                          {assignment.due_date && (
-                            <span>Due {new Date(assignment.due_date).toLocaleDateString()}</span>
-                          )}
                         </div>
                       </div>
                     </div>
@@ -285,58 +237,6 @@ export default function ClassroomDetailPage() {
         </div>
       )}
 
-      {/* Assignment Selection Modal */}
-      {showAssignmentModal && (
-        <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-2xl w-full max-h-[80vh] overflow-hidden flex flex-col">
-            <h3 className="text-lg font-medium text-gray-900 mb-4">Manage Assignments</h3>
-            
-            <div className="flex-1 overflow-y-auto mb-4">
-              {availableAssignments.length === 0 ? (
-                <p className="text-gray-500 text-center py-8">No assignments available</p>
-              ) : (
-                <div className="space-y-2">
-                  {availableAssignments.map((assignment) => (
-                    <label
-                      key={assignment.id}
-                      className="flex items-center p-3 border rounded-lg hover:bg-gray-50 cursor-pointer"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={selectedAssignments.has(assignment.id)}
-                        onChange={() => toggleAssignment(assignment.id)}
-                        className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
-                      />
-                      <div className="ml-3 flex-1">
-                        <p className="text-sm font-medium text-gray-900">{assignment.title}</p>
-                        <p className="text-xs text-gray-500">
-                          {assignment.assignment_type} • Created {new Date(assignment.created_at).toLocaleDateString()}
-                        </p>
-                      </div>
-                    </label>
-                  ))}
-                </div>
-              )}
-            </div>
-            
-            <div className="flex justify-end space-x-3 pt-4 border-t">
-              <button
-                onClick={() => setShowAssignmentModal(false)}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleUpdateAssignments}
-                disabled={updateLoading}
-                className="px-4 py-2 text-sm font-medium text-white bg-primary-600 border border-transparent rounded-md hover:bg-primary-700 disabled:opacity-50"
-              >
-                {updateLoading ? 'Updating...' : 'Save Changes'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

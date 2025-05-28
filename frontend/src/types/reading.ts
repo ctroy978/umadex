@@ -78,6 +78,7 @@ export interface ReadingAssignment {
   raw_content: string;
   total_chunks?: number;
   status: string;
+  assignment_type: string;
   created_at: string;
   updated_at: string;
   chunks: ReadingChunk[];
@@ -92,6 +93,7 @@ export interface ReadingAssignmentList {
   grade_level: string;
   subject: string;
   status: string;
+  assignment_type: string;
   total_chunks?: number;
   created_at: string;
   updated_at: string;

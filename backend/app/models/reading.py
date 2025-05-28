@@ -24,6 +24,7 @@ class ReadingAssignment(Base):
     total_chunks = Column(Integer, nullable=True)
     status = Column(String(50), default="draft")
     images_processed = Column(Boolean, default=False)
+    assignment_type = Column(String(50), nullable=False, default="UMARead")
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     deleted_at = Column(DateTime, nullable=True)
@@ -31,6 +32,7 @@ class ReadingAssignment(Base):
     __table_args__ = (
         CheckConstraint(work_type.in_(['fiction', 'non-fiction'])),
         CheckConstraint(literary_form.in_(['prose', 'poetry', 'drama', 'mixed'])),
+        CheckConstraint(assignment_type.in_(['UMARead', 'UMAVocab', 'UMADebate', 'UMAWrite', 'UMALecture'])),
     )
 
     # Relationships
