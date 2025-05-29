@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
+import TokenExpiryWarning from '@/components/TokenExpiryWarning'
 import { 
   HomeIcon,
   BookOpenIcon,
@@ -45,6 +46,7 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
 
   return (
     <div className="min-h-screen bg-gray-50">
+      <TokenExpiryWarning />
       <div className="flex h-screen overflow-hidden">
         {/* Sidebar */}
         <div className="hidden md:flex md:flex-shrink-0">

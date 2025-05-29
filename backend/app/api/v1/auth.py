@@ -1,8 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
+from datetime import datetime, timezone
 
 from app.core.database import get_db
-from app.schemas.auth import OTPRequestSchema, OTPVerifySchema, TokenResponse, UserResponse
+from app.schemas.auth import (
+    OTPRequestSchema, OTPVerifySchema, TokenResponse, UserResponse,
+    RefreshTokenRequest, RefreshTokenResponse
+)
 from app.schemas.user import UserCreate
 from app.services.auth import AuthService
 from app.services.email import EmailService
@@ -58,7 +62,7 @@ async def verify_otp(
     request: OTPVerifySchema,
     db: AsyncSession = Depends(get_db)
 ):
-    """Verify OTP and create session"""
+    """Verify OTP and create session with JWT tokens"""
     # Verify OTP
     if not await AuthService.verify_otp(request.email, request.otp_code):
         raise HTTPException(
@@ -76,24 +80,69 @@ async def verify_otp(
             detail="User registration required. Please request OTP with registration details."
         )
     
-    # Create session
-    token = await AuthService.create_session(db, user.id)
+    # Create JWT token pair
+    access_token, refresh_token, access_expiry, refresh_expiry = await AuthService.create_token_pair_for_user(
+        db, user.id
+    )
+    
+    # Calculate expires_in (seconds)
+    expires_in = int((access_expiry - datetime.now(timezone.utc)).total_seconds())
     
     return TokenResponse(
-        access_token=token,
+        access_token=access_token,
+        refresh_token=refresh_token,
+        expires_in=expires_in,
         user=UserResponse.model_validate(user)
+    )
+
+@router.post("/refresh", response_model=RefreshTokenResponse)
+async def refresh_token(
+    request: RefreshTokenRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """Exchange refresh token for new access token"""
+    result = await AuthService.refresh_access_token(db, request.refresh_token)
+    
+    if not result:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired refresh token"
+        )
+    
+    access_token, access_expiry = result
+    expires_in = int((access_expiry - datetime.now(timezone.utc)).total_seconds())
+    
+    return RefreshTokenResponse(
+        access_token=access_token,
+        expires_in=expires_in
     )
 
 @router.post("/logout", status_code=status.HTTP_200_OK)
 async def logout(
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Logout current user"""
-    # Get token from dependency injection context
-    # In a real app, we'd extract this from the request
-    # For now, we'll invalidate all sessions for the user
+    """Logout current user and revoke refresh token if provided"""
+    # Try to get refresh token from request body
+    try:
+        body = await request.json()
+        refresh_token = body.get("refresh_token")
+        if refresh_token:
+            await AuthService.revoke_refresh_token(db, refresh_token)
+    except:
+        pass  # No body or invalid JSON, that's OK
+    
     return {"message": "Logged out successfully"}
+
+@router.delete("/sessions", status_code=status.HTTP_200_OK)
+async def revoke_all_sessions(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Revoke all refresh tokens for the current user"""
+    await AuthService.revoke_all_user_tokens(db, current_user.id)
+    return {"message": "All sessions revoked successfully"}
 
 @router.get("/me", response_model=UserResponse)
 async def get_current_user_info(

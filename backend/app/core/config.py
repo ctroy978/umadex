@@ -12,7 +12,8 @@ class Settings(BaseSettings):
     # Security
     SECRET_KEY: str = secrets.token_urlsafe(32)
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 15  # Default to 15 minutes
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 7  # Default to 7 days
     
     # Email
     SMTP_HOST: str = "localhost"
@@ -40,5 +41,19 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = True
+    
+    @property
+    def computed_access_token_expire_minutes(self) -> int:
+        """Get access token expiration based on environment"""
+        if self.ENVIRONMENT == "development":
+            return 15  # 15 minutes for development
+        return 60  # 1 hour for production
+    
+    @property
+    def computed_refresh_token_expire_days(self) -> int:
+        """Get refresh token expiration based on environment"""
+        if self.ENVIRONMENT == "development":
+            return 7  # 7 days for development
+        return 30  # 30 days for production
 
 settings = Settings()

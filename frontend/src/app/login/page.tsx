@@ -61,7 +61,11 @@ export default function LoginPage() {
         otp_code: data.otp_code
       })
       setUser(response.user)
-      router.push('/dashboard')
+      
+      // Small delay to ensure token is saved
+      setTimeout(() => {
+        router.push('/dashboard')
+      }, 100)
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Invalid OTP')
     } finally {

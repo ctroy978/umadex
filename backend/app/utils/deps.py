@@ -15,7 +15,13 @@ async def get_current_user(
 ) -> User:
     """Get current authenticated user"""
     token = credentials.credentials
-    user = await AuthService.get_user_by_token(db, token)
+    
+    # First try JWT token
+    user = await AuthService.get_user_by_jwt_token(db, token)
+    
+    # Fall back to session token for backward compatibility
+    if not user:
+        user = await AuthService.get_user_by_token(db, token)
     
     if not user:
         raise HTTPException(
@@ -38,7 +44,13 @@ async def get_current_user_optional(
         return None
     
     token = credentials.credentials
-    user = await AuthService.get_user_by_token(db, token)
+    
+    # First try JWT token
+    user = await AuthService.get_user_by_jwt_token(db, token)
+    
+    # Fall back to session token for backward compatibility
+    if not user:
+        user = await AuthService.get_user_by_token(db, token)
     
     if user:
         await set_rls_context(db, str(user.id), user.email, user.is_admin)
