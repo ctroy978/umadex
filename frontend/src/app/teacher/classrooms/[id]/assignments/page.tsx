@@ -134,12 +134,6 @@ export default function AssignmentManagementPage() {
         setSchedules(new Map(initialSchedules))
         setOriginalSchedules(new Map(initialSchedules))
         
-        console.log('Assigned assignments:', assignedAssignments)
-        console.log('Initialized schedules:', Array.from(initialSchedules.entries()).map(([id, sched]) => ({
-          id,
-          start_date: sched.start_date,
-          end_date: sched.end_date
-        })))
       }
     } catch (error) {
       console.error('Failed to fetch assignments:', error)
@@ -187,7 +181,6 @@ export default function AssignmentManagementPage() {
           end_date: assignment?.current_schedule?.end_date || null
         })
       }
-      console.log('Toggle assignment schedules:', Array.from(newSchedules.entries()))
       return newSchedules
     })
   }
@@ -244,25 +237,16 @@ export default function AssignmentManagementPage() {
         const originalEnd = original?.end_date || null
         
         if (currentStart !== originalStart || currentEnd !== originalEnd) {
-          console.log('Date change detected:', { 
-            id, 
-            currentStart, 
-            originalStart, 
-            currentEnd, 
-            originalEnd 
-          })
           dateChanges = true
           break
         }
       }
     }
     
-    console.log('Changes:', { added: added.length, removed: removed.length, dateChanges })
     return { added, removed, hasChanges: added.length > 0 || removed.length > 0 || dateChanges }
   }
 
   const updateSchedule = (assignmentId: string, field: 'start_date' | 'end_date', value: string | null) => {
-    console.log('Updating schedule:', { assignmentId, field, value })
     setSchedules(prev => {
       const newSchedules = new Map(prev)
       const current = newSchedules.get(assignmentId) || { assignment_id: assignmentId, start_date: null, end_date: null }
@@ -270,7 +254,6 @@ export default function AssignmentManagementPage() {
         ...current,
         [field]: value
       })
-      console.log('New schedules:', Array.from(newSchedules.entries()))
       return newSchedules
     })
   }
@@ -278,15 +261,17 @@ export default function AssignmentManagementPage() {
   const handleSave = async () => {
     setSaving(true)
     try {
-      const assignments = Array.from(selectedIds).map(id => {
+      const assignmentsToSave = Array.from(selectedIds).map(id => {
         const schedule = schedules.get(id) || { assignment_id: id, start_date: null, end_date: null }
-        return schedule
+        const assignment = assignments.find(a => a.id === id)
+        return {
+          ...schedule,
+          assignment_type: assignment?.item_type || 'reading'
+        }
       })
       
-      console.log('Saving assignments with schedules:', assignments)
-      
-      await teacherClassroomApi.updateClassroomAssignments(classroomId, {
-        assignments
+      await teacherClassroomApi.updateClassroomAssignmentsAll(classroomId, {
+        assignments: assignmentsToSave
       })
       router.push(`/teacher/classrooms/${classroomId}`)
     } catch (error) {
@@ -449,9 +434,6 @@ export default function AssignmentManagementPage() {
                   const isSelected = selectedIds.has(assignment.id)
                   const schedule = schedules.get(assignment.id)
                   
-                  if (isSelected && !schedule) {
-                    console.log('Selected assignment missing schedule:', assignment.id)
-                  }
                   
                   return (
                     <div
@@ -481,20 +463,16 @@ export default function AssignmentManagementPage() {
                               <p className="text-sm text-gray-600 mt-1">
                                 {assignment.work_title}
                                 {assignment.author && ` • By ${assignment.author}`}
+                                {assignment.word_count && ` • ${assignment.word_count} words`}
                               </p>
                               <p className="text-xs text-gray-500 mt-1">
                                 {assignment.assignment_type} • {assignment.grade_level}
+                                {assignment.item_type === 'vocabulary' && ' • Vocabulary List'}
                               </p>
                               
                               {/* Date display and inputs - only shown when selected */}
                               {isSelected && (
                                 <div className="mt-3 space-y-2">
-                                  {/* Debug info */}
-                                  <div className="text-xs text-gray-500 bg-yellow-50 p-1 rounded">
-                                    Schedule exists: {schedule ? 'Yes' : 'No'}, 
-                                    Start: {schedule?.start_date || 'null'}, 
-                                    End: {schedule?.end_date || 'null'}
-                                  </div>
                                   
                                   {/* Display current dates if set */}
                                   {(schedule?.start_date || schedule?.end_date) && (
@@ -520,7 +498,6 @@ export default function AssignmentManagementPage() {
                                           if (e.target.value) {
                                             // Set to beginning of day in user's timezone
                                             const date = new Date(e.target.value + 'T00:00:00')
-                                            console.log('Start date changed:', date.toISOString())
                                             updateSchedule(assignment.id, 'start_date', date.toISOString())
                                           } else {
                                             updateSchedule(assignment.id, 'start_date', null)
@@ -560,7 +537,6 @@ export default function AssignmentManagementPage() {
                                           if (e.target.value) {
                                             // Set to end of day (23:59) in user's timezone
                                             const date = new Date(e.target.value + 'T23:59:00')
-                                            console.log('End date changed:', date.toISOString())
                                             updateSchedule(assignment.id, 'end_date', date.toISOString())
                                           } else {
                                             updateSchedule(assignment.id, 'end_date', null)

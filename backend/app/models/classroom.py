@@ -44,11 +44,14 @@ class ClassroomStudent(Base):
 class ClassroomAssignment(Base):
     __tablename__ = "classroom_assignments"
     __table_args__ = (
-        UniqueConstraint('classroom_id', 'assignment_id', name='_classroom_assignment_uc'),
+        UniqueConstraint('classroom_id', 'assignment_id', 'vocabulary_list_id', name='_classroom_assignment_uc'),
     )
     
-    classroom_id = Column(UUID(as_uuid=True), ForeignKey("classrooms.id"), primary_key=True)
-    assignment_id = Column(UUID(as_uuid=True), ForeignKey("reading_assignments.id"), primary_key=True)
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    classroom_id = Column(UUID(as_uuid=True), ForeignKey("classrooms.id"), nullable=False)
+    assignment_id = Column(UUID(as_uuid=True), ForeignKey("reading_assignments.id"), nullable=True)
+    vocabulary_list_id = Column(UUID(as_uuid=True), ForeignKey("vocabulary_lists.id"), nullable=True)
+    assignment_type = Column(String(50), nullable=False, default="reading")
     assigned_at = Column(DateTime(timezone=True), server_default=func.now())
     display_order = Column(Integer, nullable=True)
     start_date = Column(DateTime(timezone=True), nullable=True)
@@ -57,3 +60,4 @@ class ClassroomAssignment(Base):
     # Relationships
     classroom = relationship("Classroom", back_populates="assignments")
     assignment = relationship("ReadingAssignment")
+    vocabulary_list = relationship("VocabularyList")

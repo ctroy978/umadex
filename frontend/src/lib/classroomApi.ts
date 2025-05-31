@@ -53,7 +53,7 @@ export const teacherClassroomApi = {
 
   // Assignment management
   async getClassroomAssignments(classroomId: string): Promise<AssignmentInClassroom[]> {
-    const response = await api.get(`/v1/teacher/classrooms/${classroomId}/assignments`);
+    const response = await api.get(`/v1/teacher/classrooms/${classroomId}/assignments/all`);
     return response.data;
   },
 
@@ -82,7 +82,15 @@ export const teacherClassroomApi = {
       per_page?: number;
     }
   ): Promise<AvailableAssignmentsResponse> {
-    const response = await api.get(`/v1/teacher/classrooms/${classroomId}/assignments/available`, { params });
+    const response = await api.get(`/v1/teacher/classrooms/${classroomId}/assignments/available/all`, { params });
+    return response.data;
+  },
+
+  async updateClassroomAssignmentsAll(
+    classroomId: string,
+    data: UpdateClassroomAssignmentsRequest
+  ): Promise<UpdateClassroomAssignmentsResponse> {
+    const response = await api.put(`/v1/teacher/classrooms/${classroomId}/assignments/all`, data);
     return response.data;
   }
 };

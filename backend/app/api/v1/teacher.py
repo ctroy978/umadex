@@ -31,11 +31,19 @@ from app.utils.deps import get_current_user
 
 # Import vocabulary router
 from . import vocabulary
+from . import teacher_classroom_assignments
+from . import teacher_classroom_detail
 
 router = APIRouter()
 
 # Include vocabulary routes
 router.include_router(vocabulary.router, tags=["vocabulary"])
+
+# Include unified classroom assignment routes
+router.include_router(teacher_classroom_assignments.router, tags=["classroom-assignments"])
+
+# Include updated classroom detail routes
+router.include_router(teacher_classroom_detail.router, tags=["classroom-detail"])
 
 def require_teacher(current_user: User = Depends(get_current_user)) -> User:
     """Require the current user to be a teacher"""
@@ -248,23 +256,58 @@ async def get_classroom_details(
             removed_at=enrollment.removed_at
         ))
     
-    # Get assignments with reading assignment info
-    assignments_result = await db.execute(
+    # Get all classroom assignments (both reading and vocabulary)
+    assignment_list = []
+    
+    # Get reading assignments
+    reading_assignments_result = await db.execute(
         select(ReadingAssignmentModel, ClassroomAssignment)
-        .join(ClassroomAssignment, ClassroomAssignment.assignment_id == ReadingAssignmentModel.id)
+        .join(ClassroomAssignment, 
+              and_(
+                  ClassroomAssignment.assignment_id == ReadingAssignmentModel.id,
+                  ClassroomAssignment.assignment_type == "reading"
+              ))
         .where(ClassroomAssignment.classroom_id == classroom_id)
         .order_by(ClassroomAssignment.display_order, ClassroomAssignment.assigned_at)
     )
     
-    assignment_list = []
-    for assignment, ca in assignments_result:
+    for assignment, ca in reading_assignments_result:
         assignment_list.append(AssignmentInClassroom(
             assignment_id=assignment.id,
             title=assignment.assignment_title,
             assignment_type=assignment.assignment_type,
             assigned_at=ca.assigned_at,
-            display_order=ca.display_order
+            display_order=ca.display_order,
+            start_date=ca.start_date,
+            end_date=ca.end_date
         ))
+    
+    # Get vocabulary assignments
+    from app.models.vocabulary import VocabularyList
+    vocab_assignments_result = await db.execute(
+        select(VocabularyList, ClassroomAssignment)
+        .join(ClassroomAssignment,
+              and_(
+                  ClassroomAssignment.vocabulary_list_id == VocabularyList.id,
+                  ClassroomAssignment.assignment_type == "vocabulary"
+              ))
+        .where(ClassroomAssignment.classroom_id == classroom_id)
+        .order_by(ClassroomAssignment.display_order, ClassroomAssignment.assigned_at)
+    )
+    
+    for vocab_list, ca in vocab_assignments_result:
+        assignment_list.append(AssignmentInClassroom(
+            assignment_id=vocab_list.id,
+            title=vocab_list.title,
+            assignment_type="UMAVocab",
+            assigned_at=ca.assigned_at,
+            display_order=ca.display_order,
+            start_date=ca.start_date,
+            end_date=ca.end_date
+        ))
+    
+    # Sort all assignments by display order
+    assignment_list.sort(key=lambda x: (x.display_order or float('inf'), x.assigned_at))
     
     return ClassroomDetailResponse(
         id=classroom.id,

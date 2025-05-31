@@ -218,8 +218,8 @@ export default function ClassroomDetailPage() {
           ) : (
             <div className="bg-white shadow overflow-hidden sm:rounded-md">
               <ul className="divide-y divide-gray-200">
-                {classroom.assignments.map((assignment) => (
-                  <li key={assignment.assignment_id} className="px-6 py-4">
+                {classroom.assignments.map((assignment, index) => (
+                  <li key={`${assignment.assignment_id}-${index}`} className="px-6 py-4">
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="text-sm font-medium text-gray-900">{assignment.title}</p>

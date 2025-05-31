@@ -51,6 +51,7 @@ export interface JoinClassroomResponse {
 
 export interface AssignmentSchedule {
   assignment_id: string;
+  assignment_type?: string;  // "reading" or "vocabulary"
   start_date?: string | null;
   end_date?: string | null;
 }
@@ -83,6 +84,8 @@ export interface AvailableAssignment {
   is_assigned: boolean;
   is_archived?: boolean;
   current_schedule?: CurrentSchedule;
+  item_type?: string;  // "reading" or "vocabulary"
+  word_count?: number;  // For vocabulary lists
 }
 
 export interface AvailableAssignmentsResponse {
