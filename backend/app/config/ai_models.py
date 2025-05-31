@@ -22,10 +22,10 @@ QUESTION_GENERATION_MODEL = os.getenv("QUESTION_GENERATION_MODEL", "claude-3-5-s
 # for comprehension and provides feedback
 ANSWER_EVALUATION_MODEL = os.getenv("ANSWER_EVALUATION_MODEL", "claude-3-5-sonnet-20241022")
 
-# Vocabulary Extraction AI
-# Used in: UMAVocab module - identifies challenging vocabulary from texts
-# and creates contextual definitions
-VOCAB_EXTRACTION_MODEL = os.getenv("VOCAB_EXTRACTION_MODEL", "gpt-4-turbo")  # placeholder for future
+# Vocabulary Definition AI
+# Used in: UMAVocab module - generates grade-appropriate definitions
+# and example sentences for vocabulary words
+VOCABULARY_DEFINITION_MODEL = os.getenv("VOCABULARY_DEFINITION_MODEL", "gemini-2.0-flash-exp")
 
 # Debate Prompt Generation AI
 # Used in: UMADebate module - creates debate topics and supporting materials
@@ -62,7 +62,7 @@ def get_model_config(model_type: str) -> Optional[str]:
         'image_analysis': IMAGE_ANALYSIS_MODEL,
         'question_generation': QUESTION_GENERATION_MODEL,
         'answer_evaluation': ANSWER_EVALUATION_MODEL,
-        'vocab_extraction': VOCAB_EXTRACTION_MODEL,
+        'vocabulary_definition': VOCABULARY_DEFINITION_MODEL,
         'debate_generation': DEBATE_GENERATION_MODEL,
         'speech_analysis': SPEECH_ANALYSIS_MODEL,
         'writing_assistance': WRITING_ASSISTANCE_MODEL,
@@ -83,7 +83,7 @@ def get_all_models() -> dict:
         'image_analysis': IMAGE_ANALYSIS_MODEL,
         'question_generation': QUESTION_GENERATION_MODEL,
         'answer_evaluation': ANSWER_EVALUATION_MODEL,
-        'vocab_extraction': VOCAB_EXTRACTION_MODEL,
+        'vocabulary_definition': VOCABULARY_DEFINITION_MODEL,
         'debate_generation': DEBATE_GENERATION_MODEL,
         'speech_analysis': SPEECH_ANALYSIS_MODEL,
         'writing_assistance': WRITING_ASSISTANCE_MODEL,

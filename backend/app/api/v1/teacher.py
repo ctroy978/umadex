@@ -29,7 +29,13 @@ from app.services.image_processing import ImageProcessor
 from app.services import classroom as classroom_service
 from app.utils.deps import get_current_user
 
+# Import vocabulary router
+from . import vocabulary
+
 router = APIRouter()
+
+# Include vocabulary routes
+router.include_router(vocabulary.router, tags=["vocabulary"])
 
 def require_teacher(current_user: User = Depends(get_current_user)) -> User:
     """Require the current user to be a teacher"""
