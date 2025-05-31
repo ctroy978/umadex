@@ -1,5 +1,5 @@
-from sqlalchemy import Column, String, ForeignKey, DateTime, Integer, UniqueConstraint
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Column, String, ForeignKey, DateTime, Integer, UniqueConstraint, Text
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 import uuid
@@ -61,3 +61,32 @@ class ClassroomAssignment(Base):
     classroom = relationship("Classroom", back_populates="assignments")
     assignment = relationship("ReadingAssignment")
     vocabulary_list = relationship("VocabularyList")
+
+
+class StudentAssignment(Base):
+    __tablename__ = "student_assignments"
+    __table_args__ = (
+        UniqueConstraint('student_id', 'assignment_id', 'classroom_assignment_id', name='_student_assignment_uc'),
+    )
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    student_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    assignment_id = Column(UUID(as_uuid=True), nullable=False)  # Generic assignment reference
+    classroom_assignment_id = Column(Integer, ForeignKey("classroom_assignments.id"), nullable=False)
+    assignment_type = Column(String(50), nullable=False, default="reading")
+    
+    status = Column(String(50), nullable=False, default="not_started")
+    current_position = Column(Integer, default=1)
+    
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    last_activity_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    progress_metadata = Column(JSONB, default={})
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    student = relationship("User", foreign_keys=[student_id])
+    classroom_assignment = relationship("ClassroomAssignment")

@@ -1,209 +1,282 @@
-'use client'
+'use client';
 
-import { useState, useEffect } from 'react'
-import { useParams, useRouter } from 'next/navigation'
-import { useAuth } from '@/hooks/useAuth'
-import { studentApi } from '@/lib/studentApi'
-import StudentGuard from '@/components/StudentGuard'
-import {
-  ArrowLeftIcon,
-  BookOpenIcon,
-  ExclamationCircleIcon,
-  CheckCircleIcon,
-  HomeIcon
-} from '@heroicons/react/24/outline'
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { ArrowLeft, Loader2 } from 'lucide-react';
+import { umareadApi } from '@/lib/umareadApi';
+import ChunkReader from '@/components/student/umaread/ChunkReader';
+import QuestionFlow from '@/components/student/umaread/QuestionFlow';
+import ProgressIndicator from '@/components/student/umaread/ProgressIndicator';
+import CompletionScreen from '@/components/student/umaread/CompletionScreen';
+import StudentGuard from '@/components/StudentGuard';
+import type { 
+  AssignmentStartResponse, 
+  ChunkContent, 
+  Question,
+  StudentProgress 
+} from '@/types/umaread';
 
-export default function ReadingAssignmentPage() {
-  const params = useParams()
-  const router = useRouter()
-  const { user } = useAuth()
-  const assignmentId = params.id as string
 
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [assignmentInfo, setAssignmentInfo] = useState<{
-    classroom_id: string
-    classroom_name: string
-  } | null>(null)
+export default function UMAReadAssignmentPage({ params }: { params: { id: string } }) {
+  const router = useRouter();
+  const { id } = params;
+  
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [assignment, setAssignment] = useState<AssignmentStartResponse | null>(null);
+  const [chunk, setChunk] = useState<ChunkContent | null>(null);
+  const [question, setQuestion] = useState<Question | null>(null);
+  const [progress, setProgress] = useState<StudentProgress | null>(null);
+  const [isComplete, setIsComplete] = useState(false);
 
+  // Initialize assignment
   useEffect(() => {
-    validateAccess()
-  }, [assignmentId])
+    loadAssignment();
+  }, [id]);
 
-  const validateAccess = async () => {
+  // Load chunk when assignment is ready
+  useEffect(() => {
+    if (assignment) {
+      loadChunk(assignment.current_chunk);
+      loadProgress();
+    }
+  }, [assignment]);
+
+  // Load question automatically when chunk is loaded
+  useEffect(() => {
+    if (chunk && !question) {
+      loadQuestion();
+    }
+  }, [chunk]);
+
+  const loadAssignment = async () => {
     try {
-      setLoading(true)
-      setError(null)
-
-      const validation = await studentApi.validateAssignmentAccess('reading', assignmentId)
+      setLoading(true);
+      const data = await umareadApi.startAssignment(id);
+      setAssignment(data);
       
-      if (validation.access_granted) {
-        setAssignmentInfo({
-          classroom_id: validation.classroom_id,
-          classroom_name: validation.classroom_name
-        })
+      // Check if assignment is already complete
+      if (data.status === 'completed') {
+        setIsComplete(true);
       }
-    } catch (error: any) {
-      console.error('Access validation failed:', error)
-      
-      // Handle specific error cases
-      if (error.response?.status === 403) {
-        setError(error.response.data.detail || 'You do not have access to this assignment')
-      } else if (error.response?.status === 404) {
-        setError('Assignment not found')
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Failed to load assignment');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadChunk = async (chunkNumber: number) => {
+    if (!assignment) return;
+    
+    try {
+      setLoading(true);
+      const data = await umareadApi.getChunk(id, chunkNumber);
+      setChunk(data);
+      setQuestion(null); // Reset question when loading new chunk
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Failed to load chunk');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadQuestion = async () => {
+    if (!assignment || !chunk) return;
+    
+    try {
+      setLoading(true);
+      const data = await umareadApi.getCurrentQuestion(id, chunk.chunk_number);
+      setQuestion(data);
+    } catch (err: any) {
+      if (err.response?.status === 400 && err.response?.data?.detail?.includes('already completed')) {
+        // Chunk is complete, move to next
+        handleNavigate('next');
       } else {
-        setError('Failed to validate access. Please try again.')
+        setError(err.response?.data?.detail || 'Failed to load question');
       }
     } finally {
-      setLoading(false)
+      setLoading(false);
+    }
+  };
+
+  const loadProgress = async () => {
+    try {
+      const data = await umareadApi.getProgress(id);
+      setProgress(data);
+    } catch (err) {
+      // Progress loading is optional, don't show error
+    }
+  };
+
+  const handleNavigate = (direction: 'prev' | 'next') => {
+    // Navigation is now handled only through question completion
+    if (!chunk) return;
+    
+    const newChunk = direction === 'next' 
+      ? chunk.chunk_number + 1 
+      : chunk.chunk_number - 1;
+    
+    if (newChunk >= 1 && newChunk <= chunk.total_chunks) {
+      loadChunk(newChunk);
+    }
+  };
+
+  const handleSubmitAnswer = async (answer: string, timeSpent: number) => {
+    if (!chunk) throw new Error('No chunk loaded');
+    
+    const response = await umareadApi.submitAnswer(id, chunk.chunk_number, {
+      answer_text: answer,
+      time_spent_seconds: timeSpent
+    });
+    
+    // Refresh progress after answer
+    loadProgress();
+    
+    // Don't automatically load next question - let student control it
+    
+    return response;
+  };
+
+  const handleProceedAfterQuestions = async () => {
+    if (!chunk) return;
+    
+    if (chunk.has_next) {
+      handleNavigate('next');
+    } else {
+      // Assignment complete - mark it as such
+      setIsComplete(true);
+      
+      // Update assignment status in backend (in real implementation)
+      // For now, just update local state
     }
   }
 
-  if (loading) {
+  if (loading && !assignment) {
     return (
       <StudentGuard>
         <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto"></div>
-            <p className="mt-4 text-gray-500">Validating access...</p>
-          </div>
+          <Loader2 className="w-8 h-8 text-gray-400 animate-spin" />
         </div>
       </StudentGuard>
-    )
+    );
   }
 
   if (error) {
     return (
       <StudentGuard>
-        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-          <div className="max-w-md w-full bg-white rounded-lg shadow-lg p-8 text-center">
-            <ExclamationCircleIcon className="h-12 w-12 text-red-500 mx-auto mb-4" />
-            <h2 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h2>
-            <p className="text-gray-600 mb-6">{error}</p>
-            <button
-              onClick={() => router.push('/student/dashboard')}
-              className="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
-            >
-              Back to Dashboard
-            </button>
+        <div className="min-h-screen bg-gray-50 p-4">
+          <div className="max-w-2xl mx-auto mt-8">
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+              <p className="text-red-700">{error}</p>
+              <button
+                onClick={() => router.back()}
+                className="mt-2 text-red-600 hover:text-red-700 underline"
+              >
+                Go back
+              </button>
+            </div>
           </div>
         </div>
       </StudentGuard>
-    )
+    );
+  }
+
+  if (!assignment) {
+    return null;
+  }
+
+  // Show completion screen if assignment is complete
+  if (isComplete) {
+    return (
+      <StudentGuard>
+        <CompletionScreen
+          title={assignment.title}
+          author={assignment.author}
+          totalChunks={assignment.total_chunks}
+          difficultyLevel={progress?.difficulty_level || assignment.difficulty_level}
+        />
+      </StudentGuard>
+    );
+  }
+
+  if (!chunk) {
+    return null;
   }
 
   return (
     <StudentGuard>
       <div className="min-h-screen bg-gray-50">
         {/* Header */}
-        <div className="bg-white shadow">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="py-4 flex items-center justify-between">
-              <div className="flex items-center">
+        <div className="bg-white shadow-sm">
+          <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-4">
                 <button
-                  onClick={() => router.push(`/student/classrooms/${assignmentInfo?.classroom_id}`)}
-                  className="mr-4 text-gray-500 hover:text-gray-700"
+                  onClick={() => router.back()}
+                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
                 >
-                  <ArrowLeftIcon className="h-5 w-5" />
+                  <ArrowLeft className="w-5 h-5 text-gray-600" />
                 </button>
                 <div>
-                  <h1 className="text-xl font-semibold text-gray-900">Reading Assignment</h1>
-                  <p className="text-sm text-gray-500">{assignmentInfo?.classroom_name}</p>
+                  <h1 className="text-xl font-semibold text-gray-900">
+                    {assignment.title}
+                  </h1>
+                  {assignment.author && (
+                    <p className="text-sm text-gray-600">by {assignment.author}</p>
+                  )}
                 </div>
               </div>
-              <nav className="flex items-center space-x-2 text-sm">
-                <button
-                  onClick={() => router.push('/student/dashboard')}
-                  className="text-gray-500 hover:text-gray-700 flex items-center"
-                >
-                  <HomeIcon className="h-4 w-4 mr-1" />
-                  Dashboard
-                </button>
-                <span className="text-gray-400">/</span>
-                <button
-                  onClick={() => router.push(`/student/classrooms/${assignmentInfo?.classroom_id}`)}
-                  className="text-gray-500 hover:text-gray-700"
-                >
-                  {assignmentInfo?.classroom_name}
-                </button>
-                <span className="text-gray-400">/</span>
-                <span className="text-gray-700">Assignment</span>
-              </nav>
             </div>
           </div>
         </div>
 
-        {/* Main Content */}
-        <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-          <div className="bg-white rounded-lg shadow-lg p-8">
-            <div className="text-center">
-              <div className="mx-auto h-16 w-16 bg-blue-100 rounded-full flex items-center justify-center mb-6">
-                <BookOpenIcon className="h-10 w-10 text-blue-600" />
-              </div>
-              
-              <h2 className="text-2xl font-bold text-gray-900 mb-4">
-                Reading Assignment Content
-              </h2>
-              
-              <p className="text-gray-600 mb-8 max-w-2xl mx-auto">
-                This is a placeholder page for the reading assignment. 
-                The actual UMARead content and interactive features will be implemented here.
-              </p>
+        {/* Main Content - Full width for better reading */}
+        <div className="max-w-7xl mx-auto px-6 py-6">
+          {/* Progress Indicator */}
+          {progress && (
+            <ProgressIndicator
+              currentChunk={chunk.chunk_number}
+              totalChunks={chunk.total_chunks}
+              completedChunks={progress.chunks_completed}
+              difficultyLevel={progress.difficulty_level}
+            />
+          )}
 
-              <div className="bg-gray-50 rounded-lg p-6 mb-8">
-                <h3 className="text-lg font-medium text-gray-900 mb-3">
-                  Features to be implemented:
-                </h3>
-                <ul className="text-left text-gray-600 space-y-2 max-w-md mx-auto">
-                  <li className="flex items-start">
-                    <CheckCircleIcon className="h-5 w-5 text-green-500 mr-2 mt-0.5 flex-shrink-0" />
-                    <span>Interactive reading passages with vocabulary highlights</span>
-                  </li>
-                  <li className="flex items-start">
-                    <CheckCircleIcon className="h-5 w-5 text-green-500 mr-2 mt-0.5 flex-shrink-0" />
-                    <span>Comprehension questions and quizzes</span>
-                  </li>
-                  <li className="flex items-start">
-                    <CheckCircleIcon className="h-5 w-5 text-green-500 mr-2 mt-0.5 flex-shrink-0" />
-                    <span>Progress tracking and bookmarking</span>
-                  </li>
-                  <li className="flex items-start">
-                    <CheckCircleIcon className="h-5 w-5 text-green-500 mr-2 mt-0.5 flex-shrink-0" />
-                    <span>Note-taking and annotation tools</span>
-                  </li>
-                  <li className="flex items-start">
-                    <CheckCircleIcon className="h-5 w-5 text-green-500 mr-2 mt-0.5 flex-shrink-0" />
-                    <span>Audio narration options</span>
-                  </li>
-                </ul>
-              </div>
-
-              <div className="flex justify-center space-x-4">
-                <button
-                  onClick={() => router.push(`/student/classrooms/${assignmentInfo?.classroom_id}`)}
-                  className="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
-                >
-                  Return to Classroom
-                </button>
-                <button
-                  disabled
-                  className="px-6 py-2 bg-primary-600 text-white rounded-lg opacity-50 cursor-not-allowed"
-                >
-                  Start Reading (Coming Soon)
-                </button>
-              </div>
+          {/* Content Area - Side by side layout */}
+          <div className="grid grid-cols-3 gap-8">
+            {/* Left side: Reading Text (2/3 width) */}
+            <div className="col-span-2">
+              <ChunkReader
+                chunk={chunk}
+                onNavigate={null}
+                onComplete={null}
+                isLoading={loading}
+                hideNavigation={true}
+                largeText={true}
+              />
+            </div>
+            
+            {/* Right side: Questions (1/3 width) */}
+            <div className="col-span-1">
+              {question ? (
+                <QuestionFlow
+                  question={question}
+                  onSubmit={handleSubmitAnswer}
+                  onProceed={handleProceedAfterQuestions}
+                  onLoadNextQuestion={loadQuestion}
+                  isLoading={loading}
+                />
+              ) : (
+                <div className="bg-white rounded-lg shadow-sm p-6">
+                  <div className="flex items-center justify-center h-32">
+                    <Loader2 className="w-8 h-8 text-gray-400 animate-spin" />
+                  </div>
+                </div>
+              )}
             </div>
           </div>
-
-          {/* Debug info for development */}
-          <div className="mt-8 bg-gray-100 rounded-lg p-4 text-sm text-gray-600">
-            <p className="font-medium mb-2">Debug Information:</p>
-            <p>Assignment ID: {assignmentId}</p>
-            <p>Assignment Type: Reading</p>
-            <p>Classroom ID: {assignmentInfo?.classroom_id}</p>
-            <p>User ID: {user?.id}</p>
-          </div>
-        </main>
+        </div>
       </div>
     </StudentGuard>
   )
