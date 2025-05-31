@@ -3,9 +3,9 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
-import { studentClassroomApi } from '@/lib/classroomApi'
-import { AcademicCapIcon } from '@heroicons/react/24/outline'
-import type { JoinClassroomRequest } from '@/types/classroom'
+import { studentApi } from '@/lib/studentApi'
+import StudentGuard from '@/components/StudentGuard'
+import { AcademicCapIcon, CheckCircleIcon } from '@heroicons/react/24/outline'
 
 export default function JoinClassroomPage() {
   const router = useRouter()
@@ -13,10 +13,12 @@ export default function JoinClassroomPage() {
   const [classCode, setClassCode] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [success, setSuccess] = useState<string | null>(null)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
+    setSuccess(null)
     
     if (!classCode.trim()) {
       setError('Please enter a class code')
@@ -25,17 +27,23 @@ export default function JoinClassroomPage() {
 
     setLoading(true)
     try {
-      const response = await studentClassroomApi.joinClassroom({
+      const response = await studentApi.joinClassroom({
         class_code: classCode.trim().toUpperCase()
       })
       
-      // Show success message and redirect
-      alert(`Successfully joined ${response.classroom.name}!`)
-      router.push('/dashboard')
+      if (response.success) {
+        setSuccess(`Successfully joined ${response.classroom?.name || 'the classroom'}!`)
+        // Redirect after a short delay to show success message
+        setTimeout(() => {
+          router.push('/student/dashboard')
+        }, 2000)
+      } else {
+        setError(response.message || 'Failed to join classroom')
+      }
     } catch (error: any) {
       if (error.response?.status === 404) {
         setError('Invalid class code. Please check and try again.')
-      } else if (error.response?.status === 409) {
+      } else if (error.response?.status === 403) {
         setError('You are already enrolled in this classroom.')
       } else {
         setError('Failed to join classroom. Please try again.')
@@ -46,8 +54,9 @@ export default function JoinClassroomPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
+    <StudentGuard>
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-md w-full space-y-8">
         <div>
           <div className="mx-auto h-12 w-12 flex items-center justify-center rounded-full bg-primary-100">
             <AcademicCapIcon className="h-8 w-8 text-primary-600" />
@@ -90,20 +99,32 @@ export default function JoinClassroomPage() {
             </div>
           )}
 
+          {success && (
+            <div className="rounded-md bg-green-50 p-4">
+              <div className="flex">
+                <CheckCircleIcon className="h-5 w-5 text-green-400" />
+                <div className="ml-3">
+                  <p className="text-sm text-green-800">{success}</p>
+                  <p className="text-xs text-green-600 mt-1">Redirecting to dashboard...</p>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div>
             <button
               type="submit"
-              disabled={loading || !classCode.trim()}
+              disabled={loading || !classCode.trim() || success !== null}
               className="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {loading ? 'Joining...' : 'Join Classroom'}
+              {loading ? 'Joining...' : success ? 'Joined!' : 'Join Classroom'}
             </button>
           </div>
 
           <div className="text-center">
             <button
               type="button"
-              onClick={() => router.push('/dashboard')}
+              onClick={() => router.push('/student/dashboard')}
               className="text-sm text-primary-600 hover:text-primary-500"
             >
               Back to Dashboard
@@ -127,7 +148,8 @@ export default function JoinClassroomPage() {
             <p>• Ask your teacher if you're having trouble</p>
           </div>
         </div>
+        </div>
       </div>
-    </div>
+    </StudentGuard>
   )
 }
