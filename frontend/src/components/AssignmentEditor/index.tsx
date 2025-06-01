@@ -1,7 +1,9 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { AssignmentImage } from '@/types/reading'
+import { AssignmentImage, MarkupValidationResult } from '@/types/reading'
+import { readingApi } from '@/lib/readingApi'
+import ValidationMessages from '../AssignmentCreator/ValidationMessages'
 
 interface AssignmentEditorProps {
   assignmentId: string
@@ -25,6 +27,8 @@ export default function AssignmentEditor({
   const [selectedImageId, setSelectedImageId] = useState<string | null>(null)
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
+  const [isValidating, setIsValidating] = useState(false)
+  const [validationResult, setValidationResult] = useState<MarkupValidationResult | null>(null)
   const [showArchiveModal, setShowArchiveModal] = useState(false)
 
   useEffect(() => {
@@ -75,15 +79,79 @@ export default function AssignmentEditor({
     setHasUnsavedChanges(false)
   }
 
+  const handleValidate = async () => {
+    if (editMode !== 'text') return
+    
+    setIsValidating(true)
+    try {
+      // First save the content, then validate
+      await onSave(content, 'text')
+      const result = await readingApi.validateMarkup(assignmentId)
+      setValidationResult(result)
+      setHasUnsavedChanges(false)
+    } catch (error) {
+      console.error('Validation error:', error)
+      alert('Failed to validate markup')
+    } finally {
+      setIsValidating(false)
+    }
+  }
+
+  // Client-side validation to check basic markup
+  const validateContentClientSide = (content: string): { isValid: boolean; errors: string[] } => {
+    const errors: string[] = []
+    
+    // Check for unmatched chunk tags
+    const chunkOpenTags = (content.match(/<chunk>/g) || []).length
+    const chunkCloseTags = (content.match(/<\/chunk>/g) || []).length
+    if (chunkOpenTags !== chunkCloseTags) {
+      errors.push(`Unmatched <chunk> tags: ${chunkOpenTags} opening tags, ${chunkCloseTags} closing tags`)
+    }
+    
+    // Check for unmatched important tags
+    const importantOpenTags = (content.match(/<important>/g) || []).length
+    const importantCloseTags = (content.match(/<\/important>/g) || []).length
+    if (importantOpenTags !== importantCloseTags) {
+      errors.push(`Unmatched <important> tags: ${importantOpenTags} opening tags, ${importantCloseTags} closing tags`)
+    }
+    
+    // Check for at least one chunk
+    if (chunkOpenTags === 0) {
+      errors.push('Content must contain at least one <chunk></chunk> section')
+    }
+    
+    return { isValid: errors.length === 0, errors }
+  }
+
   const handleSave = async () => {
     setIsSaving(true)
     try {
       if (editMode === 'text') {
+        // First do client-side validation
+        const clientValidation = validateContentClientSide(content)
+        if (!clientValidation.isValid) {
+          alert(`Cannot save: ${clientValidation.errors.join('. ')}`)
+          setIsSaving(false)
+          return
+        }
+        
+        // Save the content
         await onSave(content, 'text')
+        
+        // Then do server-side validation for more detailed checks
+        const result = await readingApi.validateMarkup(assignmentId)
+        setValidationResult(result)
+        
+        if (!result.is_valid) {
+          alert('Content saved, but validation found issues. Please review the errors below.')
+        }
+        
+        setHasUnsavedChanges(false)
+        return
       } else if (editMode === 'image' && selectedImageId) {
         await onSave(content, 'image', selectedImageId)
+        setHasUnsavedChanges(false)
       }
-      setHasUnsavedChanges(false)
     } catch (error) {
       console.error('Error saving:', error)
       alert('Failed to save changes')
@@ -125,13 +193,28 @@ export default function AssignmentEditor({
               {hasUnsavedChanges && (
                 <span className="text-sm text-amber-600">Unsaved changes</span>
               )}
-              <button
-                onClick={handleSave}
-                disabled={!hasUnsavedChanges || isSaving}
-                className="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-md hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isSaving ? 'Saving...' : 'Save'}
-              </button>
+              {validationResult && (
+                <span className={`text-sm ${validationResult.is_valid ? 'text-green-600' : 'text-red-600'}`}>
+                  {validationResult.is_valid ? '✓ Valid markup' : '✗ Invalid markup'}
+                </span>
+              )}
+              {editMode === 'text' ? (
+                <button
+                  onClick={handleSave}
+                  disabled={!hasUnsavedChanges || isSaving || isValidating}
+                  className="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-md hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isSaving ? 'Saving...' : isValidating ? 'Validating...' : 'Save & Validate'}
+                </button>
+              ) : (
+                <button
+                  onClick={handleSave}
+                  disabled={!hasUnsavedChanges || isSaving}
+                  className="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-md hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isSaving ? 'Saving...' : 'Save'}
+                </button>
+              )}
               <button
                 onClick={handleArchive}
                 className="px-4 py-2 text-sm font-medium text-white bg-gray-600 rounded-md hover:bg-gray-700"
@@ -143,19 +226,28 @@ export default function AssignmentEditor({
         </div>
 
         {/* Textarea */}
-        <div className="flex-1 p-6">
+        <div className="flex-1 p-6 flex flex-col space-y-4">
           <textarea
             value={content}
             onChange={(e) => {
               setContent(e.target.value)
               setHasUnsavedChanges(true)
+              // Clear validation result when content changes
+              if (editMode === 'text' && validationResult) {
+                setValidationResult(null)
+              }
             }}
-            className="w-full h-full p-4 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none font-mono text-sm"
+            className="flex-1 p-4 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none font-mono text-sm"
             placeholder={editMode === 'text' 
               ? "Enter your assignment text here. Use <chunk></chunk> tags to define reading chunks and <important></important> tags for important sections."
               : "Enter the image description (minimum 50 characters)"
             }
           />
+          
+          {/* Validation Messages */}
+          {editMode === 'text' && validationResult && (
+            <ValidationMessages validationResult={validationResult} />
+          )}
         </div>
       </div>
 
