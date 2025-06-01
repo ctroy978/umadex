@@ -186,11 +186,6 @@ export default function QuestionFlow({
               <AlertCircle className="w-5 h-5 text-red-600 mt-0.5 mr-2 flex-shrink-0" />
             )}
             <div className="flex-1">
-              <p className={`font-medium mb-1 ${
-                result.is_correct ? 'text-green-800' : 'text-red-800'
-              }`}>
-                {result.is_correct ? 'Correct!' : 'Not quite right'}
-              </p>
               <p className={`text-sm ${
                 result.is_correct ? 'text-green-700' : 'text-red-700'
               }`}>

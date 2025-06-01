@@ -20,7 +20,7 @@ QUESTION_GENERATION_MODEL = os.getenv("QUESTION_GENERATION_MODEL", "gemini-2.0-f
 # Answer Evaluation AI
 # Used in: Student answer grading - evaluates free-form responses 
 # for comprehension and provides feedback
-ANSWER_EVALUATION_MODEL = os.getenv("ANSWER_EVALUATION_MODEL", "claude-3-5-sonnet-20241022")
+ANSWER_EVALUATION_MODEL = os.getenv("ANSWER_EVALUATION_MODEL", "gemini-2.0-flash")
 
 # Vocabulary Definition AI
 # Used in: UMAVocab module - generates grade-appropriate definitions

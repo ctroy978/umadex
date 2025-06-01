@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, Text, Boolean, ForeignKey, DateTime, CheckConstraint, JSON
+from sqlalchemy import Column, String, Integer, Text, Boolean, ForeignKey, DateTime, CheckConstraint, JSON, Float
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from datetime import datetime
@@ -95,5 +95,28 @@ class QuestionCache(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     __table_args__ = (
+        CheckConstraint("difficulty_level BETWEEN 1 AND 8"),
+    )
+
+
+class AnswerEvaluation(Base):
+    __tablename__ = "answer_evaluations"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    student_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    assignment_id = Column(UUID(as_uuid=True), ForeignKey("reading_assignments.id", ondelete="CASCADE"), nullable=False)
+    chunk_number = Column(Integer, nullable=False)
+    question_type = Column(String(20), nullable=False)
+    question_text = Column(Text, nullable=False)
+    student_answer = Column(Text, nullable=False)
+    is_correct = Column(Boolean, nullable=False)
+    confidence = Column(Float, nullable=False)
+    feedback = Column(Text, nullable=False)
+    difficulty_level = Column(Integer, nullable=False)
+    attempt_number = Column(Integer, nullable=False, default=1)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        CheckConstraint("question_type IN ('summary', 'comprehension')"),
         CheckConstraint("difficulty_level BETWEEN 1 AND 8"),
     )

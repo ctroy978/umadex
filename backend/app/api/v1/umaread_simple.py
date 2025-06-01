@@ -3,6 +3,7 @@ Simplified UMARead API endpoints for initial testing
 """
 from typing import Optional
 from uuid import UUID
+import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session, selectinload
@@ -17,7 +18,10 @@ from app.schemas.umaread import (
     AssignmentStartResponse
 )
 from app.services.umaread_simple import UMAReadService
-from app.services.question_generation import generate_questions_for_chunk
+from app.services.question_generation import generate_questions_for_chunk, Question
+from app.services.answer_evaluation import evaluate_answer, should_increase_difficulty
+from app.models.reading import AnswerEvaluation
+from app.models.classroom import StudentAssignment
 
 
 router = APIRouter(prefix="/umaread", tags=["umaread"])
@@ -29,6 +33,8 @@ question_state = {}
 difficulty_state = {}
 # Track completed assignments
 completed_assignments = {}
+# Track current questions for evaluation
+current_questions = {}
 
 
 @router.get("/assignments/{assignment_id}/start", response_model=AssignmentStartResponse)
@@ -52,10 +58,17 @@ async def start_assignment(
             
         return response
     except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e)
-        )
+        error_message = str(e)
+        if "join the classroom" in error_message:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=error_message
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=error_message
+            )
 
 
 @router.get("/assignments/{assignment_id}/chunks/{chunk_number}", response_model=ChunkResponse)
@@ -159,6 +172,10 @@ async def get_current_question(
                 "previous_feedback": None
             }
     
+    # Store the questions for evaluation
+    question_key = f"{current_user.id}:{assignment_id}:{chunk_number}"
+    current_questions[question_key] = questions
+    
     # Check if summary has been completed
     if question_state.get(state_key) == "summary_complete":
         # Return comprehension question
@@ -190,10 +207,18 @@ async def submit_answer(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Submit answer - mock implementation"""
+    """Submit answer with AI evaluation"""
     # Create keys for tracking state
     state_key = f"{current_user.id}:{assignment_id}:{chunk_number}"
     difficulty_key = f"{current_user.id}:{assignment_id}"
+    question_key = f"{current_user.id}:{assignment_id}:{chunk_number}"
+    
+    # Get student answer (frontend sends 'answer_text')
+    student_answer = answer_data.get("answer_text", answer_data.get("answer", "")).strip()
+    
+    # Debug logging
+    print(f"DEBUG: Received answer data: {answer_data}")
+    print(f"DEBUG: Extracted answer: '{student_answer}' (length: {len(student_answer)})")
     
     # Get current difficulty
     try:
@@ -206,51 +231,150 @@ async def submit_answer(
     
     current_difficulty = difficulty_state.get(difficulty_key, starting_difficulty)
     
-    # Check current state to determine question type
-    if question_state.get(state_key) == "summary_complete":
-        # This is a comprehension answer
-        question_state[state_key] = "chunk_complete"
-        
-        # Increase difficulty for next chunk (max 8)
-        new_difficulty = min(current_difficulty + 1, 8)
-        difficulty_changed = new_difficulty != current_difficulty
-        if difficulty_changed:
-            difficulty_state[difficulty_key] = new_difficulty
-            
-        # Debug logging
-        print(f"DEBUG: Answer submitted - Comprehension question completed")
-        print(f"DEBUG: Current difficulty: {current_difficulty}, New difficulty: {new_difficulty}")
-        print(f"DEBUG: Updated difficulty state: {difficulty_state}")
-        
-        # Check if this was the last chunk
-        try:
-            chunk_info = await umaread_service.get_chunk_content(db, assignment_id, chunk_number)
-            if not chunk_info.has_next:
-                # Mark assignment as complete
-                completion_key = f"{current_user.id}:{assignment_id}"
-                completed_assignments[completion_key] = True
-        except:
-            pass
-        
+    # Get the assignment and chunk for evaluation
+    assignment_result = await db.execute(
+        select(ReadingAssignment).where(ReadingAssignment.id == assignment_id)
+    )
+    assignment = assignment_result.scalar_one_or_none()
+    
+    chunk_result = await db.execute(
+        select(ReadingChunk).where(
+            and_(
+                ReadingChunk.assignment_id == assignment_id,
+                ReadingChunk.chunk_order == chunk_number
+            )
+        )
+    )
+    chunk = chunk_result.scalar_one_or_none()
+    
+    if not assignment or not chunk:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Assignment or chunk not found"
+        )
+    
+    # Get the current questions
+    questions = current_questions.get(question_key)
+    if not questions:
+        # Fallback if questions weren't stored
         return {
             "is_correct": True,
-            "feedback": "Excellent analysis! You correctly answered the comprehension question.",
+            "feedback": "Let's continue to the next section.",
             "can_proceed": True,
             "next_question_type": None,
-            "difficulty_changed": difficulty_changed,
-            "new_difficulty_level": new_difficulty if difficulty_changed else None
-        }
-    else:
-        # This is a summary answer
-        question_state[state_key] = "summary_complete"
-        return {
-            "is_correct": True,
-            "feedback": "Good summary! You captured the main points of this section.",
-            "can_proceed": False,
-            "next_question_type": "comprehension",
             "difficulty_changed": False,
             "new_difficulty_level": None
         }
+    
+    # Determine which question we're evaluating
+    is_summary = question_state.get(state_key) != "summary_complete"
+    current_question = questions.summary_question if is_summary else questions.comprehension_question
+    
+    # Evaluate the answer using AI
+    try:
+        evaluation = await evaluate_answer(
+            question=current_question,
+            student_answer=student_answer,
+            difficulty_level=current_difficulty,
+            chunk=chunk,
+            assignment=assignment,
+            db=db
+        )
+        
+        # Store evaluation result
+        eval_record = AnswerEvaluation(
+            id=str(uuid.uuid4()),
+            student_id=current_user.id,
+            assignment_id=assignment_id,
+            chunk_number=chunk_number,
+            question_type="summary" if is_summary else "comprehension",
+            question_text=current_question.question,
+            student_answer=student_answer,
+            is_correct=evaluation.is_correct,
+            confidence=evaluation.confidence,
+            feedback=evaluation.feedback,
+            difficulty_level=current_difficulty,
+            attempt_number=1
+        )
+        db.add(eval_record)
+        await db.commit()
+        
+    except Exception as e:
+        print(f"Error in AI evaluation: {e}")
+        # Fallback evaluation
+        evaluation = type('obj', (object,), {
+            'is_correct': True,
+            'feedback': "Good effort! Let's continue.",
+            'confidence': 0.5
+        })()
+    
+    # Process result based on question type
+    if is_summary:
+        # Summary question
+        if evaluation.is_correct:
+            question_state[state_key] = "summary_complete"
+            return {
+                "is_correct": True,
+                "feedback": evaluation.feedback,
+                "can_proceed": False,
+                "next_question_type": "comprehension",
+                "difficulty_changed": False,
+                "new_difficulty_level": None
+            }
+        else:
+            return {
+                "is_correct": False,
+                "feedback": evaluation.feedback,
+                "can_proceed": False,
+                "next_question_type": "summary",
+                "difficulty_changed": False,
+                "new_difficulty_level": None
+            }
+    else:
+        # Comprehension question
+        if evaluation.is_correct:
+            question_state[state_key] = "chunk_complete"
+            
+            # Check if we should increase difficulty
+            should_increase = await should_increase_difficulty(
+                current_difficulty=current_difficulty,
+                question_type="comprehension",
+                evaluation_result=evaluation
+            )
+            
+            new_difficulty = current_difficulty
+            if should_increase:
+                new_difficulty = min(current_difficulty + 1, 8)
+                difficulty_state[difficulty_key] = new_difficulty
+            
+            difficulty_changed = new_difficulty != current_difficulty
+            
+            # Check if this was the last chunk
+            try:
+                chunk_info = await umaread_service.get_chunk_content(db, assignment_id, chunk_number)
+                if not chunk_info.has_next:
+                    completion_key = f"{current_user.id}:{assignment_id}"
+                    completed_assignments[completion_key] = True
+            except:
+                pass
+            
+            return {
+                "is_correct": True,
+                "feedback": evaluation.feedback,
+                "can_proceed": True,
+                "next_question_type": None,
+                "difficulty_changed": difficulty_changed,
+                "new_difficulty_level": new_difficulty if difficulty_changed else None
+            }
+        else:
+            return {
+                "is_correct": False,
+                "feedback": evaluation.feedback,
+                "can_proceed": False,
+                "next_question_type": "comprehension",
+                "difficulty_changed": False,
+                "new_difficulty_level": None
+            }
 
 
 @router.get("/assignments/{assignment_id}/progress")

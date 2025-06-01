@@ -84,7 +84,32 @@ class UMAReadService:
             classroom_assignment = classroom_assignment_result.scalar_one_or_none()
             
             if not classroom_assignment:
-                raise ValueError("Assignment not assigned to any classroom")
+                # Check if student is in any classroom with this assignment
+                from ..models.classroom import StudentClassroom, Classroom
+                
+                # Find classrooms that have this assignment
+                classroom_with_assignment = await db.execute(
+                    select(ClassroomAssignment)
+                    .where(ClassroomAssignment.assignment_id == assignment_id)
+                    .limit(1)
+                )
+                classroom_assignment = classroom_with_assignment.scalar_one_or_none()
+                
+                if not classroom_assignment:
+                    raise ValueError("This assignment hasn't been assigned to any classroom yet.")
+                
+                # Check if student is in the classroom
+                student_in_classroom = await db.execute(
+                    select(StudentClassroom).where(
+                        and_(
+                            StudentClassroom.student_id == student_id,
+                            StudentClassroom.classroom_id == classroom_assignment.classroom_id
+                        )
+                    )
+                )
+                
+                if not student_in_classroom.scalar_one_or_none():
+                    raise ValueError("You need to join the classroom first to access this assignment.")
             
             # Create new student assignment
             student_assignment = StudentAssignment(
