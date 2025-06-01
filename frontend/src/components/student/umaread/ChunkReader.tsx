@@ -49,15 +49,19 @@ export default function ChunkReader({
       if (match.index > lastIndex) {
         const textBefore = currentText.substring(lastIndex, match.index);
         if (textBefore.trim()) {
-          segments.push(
-            <p key={`text-${keyIndex++}`} className={`text-gray-800 mb-6 ${
-              largeText 
-                ? 'text-xl leading-loose' 
-                : 'text-base sm:text-lg leading-relaxed'
-            }`}>
-              {textBefore}
-            </p>
-          );
+          // Split by double newlines to preserve paragraphs
+          const paragraphs = textBefore.split(/\n\n+/).filter(p => p.trim());
+          paragraphs.forEach(paragraph => {
+            segments.push(
+              <p key={`text-${keyIndex++}`} className={`text-gray-800 mb-6 ${
+                largeText 
+                  ? 'text-xl leading-loose' 
+                  : 'text-base sm:text-lg leading-relaxed'
+              }`}>
+                {paragraph.trim()}
+              </p>
+            );
+          });
         }
       }
       
@@ -95,15 +99,19 @@ export default function ChunkReader({
     if (lastIndex < currentText.length) {
       const remainingText = currentText.substring(lastIndex);
       if (remainingText.trim()) {
-        segments.push(
-          <p key={`text-${keyIndex++}`} className={`text-gray-800 mb-6 ${
-            largeText 
-              ? 'text-xl leading-loose' 
-              : 'text-base sm:text-lg leading-relaxed'
-          }`}>
-            {remainingText}
-          </p>
-        );
+        // Split by double newlines to preserve paragraphs
+        const paragraphs = remainingText.split(/\n\n+/).filter(p => p.trim());
+        paragraphs.forEach(paragraph => {
+          segments.push(
+            <p key={`text-${keyIndex++}`} className={`text-gray-800 mb-6 ${
+              largeText 
+                ? 'text-xl leading-loose' 
+                : 'text-base sm:text-lg leading-relaxed'
+            }`}>
+              {paragraph.trim()}
+            </p>
+          );
+        });
       }
     }
     

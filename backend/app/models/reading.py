@@ -1,5 +1,5 @@
-from sqlalchemy import Column, String, Integer, Text, Boolean, ForeignKey, DateTime, CheckConstraint
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Column, String, Integer, Text, Boolean, ForeignKey, DateTime, CheckConstraint, JSON
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import uuid
@@ -81,3 +81,19 @@ class AssignmentImage(Base):
 
     # Relationships
     assignment = relationship("ReadingAssignment", back_populates="images")
+
+
+class QuestionCache(Base):
+    __tablename__ = "question_cache"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    assignment_id = Column(UUID(as_uuid=True), ForeignKey("reading_assignments.id", ondelete="CASCADE"), nullable=False)
+    chunk_id = Column(Integer, nullable=False)
+    difficulty_level = Column(Integer, nullable=False)
+    content_hash = Column(String(64), nullable=False)
+    question_data = Column(JSONB, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        CheckConstraint("difficulty_level BETWEEN 1 AND 8"),
+    )

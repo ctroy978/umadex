@@ -15,7 +15,7 @@ IMAGE_ANALYSIS_MODEL = os.getenv("IMAGE_ANALYSIS_MODEL", "gemini-2.0-flash")  # 
 # Question Generation AI  
 # Used in: Automatic question creation from reading chunks and image descriptions
 # Generates 2 questions per chunk scaled to student ability level
-QUESTION_GENERATION_MODEL = os.getenv("QUESTION_GENERATION_MODEL", "claude-3-5-sonnet-20241022")
+QUESTION_GENERATION_MODEL = os.getenv("QUESTION_GENERATION_MODEL", "gemini-2.0-flash")
 
 # Answer Evaluation AI
 # Used in: Student answer grading - evaluates free-form responses 

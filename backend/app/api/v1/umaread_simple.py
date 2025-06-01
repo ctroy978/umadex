@@ -5,15 +5,19 @@ from typing import Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session, selectinload
+from sqlalchemy import select, and_
 
 from app.core.database import get_db
 from app.models.user import User
+from app.models.reading import ReadingAssignment, ReadingChunk, AssignmentImage
 from app.utils.deps import get_current_user
 from app.schemas.umaread import (
     ChunkResponse,
     AssignmentStartResponse
 )
 from app.services.umaread_simple import UMAReadService
+from app.services.question_generation import generate_questions_for_chunk
 
 
 router = APIRouter(prefix="/umaread", tags=["umaread"])
@@ -78,7 +82,7 @@ async def get_current_question(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Get current question for a chunk - mock implementation"""
+    """Get current question for a chunk - AI-powered implementation"""
     # Get assignment info to determine starting difficulty
     try:
         assignment_info = await umaread_service.start_assignment(
@@ -100,31 +104,67 @@ async def get_current_question(
     print(f"DEBUG: Starting difficulty: {starting_difficulty}, Current difficulty: {difficulty}")
     print(f"DEBUG: Difficulty state: {difficulty_state}")
     
+    # Get the assignment and chunk
+    assignment_result = await db.execute(
+        select(ReadingAssignment).where(ReadingAssignment.id == assignment_id)
+    )
+    assignment = assignment_result.scalar_one_or_none()
+    
+    if not assignment:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Assignment not found"
+        )
+    
+    chunk_result = await db.execute(
+        select(ReadingChunk).where(
+            and_(
+                ReadingChunk.assignment_id == assignment_id,
+                ReadingChunk.chunk_order == chunk_number
+            )
+        )
+    )
+    chunk = chunk_result.scalar_one_or_none()
+    
+    if not chunk:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Chunk {chunk_number} not found"
+        )
+    
+    # Generate questions using AI
+    try:
+        questions = await generate_questions_for_chunk(
+            chunk, assignment, difficulty, db
+        )
+    except Exception as e:
+        print(f"Error generating AI questions: {e}")
+        # Fall back to mock questions
+        if question_state.get(state_key) == "summary_complete":
+            return {
+                "question_id": None,
+                "question_text": "What was the most important information in this passage?",
+                "question_type": "comprehension",
+                "difficulty_level": difficulty,
+                "attempt_number": 1,
+                "previous_feedback": None
+            }
+        else:
+            return {
+                "question_id": None,
+                "question_text": "In 2-3 sentences, summarize what happened in this section.",
+                "question_type": "summary",
+                "difficulty_level": None,
+                "attempt_number": 1,
+                "previous_feedback": None
+            }
+    
     # Check if summary has been completed
     if question_state.get(state_key) == "summary_complete":
-        # Return comprehension question based on difficulty level
-        question_text = "What was the main character's motivation in this section?"  # Default
-        
-        if difficulty == 1:
-            question_text = "What did the main character do in this section?"
-        elif difficulty == 2:
-            question_text = "Where did the events in this section take place?"
-        elif difficulty == 3:
-            question_text = "Why did the character go to that location?"
-        elif difficulty == 4:
-            question_text = "What is the main idea of this section?"
-        elif difficulty == 5:
-            question_text = "Based on their actions, how do you think the character feels?"
-        elif difficulty == 6:
-            question_text = "What does the author imply but not directly state?"
-        elif difficulty == 7:
-            question_text = "Why is this event significant to the story?"
-        elif difficulty == 8:
-            question_text = "How does the author's use of imagery contribute to the theme?"
-        
+        # Return comprehension question
         return {
             "question_id": None,
-            "question_text": question_text,
+            "question_text": questions.comprehension_question.question,
             "question_type": "comprehension",
             "difficulty_level": difficulty,
             "attempt_number": 1,
@@ -134,7 +174,7 @@ async def get_current_question(
         # Return summary question
         return {
             "question_id": None,
-            "question_text": "In 2-3 sentences, summarize what happened in this section.",
+            "question_text": questions.summary_question.question,
             "question_type": "summary",
             "difficulty_level": None,
             "attempt_number": 1,
