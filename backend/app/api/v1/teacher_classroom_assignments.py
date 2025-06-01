@@ -223,7 +223,8 @@ async def get_all_available_assignments(
         reading_query = select(ReadingAssignmentModel).where(
             and_(
                 ReadingAssignmentModel.teacher_id == teacher.id,
-                ReadingAssignmentModel.status == "published"
+                ReadingAssignmentModel.status == "published",
+                ReadingAssignmentModel.deleted_at.is_(None)  # Filter out archived assignments
             )
         )
         
@@ -266,7 +267,6 @@ async def get_all_available_assignments(
                 "status": assignment.status,
                 "created_at": assignment.created_at,
                 "is_assigned": assignment.id in assigned_reading,
-                "is_archived": assignment.deleted_at is not None,
                 "item_type": "reading"
             }
             
@@ -286,7 +286,8 @@ async def get_all_available_assignments(
         vocab_query = select(VocabularyList).where(
             and_(
                 VocabularyList.teacher_id == teacher.id,
-                VocabularyList.status == "published"
+                VocabularyList.status == "published",
+                VocabularyList.deleted_at.is_(None)  # Filter out archived vocabulary lists
             )
         )
         
@@ -339,7 +340,6 @@ async def get_all_available_assignments(
                 "status": vocab_list.status,
                 "created_at": vocab_list.created_at,
                 "is_assigned": vocab_list.id in assigned_vocabulary,
-                "is_archived": vocab_list.deleted_at is not None,
                 "word_count": word_counts.get(vocab_list.id, 0),
                 "item_type": "vocabulary"
             }
