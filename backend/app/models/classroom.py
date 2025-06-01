@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, ForeignKey, DateTime, Integer, UniqueConstraint, Text
+from sqlalchemy import Column, String, ForeignKey, DateTime, Integer, UniqueConstraint, Text, Index
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -90,3 +90,27 @@ class StudentAssignment(Base):
     # Relationships
     student = relationship("User", foreign_keys=[student_id])
     classroom_assignment = relationship("ClassroomAssignment")
+
+
+class StudentEvent(Base):
+    __tablename__ = "student_events"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    student_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    classroom_id = Column(UUID(as_uuid=True), ForeignKey("classrooms.id"), nullable=True)
+    assignment_id = Column(UUID(as_uuid=True), nullable=True)
+    event_type = Column(String(50), nullable=False)
+    event_data = Column(JSONB, default={})
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Indexes
+    __table_args__ = (
+        Index('idx_student_events_student_id', 'student_id'),
+        Index('idx_student_events_classroom_id', 'classroom_id'),
+        Index('idx_student_events_type', 'event_type'),
+        Index('idx_student_events_created_at', 'created_at'),
+    )
+    
+    # Relationships
+    student = relationship("User", foreign_keys=[student_id])
+    classroom = relationship("Classroom", foreign_keys=[classroom_id])

@@ -33,6 +33,8 @@ from app.utils.deps import get_current_user
 from . import vocabulary
 from . import teacher_classroom_assignments
 from . import teacher_classroom_detail
+from . import teacher_settings
+from . import teacher_reports
 
 router = APIRouter()
 
@@ -44,6 +46,12 @@ router.include_router(teacher_classroom_assignments.router, tags=["classroom-ass
 
 # Include updated classroom detail routes
 router.include_router(teacher_classroom_detail.router, tags=["classroom-detail"])
+
+# Include teacher settings routes
+router.include_router(teacher_settings.router, tags=["teacher-settings"])
+
+# Include teacher reports routes
+router.include_router(teacher_reports.router, tags=["teacher-reports"])
 
 def require_teacher(current_user: User = Depends(get_current_user)) -> User:
     """Require the current user to be a teacher"""

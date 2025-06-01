@@ -1,15 +1,123 @@
-'use client'
+'use client';
 
-import ComingSoon from '@/components/ComingSoon'
-import { ChartBarIcon } from '@heroicons/react/24/outline'
+import { useState } from 'react';
+import { ChartBarIcon, KeyIcon, UserGroupIcon, DocumentTextIcon } from '@heroicons/react/24/outline';
+import BypassCodeUsageReport from '@/components/teacher/reports/BypassCodeUsageReport';
+
+type ReportType = 'overview' | 'bypass-code' | 'student-progress' | 'assignment-stats';
 
 export default function ReportsPage() {
+  const [activeReport, setActiveReport] = useState<ReportType>('overview');
+
+  const reportSections = [
+    {
+      id: 'overview' as ReportType,
+      name: 'Overview',
+      icon: ChartBarIcon,
+      description: 'Summary of classroom activity and performance'
+    },
+    {
+      id: 'student-progress' as ReportType,
+      name: 'Student Progress',
+      icon: UserGroupIcon,
+      description: 'Monitor individual student performance and engagement',
+      comingSoon: true
+    },
+    {
+      id: 'assignment-stats' as ReportType,
+      name: 'Assignment Analytics',
+      icon: DocumentTextIcon,
+      description: 'Detailed statistics on assignment completion and scores',
+      comingSoon: true
+    },
+    {
+      id: 'bypass-code' as ReportType,
+      name: 'Bypass Code Usage',
+      icon: KeyIcon,
+      description: 'Monitor bypass code usage to identify problematic questions'
+    }
+  ];
+
   return (
-    <ComingSoon 
-      title="Reports & Analytics"
-      description="Access detailed reports on student performance, assignment completion rates, and classroom analytics to track progress and identify areas for improvement."
-      icon={ChartBarIcon}
-      color="bg-teal-500"
-    />
-  )
+    <div className="p-8">
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-gray-900 mb-2">Reports & Analytics</h1>
+        <p className="text-gray-600">Monitor student progress and classroom performance</p>
+      </div>
+
+      {/* Report Navigation */}
+      <div className="mb-8">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {reportSections.map((section) => (
+            <button
+              key={section.id}
+              onClick={() => !section.comingSoon && setActiveReport(section.id)}
+              disabled={section.comingSoon}
+              className={`p-4 rounded-lg border-2 transition-all text-left ${
+                activeReport === section.id
+                  ? 'border-primary-500 bg-primary-50'
+                  : section.comingSoon
+                  ? 'border-gray-200 bg-gray-50 cursor-not-allowed opacity-60'
+                  : 'border-gray-200 hover:border-gray-300 bg-white'
+              }`}
+            >
+              <div className="flex items-center mb-2">
+                <section.icon className={`h-5 w-5 mr-2 ${
+                  activeReport === section.id ? 'text-primary-600' : 'text-gray-500'
+                }`} />
+                <h3 className="font-medium text-gray-900">{section.name}</h3>
+              </div>
+              <p className="text-sm text-gray-600">{section.description}</p>
+              {section.comingSoon && (
+                <span className="inline-block mt-2 text-xs bg-gray-200 text-gray-600 px-2 py-1 rounded">
+                  Coming Soon
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Report Content */}
+      <div className="bg-white rounded-lg shadow-lg p-6">
+        {activeReport === 'overview' && (
+          <div className="text-center py-12">
+            <ChartBarIcon className="h-12 w-12 mx-auto mb-4 text-gray-400" />
+            <h2 className="text-xl font-semibold text-gray-900 mb-2">Reports Overview</h2>
+            <p className="text-gray-600 max-w-2xl mx-auto">
+              Welcome to your reports dashboard. Select a report type above to view detailed analytics
+              about your classrooms, students, and assignments. More report types and features are
+              coming soon to help you better track student progress and identify areas for improvement.
+            </p>
+          </div>
+        )}
+
+        {activeReport === 'bypass-code' && (
+          <BypassCodeUsageReport />
+        )}
+
+        {activeReport === 'student-progress' && (
+          <div className="text-center py-12">
+            <UserGroupIcon className="h-12 w-12 mx-auto mb-4 text-gray-400" />
+            <h2 className="text-xl font-semibold text-gray-900 mb-2">Student Progress Reports</h2>
+            <p className="text-gray-600">
+              Detailed student progress tracking is coming soon. You'll be able to monitor individual
+              student performance, engagement levels, and identify students who may need additional support.
+            </p>
+          </div>
+        )}
+
+        {activeReport === 'assignment-stats' && (
+          <div className="text-center py-12">
+            <DocumentTextIcon className="h-12 w-12 mx-auto mb-4 text-gray-400" />
+            <h2 className="text-xl font-semibold text-gray-900 mb-2">Assignment Analytics</h2>
+            <p className="text-gray-600">
+              Assignment analytics are coming soon. You'll be able to see completion rates, average scores,
+              time spent on assignments, and identify which questions are most challenging for students.
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }

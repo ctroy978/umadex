@@ -160,7 +160,7 @@ export default function ClassroomDetailPage() {
       </div>
 
       {/* Tab Content */}
-      {activeTab === 'students' ? (
+      {activeTab === 'students' && (
         <div>
           {classroom.students.length === 0 ? (
             <div className="bg-white rounded-lg shadow p-8 text-center">
@@ -197,7 +197,9 @@ export default function ClassroomDetailPage() {
             </div>
           )}
         </div>
-      ) : (
+      )}
+      
+      {activeTab === 'assignments' && (
         <div>
           <div className="mb-4">
             <button

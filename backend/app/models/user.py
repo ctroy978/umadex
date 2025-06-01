@@ -27,6 +27,8 @@ class User(Base):
     is_admin = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    bypass_code = Column(String(255), nullable=True)  # Hashed 4-digit code for teachers
+    bypass_code_updated_at = Column(DateTime(timezone=True), nullable=True)
     
     # Relationships
     classrooms = relationship("Classroom", back_populates="teacher", foreign_keys="Classroom.teacher_id")
