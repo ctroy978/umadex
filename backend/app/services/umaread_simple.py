@@ -1,14 +1,15 @@
 """
 Simplified UMARead service for initial testing
 """
-from typing import Optional, Dict, Any, Tuple
+from typing import Optional, Dict, Any, Tuple, List
 from uuid import UUID
 from datetime import datetime
+import re
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, and_, func, text
 from sqlalchemy.orm import selectinload
 
-from app.models.reading import ReadingAssignment, ReadingChunk
+from app.models.reading import ReadingAssignment, ReadingChunk, AssignmentImage
 from app.models.classroom import StudentAssignment, ClassroomAssignment
 from app.models.user import User
 from app.schemas.umaread import (
@@ -17,7 +18,8 @@ from app.schemas.umaread import (
     StudentProgress,
     AssignmentMetadata,
     WorkType,
-    LiteraryForm
+    LiteraryForm,
+    ChunkImage
 )
 
 
@@ -95,8 +97,27 @@ class UMAReadService:
                 progress_metadata={}
             )
             db.add(student_assignment)
+            try:
+                await db.commit()
+                await db.refresh(student_assignment)
+            except Exception:
+                # If there's a unique constraint violation, fetch the existing assignment
+                await db.rollback()
+                student_assignment_result = await db.execute(
+                    select(StudentAssignment).where(
+                        and_(
+                            StudentAssignment.student_id == student_id,
+                            StudentAssignment.assignment_id == assignment_id
+                        )
+                    )
+                )
+                student_assignment = student_assignment_result.scalar_one()
+        
+        # Update status to in_progress if it's not_started
+        if student_assignment.status == "not_started":
+            student_assignment.status = "in_progress"
+            student_assignment.started_at = datetime.utcnow()
             await db.commit()
-            await db.refresh(student_assignment)
         
         return AssignmentStartResponse(
             assignment_id=assignment_id,
@@ -134,11 +155,37 @@ class UMAReadService:
         )
         total_chunks = total_result.scalar()
         
+        # Extract image tags from content
+        image_pattern = re.compile(r'<image>(.*?)</image>')
+        image_tags = image_pattern.findall(chunk.content)
+        
+        # Fetch images for these tags
+        images: List[ChunkImage] = []
+        if image_tags:
+            images_result = await db.execute(
+                select(AssignmentImage).where(
+                    and_(
+                        AssignmentImage.assignment_id == assignment_id,
+                        AssignmentImage.image_tag.in_(image_tags)
+                    )
+                )
+            )
+            assignment_images = images_result.scalars().all()
+            
+            # Convert to ChunkImage schema
+            for img in assignment_images:
+                images.append(ChunkImage(
+                    url=img.display_url or img.image_url or "",
+                    thumbnail_url=img.thumbnail_url,
+                    description=img.ai_description if isinstance(img.ai_description, str) else None,
+                    image_tag=img.image_tag
+                ))
+        
         return ChunkResponse(
             chunk_number=chunk_number,
             total_chunks=total_chunks,
             content=chunk.content,
-            images=[],  # Simplified for now
+            images=images,
             has_next=chunk_number < total_chunks,
             has_previous=chunk_number > 1
         )

@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from app.core.database import get_db
 from app.utils.deps import get_current_user
 from app.models.user import User, UserRole
-from app.models.classroom import Classroom, ClassroomAssignment
+from app.models.classroom import Classroom, ClassroomAssignment, StudentAssignment
 from app.models.reading import ReadingAssignment as ReadingAssignmentModel
 from app.models.vocabulary import VocabularyList
 
@@ -43,6 +43,130 @@ class UpdateClassroomAssignmentsResponse(BaseModel):
     added: List[str]
     removed: List[str]
     total: int
+    students_affected: Optional[int] = 0
+
+
+class CheckAssignmentRemovalResponse(BaseModel):
+    assignments_with_students: List[dict]
+    total_students_affected: int
+
+
+@router.post("/classrooms/{classroom_id}/assignments/check-removal", response_model=CheckAssignmentRemovalResponse)
+async def check_assignment_removal(
+    classroom_id: UUID,
+    request: UpdateClassroomAssignmentsRequest,
+    teacher: User = Depends(require_teacher),
+    db: AsyncSession = Depends(get_db)
+):
+    """Check how many students would be affected by removing assignments"""
+    # Verify classroom exists and belongs to teacher
+    result = await db.execute(
+        select(Classroom).where(
+            and_(
+                Classroom.id == classroom_id,
+                Classroom.teacher_id == teacher.id,
+                Classroom.deleted_at.is_(None)
+            )
+        )
+    )
+    classroom = result.scalar_one_or_none()
+    
+    if not classroom:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Classroom not found"
+        )
+    
+    # Get current assignments
+    current_result = await db.execute(
+        select(ClassroomAssignment)
+        .where(ClassroomAssignment.classroom_id == classroom_id)
+    )
+    current_assignments = list(current_result.scalars())
+    
+    # Build lookup maps
+    current_reading = {}
+    current_vocabulary = {}
+    for ca in current_assignments:
+        if ca.assignment_type == "reading" and ca.assignment_id:
+            current_reading[ca.assignment_id] = ca
+        elif ca.assignment_type == "vocabulary" and ca.vocabulary_list_id:
+            current_vocabulary[ca.vocabulary_list_id] = ca
+    
+    # Process requested assignments
+    requested_reading = set()
+    requested_vocabulary = set()
+    for sched in request.assignments:
+        if sched.assignment_type == "vocabulary":
+            requested_vocabulary.add(sched.assignment_id)
+        else:
+            requested_reading.add(sched.assignment_id)
+    
+    # Calculate what will be removed
+    reading_to_remove = set(current_reading.keys()) - requested_reading
+    vocabulary_to_remove = set(current_vocabulary.keys()) - requested_vocabulary
+    
+    assignments_with_students = []
+    total_students = 0
+    
+    # Check reading assignments
+    for assignment_id in reading_to_remove:
+        ca = current_reading[assignment_id]
+        
+        # Get assignment details
+        assignment_result = await db.execute(
+            select(ReadingAssignmentModel).where(ReadingAssignmentModel.id == assignment_id)
+        )
+        assignment = assignment_result.scalar_one_or_none()
+        
+        # Count students
+        count_result = await db.execute(
+            select(func.count(StudentAssignment.id)).where(
+                StudentAssignment.classroom_assignment_id == ca.id
+            )
+        )
+        student_count = count_result.scalar() or 0
+        
+        if student_count > 0:
+            assignments_with_students.append({
+                "assignment_id": str(assignment_id),
+                "assignment_type": "reading",
+                "assignment_title": assignment.assignment_title if assignment else "Unknown",
+                "student_count": student_count
+            })
+            total_students += student_count
+    
+    # Check vocabulary assignments
+    for list_id in vocabulary_to_remove:
+        ca = current_vocabulary[list_id]
+        
+        # Get vocabulary list details
+        vocab_result = await db.execute(
+            select(VocabularyList).where(VocabularyList.id == list_id)
+        )
+        vocab_list = vocab_result.scalar_one_or_none()
+        
+        # Count students
+        count_result = await db.execute(
+            select(func.count(StudentAssignment.id)).where(
+                StudentAssignment.classroom_assignment_id == ca.id
+            )
+        )
+        student_count = count_result.scalar() or 0
+        
+        if student_count > 0:
+            assignments_with_students.append({
+                "assignment_id": str(list_id),
+                "assignment_type": "vocabulary",
+                "assignment_title": vocab_list.title if vocab_list else "Unknown",
+                "student_count": student_count
+            })
+            total_students += student_count
+    
+    return CheckAssignmentRemovalResponse(
+        assignments_with_students=assignments_with_students,
+        total_students_affected=total_students
+    )
 
 
 @router.get("/classrooms/{classroom_id}/assignments/available/all")
@@ -308,8 +432,40 @@ async def update_all_classroom_assignments(
     vocabulary_to_remove = set(current_vocabulary.keys()) - set(requested_vocabulary.keys())
     vocabulary_to_update = set(requested_vocabulary.keys()) & set(current_vocabulary.keys())
     
-    # Remove assignments
+    # Count students affected by removals
+    students_affected = 0
+    
+    # Handle reading assignment removals
     if reading_to_remove:
+        # Get classroom assignment IDs that will be removed
+        ca_ids_result = await db.execute(
+            select(ClassroomAssignment.id).where(
+                and_(
+                    ClassroomAssignment.classroom_id == classroom_id,
+                    ClassroomAssignment.assignment_type == "reading",
+                    ClassroomAssignment.assignment_id.in_(reading_to_remove)
+                )
+            )
+        )
+        ca_ids = [row[0] for row in ca_ids_result]
+        
+        if ca_ids:
+            # Count affected students
+            count_result = await db.execute(
+                select(func.count(StudentAssignment.id)).where(
+                    StudentAssignment.classroom_assignment_id.in_(ca_ids)
+                )
+            )
+            students_affected += count_result.scalar() or 0
+            
+            # Delete student assignments first
+            await db.execute(
+                delete(StudentAssignment).where(
+                    StudentAssignment.classroom_assignment_id.in_(ca_ids)
+                )
+            )
+        
+        # Then delete classroom assignments
         await db.execute(
             delete(ClassroomAssignment).where(
                 and_(
@@ -321,6 +477,35 @@ async def update_all_classroom_assignments(
         )
     
     if vocabulary_to_remove:
+        # Get classroom assignment IDs that will be removed
+        ca_ids_result = await db.execute(
+            select(ClassroomAssignment.id).where(
+                and_(
+                    ClassroomAssignment.classroom_id == classroom_id,
+                    ClassroomAssignment.assignment_type == "vocabulary",
+                    ClassroomAssignment.vocabulary_list_id.in_(vocabulary_to_remove)
+                )
+            )
+        )
+        ca_ids = [row[0] for row in ca_ids_result]
+        
+        if ca_ids:
+            # Count affected students
+            count_result = await db.execute(
+                select(func.count(StudentAssignment.id)).where(
+                    StudentAssignment.classroom_assignment_id.in_(ca_ids)
+                )
+            )
+            students_affected += count_result.scalar() or 0
+            
+            # Delete student assignments first
+            await db.execute(
+                delete(StudentAssignment).where(
+                    StudentAssignment.classroom_assignment_id.in_(ca_ids)
+                )
+            )
+        
+        # Then delete classroom assignments
         await db.execute(
             delete(ClassroomAssignment).where(
                 and_(
@@ -403,5 +588,6 @@ async def update_all_classroom_assignments(
     return UpdateClassroomAssignmentsResponse(
         added=[str(id) for id in list(reading_to_add) + list(vocabulary_to_add)],
         removed=[str(id) for id in list(reading_to_remove) + list(vocabulary_to_remove)],
-        total=len(requested_reading) + len(requested_vocabulary)
+        total=len(requested_reading) + len(requested_vocabulary),
+        students_affected=students_affected
     )

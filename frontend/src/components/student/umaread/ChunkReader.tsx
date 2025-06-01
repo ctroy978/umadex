@@ -23,69 +23,91 @@ export default function ChunkReader({
   largeText = false
 }: ChunkReaderProps) {
   const [selectedImage, setSelectedImage] = useState<ChunkImage | null>(null);
-  const [imagePositions, setImagePositions] = useState<Map<number, ChunkImage>>(new Map());
 
-  // Process content to determine image positions
-  useEffect(() => {
-    if (!chunk.images.length) return;
-
-    // Simple algorithm: distribute images evenly through the content
-    const paragraphs = chunk.content.split('\n\n').filter(p => p.trim());
-    const imageInterval = Math.max(1, Math.floor(paragraphs.length / chunk.images.length));
-    
-    const positions = new Map<number, ChunkImage>();
-    chunk.images.forEach((img, idx) => {
-      const position = Math.min(
-        (idx + 1) * imageInterval,
-        paragraphs.length - 1
-      );
-      positions.set(position, img);
-    });
-    
-    setImagePositions(positions);
-  }, [chunk]);
+  // Create a map of image tags to image data
+  const imageMap = chunk.images.reduce((acc, img) => {
+    if (img.image_tag) {
+      acc[img.image_tag] = img;
+    }
+    return acc;
+  }, {} as Record<string, ChunkImage>);
 
   // Render content with embedded images
   const renderContent = () => {
-    const paragraphs = chunk.content.split('\n\n').filter(p => p.trim());
+    // Split content into segments, handling image tags
+    const segments: React.ReactNode[] = [];
+    let currentText = chunk.content;
+    let keyIndex = 0;
     
-    return paragraphs.map((paragraph, idx) => (
-      <div key={idx}>
-        <p className={`text-gray-800 mb-6 ${
-          largeText 
-            ? 'text-xl leading-loose' 
-            : 'text-base sm:text-lg leading-relaxed'
-        }`}>
-          {paragraph}
-        </p>
-        
-        {imagePositions.has(idx) && (
-          <div className="my-6 flex justify-center">
-            <button
-              onClick={() => setSelectedImage(imagePositions.get(idx)!)}
-              className="relative group cursor-pointer overflow-hidden rounded-lg shadow-md hover:shadow-xl transition-shadow"
-            >
-              <img
-                src={imagePositions.get(idx)!.thumbnail_url || imagePositions.get(idx)!.url}
-                alt={imagePositions.get(idx)!.description}
-                className="w-full max-w-md h-auto object-cover"
-                style={{ maxHeight: '300px' }}
-              />
-              <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-opacity flex items-center justify-center">
-                <span className="text-white opacity-0 group-hover:opacity-100 transition-opacity bg-black bg-opacity-50 px-3 py-1 rounded">
-                  Click to enlarge
-                </span>
-              </div>
-            </button>
-            {imagePositions.get(idx)!.description && (
-              <p className="text-sm text-gray-600 mt-2 text-center italic">
-                {imagePositions.get(idx)!.description}
-              </p>
-            )}
-          </div>
-        )}
-      </div>
-    ));
+    // Regex to find image tags
+    const imageRegex = /<image>(.*?)<\/image>/g;
+    let lastIndex = 0;
+    let match;
+    
+    while ((match = imageRegex.exec(currentText)) !== null) {
+      // Add text before the image tag
+      if (match.index > lastIndex) {
+        const textBefore = currentText.substring(lastIndex, match.index);
+        if (textBefore.trim()) {
+          segments.push(
+            <p key={`text-${keyIndex++}`} className={`text-gray-800 mb-6 ${
+              largeText 
+                ? 'text-xl leading-loose' 
+                : 'text-base sm:text-lg leading-relaxed'
+            }`}>
+              {textBefore}
+            </p>
+          );
+        }
+      }
+      
+      // Add the image
+      const imageTag = match[1];
+      const image = imageMap[imageTag];
+      
+      if (image) {
+        segments.push(
+          <button
+            key={`img-${keyIndex++}`}
+            onClick={() => setSelectedImage(image)}
+            className="float-left mr-4 mb-4 relative group cursor-pointer overflow-hidden rounded-lg shadow-md hover:shadow-xl transition-shadow"
+            style={{ maxWidth: '300px' }}
+          >
+            <img
+              src={image.thumbnail_url || image.url}
+              alt={image.description || ''}
+              className="w-full h-auto object-cover"
+              style={{ maxHeight: '225px' }}
+            />
+            <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-opacity flex items-center justify-center">
+              <span className="text-white opacity-0 group-hover:opacity-100 transition-opacity bg-black bg-opacity-50 px-2 py-1 rounded text-sm">
+                Click to enlarge
+              </span>
+            </div>
+          </button>
+        );
+      }
+      
+      lastIndex = match.index + match[0].length;
+    }
+    
+    // Add any remaining text after the last image
+    if (lastIndex < currentText.length) {
+      const remainingText = currentText.substring(lastIndex);
+      if (remainingText.trim()) {
+        segments.push(
+          <p key={`text-${keyIndex++}`} className={`text-gray-800 mb-6 ${
+            largeText 
+              ? 'text-xl leading-loose' 
+              : 'text-base sm:text-lg leading-relaxed'
+          }`}>
+            {remainingText}
+          </p>
+        );
+      }
+    }
+    
+    return segments;
   };
 
   if (isLoading) {
@@ -102,7 +124,9 @@ export default function ChunkReader({
         {/* Content - no header needed */}
         <div className={`${largeText ? 'p-8' : 'p-6'} max-h-[80vh] overflow-y-auto`}>
           <div className="prose prose-lg max-w-none">
-            {renderContent()}
+            <div className="clearfix">
+              {renderContent()}
+            </div>
           </div>
         </div>
 

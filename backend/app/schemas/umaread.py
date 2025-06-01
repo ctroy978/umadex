@@ -122,12 +122,20 @@ class StudentProgress(BaseModel):
     last_activity: datetime = Field(default_factory=datetime.utcnow)
 
 
+class ChunkImage(BaseModel):
+    """Image model for chunks"""
+    url: str
+    thumbnail_url: Optional[str] = None
+    description: Optional[str] = None
+    image_tag: Optional[str] = None
+
+
 class ChunkResponse(BaseModel):
     """Response model for chunk content with images"""
     chunk_number: int
     total_chunks: int
     content: str
-    images: List[Dict[str, str]] = Field(default_factory=list)  # [{id: str, url: str, description: str}]
+    images: List[ChunkImage] = Field(default_factory=list)
     has_next: bool
     has_previous: bool
 

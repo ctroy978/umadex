@@ -20,10 +20,10 @@ export interface ChunkContent {
 }
 
 export interface ChunkImage {
-  id: string;
   url: string;
   thumbnail_url?: string;
-  description: string;
+  description?: string;
+  image_tag?: string;
 }
 
 export interface Question {

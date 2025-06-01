@@ -11,7 +11,8 @@ import type {
   AvailableAssignment,
   AvailableAssignmentsResponse,
   AssignmentInClassroom,
-  StudentInClassroom
+  StudentInClassroom,
+  CheckAssignmentRemovalResponse
 } from '@/types/classroom';
 
 // Teacher APIs
@@ -91,6 +92,14 @@ export const teacherClassroomApi = {
     data: UpdateClassroomAssignmentsRequest
   ): Promise<UpdateClassroomAssignmentsResponse> {
     const response = await api.put(`/v1/teacher/classrooms/${classroomId}/assignments/all`, data);
+    return response.data;
+  },
+
+  async checkAssignmentRemoval(
+    classroomId: string,
+    data: UpdateClassroomAssignmentsRequest
+  ): Promise<CheckAssignmentRemovalResponse> {
+    const response = await api.post(`/v1/teacher/classrooms/${classroomId}/assignments/check-removal`, data);
     return response.data;
   }
 };

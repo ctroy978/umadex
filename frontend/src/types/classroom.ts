@@ -94,3 +94,15 @@ export interface AvailableAssignmentsResponse {
   page: number;
   per_page: number;
 }
+
+export interface AssignmentWithStudents {
+  assignment_id: string;
+  assignment_type: string;
+  assignment_title: string;
+  student_count: number;
+}
+
+export interface CheckAssignmentRemovalResponse {
+  assignments_with_students: AssignmentWithStudents[];
+  total_students_affected: number;
+}
