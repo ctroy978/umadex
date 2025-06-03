@@ -9,6 +9,7 @@ interface QuestionFlowProps {
   onSubmit: (answer: string, timeSpent: number) => Promise<SubmitAnswerResponse>;
   onProceed: () => void;
   onLoadNextQuestion?: () => void;
+  onRequestSimpler?: () => void;
   isLoading?: boolean;
 }
 
@@ -17,6 +18,7 @@ export default function QuestionFlow({
   onSubmit, 
   onProceed,
   onLoadNextQuestion,
+  onRequestSimpler,
   isLoading = false 
 }: QuestionFlowProps) {
   const [answer, setAnswer] = useState('');
@@ -262,16 +264,39 @@ export default function QuestionFlow({
             )}
             
             {!result.is_correct && (
-              <button
-                onClick={() => {
-                  setResult(null);
-                  setAnswer('');
-                  setStartTime(Date.now());
-                }}
-                className="px-4 py-2 bg-gray-600 text-white font-medium rounded-lg hover:bg-gray-700 transition-colors"
-              >
-                Try Again
-              </button>
+              <>
+                <button
+                  onClick={() => {
+                    setResult(null);
+                    setAnswer('');
+                    setStartTime(Date.now());
+                  }}
+                  className="px-4 py-2 bg-gray-600 text-white font-medium rounded-lg hover:bg-gray-700 transition-colors"
+                >
+                  Try Again
+                </button>
+                {onRequestSimpler && question.question_type === 'comprehension' && question.difficulty_level && question.difficulty_level > 1 && (
+                  <button
+                    onClick={() => {
+                      setResult(null);
+                      setAnswer('');
+                      setStartTime(Date.now());
+                      onRequestSimpler();
+                    }}
+                    disabled={isLoading}
+                    className="px-4 py-2 bg-amber-600 text-white font-medium rounded-lg hover:bg-amber-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors flex items-center"
+                  >
+                    {isLoading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Loading Simpler Question...
+                      </>
+                    ) : (
+                      'Try a Simpler Question'
+                    )}
+                  </button>
+                )}
+              </>
             )}
           </div>
         </div>

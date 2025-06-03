@@ -500,3 +500,86 @@ async def get_progress(
         "is_complete": progress.completed_at is not None,
         "total_chunks": total_chunks
     }
+
+
+@router.post("/assignments/{assignment_id}/chunks/{chunk_number}/simpler")
+async def request_simpler_question(
+    assignment_id: UUID,
+    chunk_number: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Request a simpler question by reducing difficulty level"""
+    
+    # Get current difficulty level
+    current_difficulty = await session_manager.get_difficulty_level(
+        current_user.id, assignment_id
+    ) or 3
+    
+    # Can't go below level 1
+    if current_difficulty <= 1:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Already at the simplest difficulty level"
+        )
+    
+    # Reduce difficulty by 1
+    new_difficulty = current_difficulty - 1
+    
+    # Update difficulty in session
+    await session_manager.set_difficulty_level(
+        current_user.id, assignment_id, new_difficulty
+    )
+    
+    # Clear cached questions to force regeneration
+    await session_manager.clear_question_cache(
+        current_user.id, assignment_id, chunk_number
+    )
+    
+    # Get assignment and chunk for new question generation
+    assignment = await db.get(ReadingAssignment, assignment_id)
+    if not assignment:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Assignment not found"
+        )
+    
+    chunk_result = await db.execute(
+        select(ReadingChunk).where(
+            and_(
+                ReadingChunk.assignment_id == assignment_id,
+                ReadingChunk.chunk_number == chunk_number
+            )
+        )
+    )
+    chunk = chunk_result.scalar_one_or_none()
+    
+    if not chunk:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Chunk not found"
+        )
+    
+    # Generate new questions at lower difficulty
+    questions = await generate_questions_for_chunk(
+        chunk, assignment, new_difficulty, db
+    )
+    
+    # Cache for evaluation
+    await session_manager.cache_questions(
+        current_user.id, assignment_id, chunk_number,
+        {
+            "summary": questions.summary_question.dict(),
+            "comprehension": questions.comprehension_question.dict()
+        }
+    )
+    
+    # Return the comprehension question (since this is only for comprehension questions)
+    return {
+        "question_id": None,
+        "question_text": questions.comprehension_question.question,
+        "question_type": "comprehension",
+        "difficulty_level": new_difficulty,
+        "attempt_number": 1,
+        "previous_feedback": "Let's try a simpler question at difficulty level " + str(new_difficulty)
+    }

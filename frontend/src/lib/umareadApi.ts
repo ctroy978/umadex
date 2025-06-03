@@ -59,5 +59,16 @@ export const umareadApi = {
       { reason }
     );
     return response.data;
+  },
+
+  // Request a simpler question (reduce difficulty)
+  requestSimplerQuestion: async (
+    assignmentId: string, 
+    chunkNumber: number
+  ): Promise<Question> => {
+    const response = await api.post(
+      `/v1/student/umaread/assignments/${assignmentId}/chunks/${chunkNumber}/simpler`
+    );
+    return response.data;
   }
 };

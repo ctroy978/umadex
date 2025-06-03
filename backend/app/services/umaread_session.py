@@ -68,6 +68,11 @@ class UMAReadSessionManager:
         data = await self.redis.get(key)
         return json.loads(data) if data else None
     
+    async def clear_question_cache(self, user_id: UUID, assignment_id: UUID, chunk_number: int):
+        """Clear cached questions for a specific chunk"""
+        key = f"{self.QUESTION_CACHE_PREFIX}:{user_id}:{assignment_id}:{chunk_number}"
+        await self.redis.delete(key)
+    
     # Rate limiting for answer submissions
     async def check_rate_limit(self, user_id: UUID, assignment_id: UUID, chunk_number: int) -> bool:
         """Check if user is within rate limits for answer submission"""

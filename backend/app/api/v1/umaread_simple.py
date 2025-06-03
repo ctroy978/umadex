@@ -563,6 +563,97 @@ async def get_progress(
     }
 
 
+@router.post("/assignments/{assignment_id}/chunks/{chunk_number}/simpler")
+async def request_simpler_question(
+    assignment_id: UUID,
+    chunk_number: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Request a simpler question by reducing difficulty level"""
+    
+    # Get current difficulty level
+    difficulty_key = f"{current_user.id}:{assignment_id}"
+    current_difficulty = difficulty_state.get(difficulty_key, 3)
+    
+    # Can't go below level 1
+    if current_difficulty <= 1:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Already at the simplest difficulty level"
+        )
+    
+    # Reduce difficulty by 1
+    new_difficulty = current_difficulty - 1
+    difficulty_state[difficulty_key] = new_difficulty
+    
+    # Clear cached questions to force regeneration
+    question_key = f"{current_user.id}:{assignment_id}:{chunk_number}"
+    if question_key in question_cache:
+        del question_cache[question_key]
+    
+    # Get assignment and chunk for new question generation
+    assignment = await db.get(ReadingAssignment, assignment_id)
+    if not assignment:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Assignment not found"
+        )
+    
+    chunk_result = await db.execute(
+        select(ReadingChunk).where(
+            and_(
+                ReadingChunk.assignment_id == assignment_id,
+                ReadingChunk.chunk_number == chunk_number
+            )
+        )
+    )
+    chunk = chunk_result.scalar_one_or_none()
+    
+    if not chunk:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Chunk not found"
+        )
+    
+    # Get current question state
+    state_key = f"{current_user.id}:{assignment_id}:{chunk_number}"
+    current_state = question_state.get(state_key, "summary_pending")
+    
+    # Generate new question at lower difficulty (only for comprehension)
+    if current_state == "summary_complete":
+        try:
+            questions = await generate_questions_for_chunk(
+                chunk, assignment, new_difficulty, db
+            )
+            
+            # Cache the new questions
+            question_cache[question_key] = questions
+            
+            # Return the comprehension question
+            return {
+                "question_id": None,
+                "question_text": questions.comprehension_question.question,
+                "question_type": "comprehension",
+                "difficulty_level": new_difficulty,
+                "attempt_number": 1,
+                "previous_feedback": f"Let's try a simpler question at difficulty level {new_difficulty}"
+            }
+        except Exception as e:
+            print(f"Error generating simpler question: {e}")
+            # If AI generation fails, return a generic simpler question
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Unable to generate simpler question. Please try again."
+            )
+    else:
+        # Can't reduce difficulty for summary questions
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot reduce difficulty for summary questions"
+        )
+
+
 @router.get("/test")
 async def test_endpoint():
     """Test endpoint to verify UMARead API is working"""

@@ -38,3 +38,6 @@ class RedisClient:
         return await self._redis.exists(key) > 0
 
 redis_client = RedisClient()
+
+def get_redis_client() -> RedisClient:
+    return redis_client

@@ -169,6 +169,25 @@ export default function UMAReadAssignmentPage({ params }: { params: { id: string
     }
   }
 
+  const handleRequestSimpler = async () => {
+    if (!chunk) return;
+    
+    try {
+      setLoading(true);
+      // Clear any existing errors
+      setError(null);
+      const simplerQuestion = await umareadApi.requestSimplerQuestion(id, chunk.chunk_number);
+      setQuestion(simplerQuestion);
+    } catch (err: any) {
+      console.error('Failed to get simpler question:', err);
+      // Don't set global error - just retry the current question
+      // This prevents showing the error page
+      loadQuestion();
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (loading && !assignment) {
     return (
       <StudentGuard>
@@ -302,6 +321,7 @@ export default function UMAReadAssignmentPage({ params }: { params: { id: string
                   onSubmit={handleSubmitAnswer}
                   onProceed={handleProceedAfterQuestions}
                   onLoadNextQuestion={loadQuestion}
+                  onRequestSimpler={handleRequestSimpler}
                   isLoading={loading}
                 />
               ) : (
