@@ -12,18 +12,31 @@ import {
   UsersIcon,
   ClockIcon,
   ArrowRightIcon,
-  ArrowRightOnRectangleIcon
+  ArrowRightOnRectangleIcon,
+  CheckCircleIcon
 } from '@heroicons/react/24/outline'
+
+interface AvailableTest {
+  test_id: string;
+  assignment_title: string;
+  time_limit_minutes: number;
+  attempts_remaining: number;
+  expires_at: string;
+  classroom_assignment_id: string;
+}
 
 export default function StudentDashboard() {
   const router = useRouter()
-  const { logout } = useAuth()
+  const { logout, token } = useAuth()
   const [classrooms, setClassrooms] = useState<StudentClassroom[]>([])
+  const [availableTests, setAvailableTests] = useState<AvailableTest[]>([])
   const [loading, setLoading] = useState(true)
+  const [testsLoading, setTestsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     fetchClassrooms()
+    fetchAvailableTests()
   }, [])
 
   const fetchClassrooms = async () => {
@@ -36,6 +49,23 @@ export default function StudentDashboard() {
       setError('Failed to load classrooms')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const fetchAvailableTests = async () => {
+    try {
+      setTestsLoading(true)
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/v1/tests/available`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      if (response.ok) {
+        const data = await response.json()
+        setAvailableTests(data)
+      }
+    } catch (err) {
+      console.error('Failed to fetch available tests:', err)
+    } finally {
+      setTestsLoading(false)
     }
   }
 
@@ -138,6 +168,50 @@ export default function StudentDashboard() {
                     </p>
                   </div>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* Available Tests Section */}
+          {!testsLoading && availableTests.length > 0 && (
+            <div className="mb-8">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold text-gray-900">Available Tests</h2>
+                <span className="text-sm text-gray-500">
+                  {availableTests.length} {availableTests.length === 1 ? 'test' : 'tests'} available
+                </span>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {availableTests.map((test) => (
+                  <div
+                    key={test.test_id}
+                    className="bg-white rounded-lg shadow hover:shadow-md transition-shadow border border-green-200"
+                  >
+                    <div className="p-4">
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex-1">
+                          <h3 className="font-medium text-gray-900 mb-1">
+                            {test.assignment_title}
+                          </h3>
+                          <div className="space-y-1 text-sm text-gray-600">
+                            <p>Time limit: {test.time_limit_minutes} minutes</p>
+                            <p>Attempts remaining: {test.attempts_remaining}</p>
+                            <p>Expires: {new Date(test.expires_at).toLocaleDateString()}</p>
+                          </div>
+                        </div>
+                        <CheckCircleIcon className="h-5 w-5 text-green-500" />
+                      </div>
+                      
+                      <button
+                        onClick={() => router.push(`/student/test/${test.test_id}`)}
+                        className="w-full px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-sm font-medium"
+                      >
+                        Start Test
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           )}

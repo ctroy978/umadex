@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { BookOpenIcon, PlusIcon, PencilIcon, ArchiveBoxArrowDownIcon, ArrowPathIcon } from '@heroicons/react/24/outline'
+import { BookOpenIcon, PlusIcon, PencilIcon, ArchiveBoxArrowDownIcon, ArrowPathIcon, ClipboardDocumentListIcon } from '@heroicons/react/24/outline'
 import { ReadingAssignmentList, ReadingAssignmentListResponse } from '@/types/reading'
 import { readingApi } from '@/lib/readingApi'
 import AssignmentSearch from '@/components/teacher/umaread/AssignmentSearch'
@@ -141,6 +141,10 @@ export default function UmaReadPage() {
 
   const handleEdit = (id: string) => {
     router.push(`/teacher/assignments/${id}/edit`)
+  }
+
+  const handleTestReview = (id: string) => {
+    router.push(`/teacher/assignments/${id}/test-review`)
   }
 
   const formatDate = (dateString: string) => {
@@ -358,6 +362,15 @@ export default function UmaReadPage() {
                               >
                                 <PencilIcon className="h-5 w-5" />
                               </button>
+                              {assignment.status === 'published' && assignment.assignment_type === 'UMARead' && !isArchived && (
+                                <button
+                                  onClick={() => handleTestReview(assignment.id)}
+                                  className="text-purple-600 hover:text-purple-900"
+                                  title="Review Test"
+                                >
+                                  <ClipboardDocumentListIcon className="h-5 w-5" />
+                                </button>
+                              )}
                               {isArchived ? (
                                 <button
                                   onClick={() => handleRestore(assignment.id)}

@@ -138,6 +138,10 @@ class UMAReadService:
                 )
                 student_assignment = student_assignment_result.scalar_one()
         
+        # Store assignment details before commit
+        assignment_title = assignment.assignment_title
+        assignment_author = assignment.author
+        
         # Update status to in_progress if it's not_started
         if student_assignment.status == "not_started":
             student_assignment.status = "in_progress"
@@ -146,8 +150,8 @@ class UMAReadService:
         
         return AssignmentStartResponse(
             assignment_id=assignment_id,
-            title=assignment.assignment_title,
-            author=assignment.author,
+            title=assignment_title,
+            author=assignment_author,
             total_chunks=total_chunks,
             current_chunk=student_assignment.current_position,
             difficulty_level=starting_difficulty,

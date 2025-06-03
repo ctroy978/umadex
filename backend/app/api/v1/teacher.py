@@ -911,10 +911,48 @@ async def validate_assignment_markup(
     return result
 
 
+async def generate_test_for_assignment_background(assignment_id: str, teacher_id: str):
+    """Background task to generate test for an assignment."""
+    from app.core.database import get_db
+    from app.services.test_generation import TestGenerationService
+    from app.models.tests import AssignmentTest
+    from sqlalchemy import select
+    import uuid
+    
+    async for db in get_db():
+        try:
+            # Check if test already exists
+            existing = await db.execute(
+                select(AssignmentTest).where(AssignmentTest.assignment_id == uuid.UUID(assignment_id))
+            )
+            if existing.scalar_one_or_none():
+                return  # Test already exists
+            
+            # Generate test
+            test_service = TestGenerationService()
+            test_data = await test_service.generate_test_for_assignment(
+                uuid.UUID(assignment_id),
+                db
+            )
+            
+            # Create test record
+            new_test = AssignmentTest(**test_data)
+            db.add(new_test)
+            await db.commit()
+            
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error generating test for assignment {assignment_id}: {e}")
+        finally:
+            await db.close()
+
+
 @router.post("/assignments/reading/{assignment_id}/publish", response_model=PublishResult)
 async def publish_assignment(
     assignment_id: UUID,
     background_tasks: BackgroundTasks,
+    generate_test: bool = True,  # Default to true for automatic test generation
     teacher: User = Depends(require_teacher),
     db: AsyncSession = Depends(get_db)
 ):
@@ -926,7 +964,7 @@ async def publish_assignment(
         teacher.id
     )
     
-    # If publishing was successful, check for images
+    # If publishing was successful, check for images and generate test
     if result.success:
         # Check if assignment has images
         images_result = await db.execute(
@@ -953,6 +991,30 @@ async def publish_assignment(
                 .values(images_processed=True)
             )
             await db.commit()
+        
+        # Generate test if requested and assignment type is UMARead
+        if generate_test:
+            # Check if assignment is UMARead type
+            assignment_result = await db.execute(
+                select(ReadingAssignmentModel.assignment_type)
+                .where(ReadingAssignmentModel.id == assignment_id)
+            )
+            assignment_type = assignment_result.scalar()
+            
+            if assignment_type == "UMARead":
+                # Queue test generation in background
+                from app.services.test_generation import TestGenerationService
+                test_service = TestGenerationService()
+                background_tasks.add_task(
+                    generate_test_for_assignment_background,
+                    str(assignment_id),
+                    str(teacher.id)
+                )
+                
+                if result.message:
+                    result.message += " Test will be generated in background."
+                else:
+                    result.message = "Assignment published. Test will be generated in background."
     
     return result
 

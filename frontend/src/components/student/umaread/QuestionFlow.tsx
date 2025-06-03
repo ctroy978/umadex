@@ -24,6 +24,10 @@ export default function QuestionFlow({
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<SubmitAnswerResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [lastSubmitTime, setLastSubmitTime] = useState<number>(0);
+  
+  const MAX_CHARS = 500;
+  const MIN_SUBMIT_INTERVAL = 3000; // 3 seconds between submissions
 
   // Reset state when question changes
   useEffect(() => {
@@ -31,18 +35,32 @@ export default function QuestionFlow({
     setStartTime(Date.now());
     setResult(null);
     setError(null);
+    setLastSubmitTime(0); // Reset spam prevention timer
   }, [question.question_text]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    // Check for spam prevention
+    const now = Date.now();
+    if (now - lastSubmitTime < MIN_SUBMIT_INTERVAL) {
+      setError('Please wait a few seconds before submitting again.');
+      return;
+    }
+    
     if (answer.trim().length < 10) {
       setError('Please provide a more detailed answer (at least 10 characters).');
+      return;
+    }
+    
+    if (answer.length > MAX_CHARS) {
+      setError(`Answer must be ${MAX_CHARS} characters or less.`);
       return;
     }
 
     setSubmitting(true);
     setError(null);
+    setLastSubmitTime(now);
 
     try {
       const timeSpent = Math.floor((Date.now() - startTime) / 1000);
@@ -133,7 +151,12 @@ export default function QuestionFlow({
             <textarea
               id="answer"
               value={answer}
-              onChange={(e) => setAnswer(e.target.value)}
+              onChange={(e) => {
+                const value = e.target.value;
+                if (value.length <= MAX_CHARS) {
+                  setAnswer(value);
+                }
+              }}
               placeholder={
                 question.question_type === 'summary'
                   ? "Write your summary here (2-3 sentences)..."
@@ -143,9 +166,17 @@ export default function QuestionFlow({
               rows={8}
               disabled={submitting || isLoading}
               required
+              maxLength={MAX_CHARS}
             />
-            <div className="mt-1 text-xs text-gray-500 text-right">
-              {answer.length} characters
+            <div className="mt-1 flex justify-between text-xs">
+              <span className="text-gray-500">
+                {answer.length < 10 && answer.length > 0 && (
+                  <span className="text-red-600">Minimum 10 characters required</span>
+                )}
+              </span>
+              <span className={`${answer.length > MAX_CHARS * 0.9 ? 'text-amber-600' : 'text-gray-500'}`}>
+                {answer.length} / {MAX_CHARS} characters
+              </span>
             </div>
           </div>
 
@@ -157,7 +188,7 @@ export default function QuestionFlow({
 
           <button
             type="submit"
-            disabled={submitting || isLoading || answer.trim().length < 10}
+            disabled={submitting || isLoading || answer.trim().length < 10 || answer.length > MAX_CHARS}
             className="w-full sm:w-auto px-6 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
           >
             {submitting ? (
@@ -209,6 +240,8 @@ export default function QuestionFlow({
                   // Clear the result and load next question
                   setResult(null);
                   setAnswer('');
+                  setStartTime(Date.now());
+                  setLastSubmitTime(0); // Reset spam prevention
                   if (onLoadNextQuestion) {
                     onLoadNextQuestion();
                   }

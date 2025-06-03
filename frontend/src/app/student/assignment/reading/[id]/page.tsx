@@ -28,6 +28,7 @@ export default function UMAReadAssignmentPage({ params }: { params: { id: string
   const [question, setQuestion] = useState<Question | null>(null);
   const [progress, setProgress] = useState<StudentProgress | null>(null);
   const [isComplete, setIsComplete] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
 
   // Initialize assignment
   useEffect(() => {
@@ -52,6 +53,7 @@ export default function UMAReadAssignmentPage({ params }: { params: { id: string
   const loadAssignment = async () => {
     try {
       setLoading(true);
+      setError(null);
       const data = await umareadApi.startAssignment(id);
       setAssignment(data);
       
@@ -60,7 +62,17 @@ export default function UMAReadAssignmentPage({ params }: { params: { id: string
         setIsComplete(true);
       }
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to load assignment');
+      console.error('Failed to load assignment:', err);
+      const errorMessage = err.response?.data?.detail || 'Failed to load assignment';
+      setError(errorMessage);
+      
+      // Auto-retry on 500 errors
+      if (err.response?.status === 500 && retryCount < 2) {
+        setRetryCount(prev => prev + 1);
+        setTimeout(() => {
+          loadAssignment();
+        }, 1000);
+      }
     } finally {
       setLoading(false);
     }
@@ -84,13 +96,18 @@ export default function UMAReadAssignmentPage({ params }: { params: { id: string
   const loadQuestion = async () => {
     if (!assignment || !chunk) return;
     
+    console.log('Loading question for chunk:', chunk.chunk_number);
+    
     try {
       setLoading(true);
       const data = await umareadApi.getCurrentQuestion(id, chunk.chunk_number);
+      console.log('Question loaded:', data);
       setQuestion(data);
     } catch (err: any) {
+      console.error('Error loading question:', err.response?.data);
       if (err.response?.status === 400 && err.response?.data?.detail?.includes('already completed')) {
         // Chunk is complete, move to next
+        console.log('Chunk already completed, moving to next');
         handleNavigate('next');
       } else {
         setError(err.response?.data?.detail || 'Failed to load question');
@@ -156,7 +173,11 @@ export default function UMAReadAssignmentPage({ params }: { params: { id: string
     return (
       <StudentGuard>
         <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-          <Loader2 className="w-8 h-8 text-gray-400 animate-spin" />
+          <div className="text-center">
+            <Loader2 className="w-12 h-12 text-blue-600 animate-spin mx-auto mb-4" />
+            <p className="text-gray-600 text-lg font-medium">Loading assignment...</p>
+            <p className="text-gray-500 text-sm mt-2">Please wait while we prepare your reading</p>
+          </div>
         </div>
       </StudentGuard>
     );
@@ -167,14 +188,30 @@ export default function UMAReadAssignmentPage({ params }: { params: { id: string
       <StudentGuard>
         <div className="min-h-screen bg-gray-50 p-4">
           <div className="max-w-2xl mx-auto mt-8">
-            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-              <p className="text-red-700">{error}</p>
-              <button
-                onClick={() => router.back()}
-                className="mt-2 text-red-600 hover:text-red-700 underline"
-              >
-                Go back
-              </button>
+            <div className="bg-red-50 border border-red-200 rounded-lg p-6">
+              <h3 className="text-lg font-semibold text-red-800 mb-2">Unable to Load Assignment</h3>
+              <p className="text-red-700 mb-4">{error}</p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    setError(null);
+                    setRetryCount(0);
+                    loadAssignment();
+                  }}
+                  className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors"
+                >
+                  Try Again
+                </button>
+                <button
+                  onClick={() => router.back()}
+                  className="px-4 py-2 border border-red-300 text-red-600 rounded-md hover:bg-red-50 transition-colors"
+                >
+                  Go Back
+                </button>
+              </div>
+              {retryCount > 0 && (
+                <p className="text-sm text-red-600 mt-3">Retry attempt {retryCount} of 2</p>
+              )}
             </div>
           </div>
         </div>
@@ -269,8 +306,9 @@ export default function UMAReadAssignmentPage({ params }: { params: { id: string
                 />
               ) : (
                 <div className="bg-white rounded-lg shadow-sm p-6">
-                  <div className="flex items-center justify-center h-32">
-                    <Loader2 className="w-8 h-8 text-gray-400 animate-spin" />
+                  <div className="text-center py-8">
+                    <Loader2 className="w-8 h-8 text-blue-600 animate-spin mx-auto mb-3" />
+                    <p className="text-gray-600 text-sm">Loading questions...</p>
                   </div>
                 </div>
               )}

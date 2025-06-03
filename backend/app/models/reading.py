@@ -39,6 +39,7 @@ class ReadingAssignment(Base):
     teacher = relationship("User", back_populates="reading_assignments")
     chunks = relationship("ReadingChunk", back_populates="assignment", cascade="all, delete-orphan")
     images = relationship("AssignmentImage", back_populates="assignment", cascade="all, delete-orphan")
+    tests = relationship("AssignmentTest", back_populates="assignment", cascade="all, delete-orphan")
 
 
 class ReadingChunk(Base):

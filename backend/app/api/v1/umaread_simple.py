@@ -179,8 +179,13 @@ async def get_current_question(
     question_key = f"{current_user.id}:{assignment_id}:{chunk_number}"
     current_questions[question_key] = questions
     
+    # Debug: Log the current state
+    print(f"DEBUG: Current question state for {state_key}: {question_state.get(state_key)}")
+    print(f"DEBUG: All question states: {question_state}")
+    
     # Check if summary has been completed
     if question_state.get(state_key) == "summary_complete":
+        print(f"DEBUG: Returning comprehension question for {state_key}")
         # Return comprehension question
         return {
             "question_id": None,
@@ -191,6 +196,7 @@ async def get_current_question(
             "previous_feedback": None
         }
     else:
+        print(f"DEBUG: Returning summary question for {state_key}")
         # Return summary question
         return {
             "question_id": None,
@@ -218,6 +224,19 @@ async def submit_answer(
     
     # Get student answer (frontend sends 'answer_text')
     student_answer = answer_data.get("answer_text", answer_data.get("answer", "")).strip()
+    
+    # Validate answer length
+    if len(student_answer) < 10:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Answer must be at least 10 characters long"
+        )
+    
+    if len(student_answer) > 500:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Answer must not exceed 500 characters"
+        )
     
     # Debug logging
     print(f"DEBUG: Received answer data: {answer_data}")

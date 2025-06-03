@@ -39,6 +39,10 @@ export default function ChunkReader({
     let currentText = chunk.content;
     let keyIndex = 0;
     
+    // First, remove <important> tags but keep the content inside them
+    currentText = currentText.replace(/<important>/gi, '');
+    currentText = currentText.replace(/<\/important>/gi, '');
+    
     // Regex to find image tags
     const imageRegex = /<image>(.*?)<\/image>/g;
     let lastIndex = 0;
