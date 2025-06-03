@@ -22,20 +22,46 @@ class RedisClient:
             raise RuntimeError("Redis client not initialized")
         await self._redis.setex(key, expiry_seconds, value)
     
+    async def setex(self, key: str, expiry_seconds: int, value: str):
+        """Alias for set_with_expiry to match Redis API"""
+        await self.set_with_expiry(key, value, expiry_seconds)
+    
     async def get(self, key: str) -> Optional[str]:
         if not self._redis:
             raise RuntimeError("Redis client not initialized")
-        return await self._redis.get(key)
+        result = await self._redis.get(key)
+        return result if isinstance(result, str) else None
     
-    async def delete(self, key: str):
+    async def delete(self, *keys: str):
         if not self._redis:
             raise RuntimeError("Redis client not initialized")
-        await self._redis.delete(key)
+        if keys:
+            await self._redis.delete(*keys)
     
     async def exists(self, key: str) -> bool:
         if not self._redis:
             raise RuntimeError("Redis client not initialized")
         return await self._redis.exists(key) > 0
+    
+    async def incr(self, key: str):
+        if not self._redis:
+            raise RuntimeError("Redis client not initialized")
+        return await self._redis.incr(key)
+    
+    async def expire(self, key: str, seconds: int):
+        if not self._redis:
+            raise RuntimeError("Redis client not initialized")
+        return await self._redis.expire(key, seconds)
+    
+    def pipeline(self):
+        if not self._redis:
+            raise RuntimeError("Redis client not initialized")
+        return self._redis.pipeline()
+    
+    async def scan(self, cursor: int = 0, match: str = None, count: int = 100):
+        if not self._redis:
+            raise RuntimeError("Redis client not initialized")
+        return await self._redis.scan(cursor, match=match, count=count)
 
 redis_client = RedisClient()
 

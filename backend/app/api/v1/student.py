@@ -12,6 +12,8 @@ from app.models.user import User, UserRole
 from app.models.classroom import Classroom, ClassroomStudent, ClassroomAssignment
 from app.models.reading import ReadingAssignment
 from app.models.vocabulary import VocabularyList
+from app.models.umaread import UmareadAssignmentProgress
+from app.models.tests import AssignmentTest
 from app.utils.deps import get_current_user
 from app.schemas.classroom import ClassroomResponse
 
@@ -56,6 +58,8 @@ class StudentAssignmentResponse(BaseModel):
     end_date: Optional[datetime] = None
     display_order: Optional[int] = None
     status: str  # "not_started", "active", "expired"
+    is_completed: bool = False
+    has_test: bool = False
 
 class StudentClassroomDetailResponse(BaseModel):
     id: UUID
@@ -345,14 +349,31 @@ async def get_classroom_detail(
     # Get all assignments (not filtered by date)
     assignments = []
     
-    # Get reading assignments
+    # Get reading assignments with completion status and test availability
     reading_query = await db.execute(
-        select(ReadingAssignment, ClassroomAssignment)
+        select(
+            ReadingAssignment, 
+            ClassroomAssignment,
+            UmareadAssignmentProgress.completed_at,
+            exists().where(
+                and_(
+                    AssignmentTest.assignment_id == ReadingAssignment.id,
+                    AssignmentTest.status == "approved"
+                )
+            ).label("has_test")
+        )
         .join(ClassroomAssignment, 
               and_(
                   ClassroomAssignment.assignment_id == ReadingAssignment.id,
                   ClassroomAssignment.assignment_type == "reading"
               ))
+        .outerjoin(
+            UmareadAssignmentProgress,
+            and_(
+                UmareadAssignmentProgress.assignment_id == ReadingAssignment.id,
+                UmareadAssignmentProgress.student_id == current_user.id
+            )
+        )
         .where(
             and_(
                 ClassroomAssignment.classroom_id == classroom_id,
@@ -363,7 +384,12 @@ async def get_classroom_detail(
         .order_by(ClassroomAssignment.start_date, ClassroomAssignment.display_order, ClassroomAssignment.assigned_at)
     )
     
-    for assignment, ca in reading_query:
+    for row in reading_query:
+        assignment = row.ReadingAssignment
+        ca = row.ClassroomAssignment
+        completed_at = row.completed_at
+        has_test = row.has_test
+        
         status = calculate_assignment_status(ca.start_date, ca.end_date)
         assignments.append(StudentAssignmentResponse(
             id=str(assignment.id),
@@ -377,7 +403,9 @@ async def get_classroom_detail(
             start_date=ca.start_date,
             end_date=ca.end_date,
             display_order=ca.display_order,
-            status=status
+            status=status,
+            is_completed=completed_at is not None,
+            has_test=has_test
         ))
     
     # Get vocabulary assignments
@@ -411,7 +439,9 @@ async def get_classroom_detail(
             start_date=ca.start_date,
             end_date=ca.end_date,
             display_order=ca.display_order,
-            status=status
+            status=status,
+            is_completed=False,  # Vocabulary assignments don't have completion tracking yet
+            has_test=False  # Vocabulary assignments don't have tests
         ))
     
     # Sort assignments by start date (earliest first), then display order
@@ -550,3 +580,72 @@ async def validate_assignment_access(
         "assignment_type": assignment_type,
         "assignment_id": str(assignment_id)
     }
+
+
+class TestStatusResponse(BaseModel):
+    has_test: bool
+    test_id: Optional[str] = None
+
+
+@router.get("/assignment/reading/{assignment_id}/test-status", response_model=TestStatusResponse)
+async def get_assignment_test_status(
+    assignment_id: UUID,
+    current_user: User = Depends(require_student_or_teacher),
+    db: AsyncSession = Depends(get_db)
+):
+    """Check if a reading assignment has an associated test"""
+    # First, verify that the student has access to this assignment through their classroom enrollment
+    ca_query = select(ClassroomAssignment, Classroom)
+    ca_query = ca_query.join(Classroom, Classroom.id == ClassroomAssignment.classroom_id)
+    ca_query = ca_query.where(
+        and_(
+            ClassroomAssignment.assignment_id == assignment_id,
+            ClassroomAssignment.assignment_type == "reading"
+        )
+    )
+    
+    result = await db.execute(ca_query)
+    ca_result = result.one_or_none()
+    
+    if not ca_result:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Assignment not found"
+        )
+    
+    classroom_assignment, classroom = ca_result
+    
+    # Check if student is enrolled in the classroom
+    enrollment = await db.execute(
+        select(ClassroomStudent)
+        .where(
+            and_(
+                ClassroomStudent.classroom_id == classroom.id,
+                ClassroomStudent.student_id == current_user.id,
+                ClassroomStudent.removed_at.is_(None)
+            )
+        )
+    )
+    
+    if not enrollment.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not enrolled in this classroom"
+        )
+    
+    # Check if assignment has an approved test
+    test_query = await db.execute(
+        select(AssignmentTest.id)
+        .where(
+            and_(
+                AssignmentTest.assignment_id == assignment_id,
+                AssignmentTest.status == "approved"
+            )
+        )
+    )
+    test = test_query.scalar_one_or_none()
+    
+    if test:
+        return TestStatusResponse(has_test=True, test_id=str(test))
+    else:
+        return TestStatusResponse(has_test=False)

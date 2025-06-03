@@ -32,7 +32,7 @@ class UMAReadSessionManager:
         """Get the current question state for a user/assignment/chunk"""
         key = f"{self.QUESTION_STATE_PREFIX}:{user_id}:{assignment_id}:{chunk_number}"
         state = await self.redis.get(key)
-        return state.decode('utf-8') if state else None
+        return state
     
     async def set_question_state(self, user_id: UUID, assignment_id: UUID, chunk_number: int, state: str):
         """Set the question state (e.g., 'summary_complete', 'chunk_complete')"""
@@ -120,7 +120,7 @@ class UMAReadSessionManager:
         """Get last activity timestamp"""
         key = f"umaread:activity:{user_id}:{assignment_id}"
         timestamp = await self.redis.get(key)
-        return datetime.fromisoformat(timestamp.decode('utf-8')) if timestamp else None
+        return datetime.fromisoformat(timestamp) if timestamp else None
     
     # Bulk operations for monitoring
     async def get_active_sessions_count(self) -> int:

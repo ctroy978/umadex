@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { umareadApi } from '@/lib/umareadApi';
+import { studentApi } from '@/lib/studentApi';
 import ChunkReader from '@/components/student/umaread/ChunkReader';
 import QuestionFlow from '@/components/student/umaread/QuestionFlow';
 import ProgressIndicator from '@/components/student/umaread/ProgressIndicator';
@@ -29,6 +30,7 @@ export default function UMAReadAssignmentPage({ params }: { params: { id: string
   const [progress, setProgress] = useState<StudentProgress | null>(null);
   const [isComplete, setIsComplete] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
+  const [hasTest, setHasTest] = useState(false);
 
   // Initialize assignment
   useEffect(() => {
@@ -37,7 +39,7 @@ export default function UMAReadAssignmentPage({ params }: { params: { id: string
 
   // Load chunk when assignment is ready
   useEffect(() => {
-    if (assignment) {
+    if (assignment && assignment.status !== 'completed') {
       loadChunk(assignment.current_chunk);
       loadProgress();
     }
@@ -60,6 +62,16 @@ export default function UMAReadAssignmentPage({ params }: { params: { id: string
       // Check if assignment is already complete
       if (data.status === 'completed') {
         setIsComplete(true);
+        // Check if there's a test available
+        try {
+          const testStatus = await studentApi.getAssignmentTestStatus(id);
+          setHasTest(testStatus.has_test);
+        } catch (err) {
+          console.error('Failed to check test status:', err);
+        }
+        // Show completion screen instead of trying to load chunks
+        setLoading(false);
+        return;
       }
     } catch (err: any) {
       console.error('Failed to load assignment:', err);
@@ -164,6 +176,14 @@ export default function UMAReadAssignmentPage({ params }: { params: { id: string
       // Assignment complete - mark it as such
       setIsComplete(true);
       
+      // Check if there's a test available
+      try {
+        const testStatus = await studentApi.getAssignmentTestStatus(id);
+        setHasTest(testStatus.has_test);
+      } catch (err) {
+        console.error('Failed to check test status:', err);
+      }
+      
       // Update assignment status in backend (in real implementation)
       // For now, just update local state
     }
@@ -251,6 +271,8 @@ export default function UMAReadAssignmentPage({ params }: { params: { id: string
           author={assignment.author}
           totalChunks={assignment.total_chunks}
           difficultyLevel={progress?.difficulty_level || assignment.difficulty_level}
+          assignmentId={id}
+          hasTest={hasTest}
         />
       </StudentGuard>
     );

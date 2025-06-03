@@ -8,7 +8,9 @@ import {
   LanguageIcon,
   ArrowRightIcon,
   CalendarIcon,
-  UserIcon
+  UserIcon,
+  CheckCircleIcon,
+  DocumentCheckIcon as FileCheckIcon
 } from '@heroicons/react/24/outline'
 import { useRouter } from 'next/navigation'
 
@@ -24,7 +26,13 @@ export default function AssignmentCard({ assignment, classroomId }: AssignmentCa
 
   const handleAssignmentClick = () => {
     if (assignment.status === 'active') {
-      router.push(`/student/assignment/${assignment.item_type}/${assignment.id}`)
+      if (assignment.is_completed && assignment.has_test) {
+        // Navigate to test page for completed assignments with tests
+        router.push(`/student/test/${assignment.id}`)
+      } else if (!assignment.is_completed) {
+        // Navigate to assignment page for incomplete assignments
+        router.push(`/student/assignment/${assignment.item_type}/${assignment.id}`)
+      }
     }
   }
 
@@ -55,6 +63,9 @@ export default function AssignmentCard({ assignment, classroomId }: AssignmentCa
       case 'not_started':
         return 'Not Available Yet'
       case 'active':
+        if (assignment.is_completed) {
+          return assignment.has_test ? 'Start Completion Test' : 'Completed'
+        }
         return 'Start Assignment'
       case 'expired':
         return 'Assignment Ended'
@@ -62,7 +73,9 @@ export default function AssignmentCard({ assignment, classroomId }: AssignmentCa
   }
 
   return (
-    <div className={`bg-white rounded-lg shadow hover:shadow-md transition-shadow border ${statusColors.border}`}>
+    <div className={`bg-white rounded-lg shadow hover:shadow-md transition-shadow border ${
+      assignment.is_completed ? 'border-green-300 bg-green-50/30' : statusColors.border
+    }`}>
       <div className="p-6">
         {/* Header */}
         <div className="flex items-start justify-between mb-4">
@@ -87,9 +100,17 @@ export default function AssignmentCard({ assignment, classroomId }: AssignmentCa
               )}
             </div>
           </div>
-          <div className={`flex items-center space-x-1 px-3 py-1 rounded-full text-sm ${statusColors.bg} ${statusColors.text}`}>
-            {getStatusIcon()}
-            <span className="capitalize">{assignment.status.replace('_', ' ')}</span>
+          <div className="flex items-center space-x-2">
+            {assignment.is_completed && (
+              <div className="flex items-center space-x-1 px-3 py-1 rounded-full text-sm bg-green-100 text-green-800">
+                <CheckCircleIcon className="h-5 w-5" />
+                <span>Completed</span>
+              </div>
+            )}
+            <div className={`flex items-center space-x-1 px-3 py-1 rounded-full text-sm ${statusColors.bg} ${statusColors.text}`}>
+              {getStatusIcon()}
+              <span className="capitalize">{assignment.status.replace('_', ' ')}</span>
+            </div>
           </div>
         </div>
 
@@ -129,15 +150,23 @@ export default function AssignmentCard({ assignment, classroomId }: AssignmentCa
 
           <button
             onClick={handleAssignmentClick}
-            disabled={assignment.status !== 'active'}
+            disabled={assignment.status !== 'active' || (assignment.is_completed && !assignment.has_test)}
             className={`flex items-center px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
               assignment.status === 'active'
-                ? 'bg-primary-600 text-white hover:bg-primary-700'
+                ? assignment.is_completed
+                  ? assignment.has_test
+                    ? 'bg-green-600 text-white hover:bg-green-700'
+                    : 'bg-green-100 text-green-800 cursor-not-allowed'
+                  : 'bg-primary-600 text-white hover:bg-primary-700'
                 : 'bg-gray-100 text-gray-400 cursor-not-allowed'
             }`}
           >
             {getButtonText()}
-            {assignment.status === 'active' && <ArrowRightIcon className="h-4 w-4 ml-2" />}
+            {assignment.status === 'active' && (!assignment.is_completed || assignment.has_test) && (
+              assignment.has_test && assignment.is_completed 
+                ? <FileCheckIcon className="h-4 w-4 ml-2" />
+                : <ArrowRightIcon className="h-4 w-4 ml-2" />
+            )}
           </button>
         </div>
       </div>

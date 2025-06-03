@@ -1,6 +1,6 @@
 'use client';
 
-import { CheckCircle, Trophy, ArrowLeft } from 'lucide-react';
+import { CheckCircle, Trophy, ArrowLeft, FileCheck } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 interface CompletionScreenProps {
@@ -8,13 +8,17 @@ interface CompletionScreenProps {
   author?: string;
   totalChunks: number;
   difficultyLevel: number;
+  assignmentId: string;
+  hasTest?: boolean;
 }
 
 export default function CompletionScreen({ 
   title, 
   author, 
   totalChunks,
-  difficultyLevel 
+  difficultyLevel,
+  assignmentId,
+  hasTest = false
 }: CompletionScreenProps) {
   const router = useRouter();
 
@@ -65,14 +69,25 @@ export default function CompletionScreen({
             Your reading comprehension skills are improving!
           </p>
 
-          {/* Action Button */}
-          <button
-            onClick={() => router.push('/student/dashboard')}
-            className="inline-flex items-center px-6 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            <ArrowLeft className="w-5 h-5 mr-2" />
-            Return to Dashboard
-          </button>
+          {/* Action Buttons */}
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            {hasTest && (
+              <button
+                onClick={() => router.push(`/student/test/${assignmentId}`)}
+                className="inline-flex items-center px-6 py-3 bg-green-600 text-white font-medium rounded-lg hover:bg-green-700 transition-colors"
+              >
+                <FileCheck className="w-5 h-5 mr-2" />
+                Take Completion Test
+              </button>
+            )}
+            <button
+              onClick={() => router.push('/student/dashboard')}
+              className="inline-flex items-center px-6 py-3 bg-gray-600 text-white font-medium rounded-lg hover:bg-gray-700 transition-colors"
+            >
+              <ArrowLeft className="w-5 h-5 mr-2" />
+              Return to Dashboard
+            </button>
+          </div>
         </div>
       </div>
     </div>

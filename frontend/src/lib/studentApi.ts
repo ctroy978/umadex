@@ -25,6 +25,8 @@ export interface StudentAssignment {
   end_date?: string
   display_order?: number
   status: 'not_started' | 'active' | 'expired'
+  is_completed: boolean
+  has_test: boolean
 }
 
 export interface StudentClassroomDetail {
@@ -97,6 +99,12 @@ export const studentApi = {
     assignment_id: string
   }> {
     const response = await api.get(`/v1/student/assignment/${assignmentType}/${assignmentId}/validate`)
+    return response.data
+  },
+
+  // Get test status for an assignment
+  async getAssignmentTestStatus(assignmentId: string): Promise<{ has_test: boolean; test_id?: string }> {
+    const response = await api.get(`/v1/student/assignment/reading/${assignmentId}/test-status`)
     return response.data
   }
 }

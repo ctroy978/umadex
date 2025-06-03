@@ -1,7 +1,7 @@
 """
 UMARead API with hybrid Redis + PostgreSQL storage
 """
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from uuid import UUID
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -19,7 +19,7 @@ from app.utils.deps import get_current_user
 from app.schemas.umaread import ChunkResponse, AssignmentStartResponse
 from app.services.umaread_simple import UMAReadService
 from app.services.umaread_session import UMAReadSessionManager
-from app.services.question_generation import generate_questions_for_chunk
+from app.services.question_generation import generate_questions_for_chunk, Question
 from app.services.answer_evaluation import evaluate_answer, should_increase_difficulty
 import bcrypt
 import re
@@ -56,10 +56,22 @@ async def start_assignment(
             db, current_user.id, assignment_id
         )
         
+        # Get the student assignment ID
+        student_assignment_result = await db.execute(
+            select(StudentAssignment.id)
+            .where(
+                and_(
+                    StudentAssignment.student_id == current_user.id,
+                    StudentAssignment.assignment_id == assignment_id
+                )
+            )
+        )
+        student_assignment_id = student_assignment_result.scalar()
+        
         progress = UmareadAssignmentProgress(
             student_id=current_user.id,
             assignment_id=assignment_id,
-            student_assignment_id=assignment_info.student_assignment_id,
+            student_assignment_id=student_assignment_id,
             current_chunk=1,
             total_chunks_completed=0,
             current_difficulty_level=assignment_info.difficulty_level
@@ -114,7 +126,7 @@ async def get_chunk(
 ):
     """Get chunk content"""
     return await umaread_service.get_chunk_content(
-        db, assignment_id, chunk_number, current_user.id
+        db, assignment_id, chunk_number
     )
 
 
@@ -314,15 +326,36 @@ async def submit_answer(
         pass
     
     # Evaluate answer
-    evaluation = await evaluate_answer(
-        student_answer=student_answer,
+    # Create a Question object from the cached question data
+    question_obj = Question(
         question=current_question["question"],
-        chunk_content=chunk.content,
-        question_type=question_type,
-        grade_level=assignment.grade_level,
-        chunk_order=chunk_number,
-        bypass_code_used=bypass_code_used
+        answer=current_question.get("expected_answer_elements", [""])[0] if current_question.get("expected_answer_elements") else "",
+        question_type=question_type
     )
+    
+    evaluation = await evaluate_answer(
+        question=question_obj,
+        student_answer=student_answer,
+        difficulty_level=difficulty,
+        chunk=chunk,
+        assignment=assignment,
+        db=db
+    )
+    
+    # Count previous attempts for this question type
+    attempt_count_result = await db.execute(
+        select(func.count(UmareadStudentResponse.id))
+        .where(
+            and_(
+                UmareadStudentResponse.student_id == current_user.id,
+                UmareadStudentResponse.assignment_id == assignment_id,
+                UmareadStudentResponse.chunk_number == chunk_number,
+                UmareadStudentResponse.question_type == question_type
+            )
+        )
+    )
+    previous_attempts = attempt_count_result.scalar() or 0
+    current_attempt = previous_attempts + 1
     
     # Save response to database
     response = UmareadStudentResponse(
@@ -336,7 +369,7 @@ async def submit_answer(
         ai_feedback=evaluation.feedback,
         difficulty_level=difficulty if question_type == "comprehension" else None,
         time_spent_seconds=time_spent,
-        attempt_number=1  # TODO: Track attempts properly
+        attempt_number=current_attempt
     )
     db.add(response)
     
@@ -414,7 +447,26 @@ async def submit_answer(
                     .values(current_difficulty_level=new_difficulty)
                 )
             
-            # Update chunks completed
+            # Get total chunks to check if assignment is complete
+            total_chunks_result = await db.execute(
+                select(func.count(ReadingChunk.id))
+                .where(ReadingChunk.assignment_id == assignment_id)
+            )
+            total_chunks = total_chunks_result.scalar() or 0
+            
+            # Check if this was the last chunk
+            is_last_chunk = chunk_number >= total_chunks
+            
+            # Update assignment progress
+            update_values = {
+                "total_chunks_completed": UmareadAssignmentProgress.total_chunks_completed + 1,
+                "current_chunk": chunk_number + 1
+            }
+            
+            # If this was the last chunk, mark assignment as complete
+            if is_last_chunk:
+                update_values["completed_at"] = datetime.utcnow()
+            
             await db.execute(
                 update(UmareadAssignmentProgress)
                 .where(
@@ -423,10 +475,7 @@ async def submit_answer(
                         UmareadAssignmentProgress.assignment_id == assignment_id
                     )
                 )
-                .values(
-                    total_chunks_completed=UmareadAssignmentProgress.total_chunks_completed + 1,
-                    current_chunk=chunk_number + 1
-                )
+                .values(**update_values)
             )
             
             await db.commit()
@@ -480,11 +529,114 @@ async def get_progress(
     
     if not progress:
         return {
+            "assignment_id": str(assignment_id),
+            "student_id": str(current_user.id),
+            "current_chunk": 1,
+            "total_chunks": 0,
+            "difficulty_level": 3,
+            "chunks_completed": [],
+            "chunk_scores": {},
+            "status": "not_started",
+            "last_activity": datetime.utcnow().isoformat()
+        }
+    
+    # Get total chunks
+    chunk_count = await db.execute(
+        select(func.count(ReadingChunk.id))
+        .where(ReadingChunk.assignment_id == assignment_id)
+    )
+    total_chunks = chunk_count.scalar() or 0
+    
+    # Get completed chunks list
+    completed_chunks_result = await db.execute(
+        select(UmareadChunkProgress.chunk_number)
+        .where(
+            and_(
+                UmareadChunkProgress.student_id == current_user.id,
+                UmareadChunkProgress.assignment_id == assignment_id,
+                UmareadChunkProgress.comprehension_completed == True
+            )
+        )
+        .order_by(UmareadChunkProgress.chunk_number)
+    )
+    completed_chunk_numbers = [row[0] for row in completed_chunks_result.fetchall()]
+    
+    # Get chunk scores
+    chunk_scores_result = await db.execute(
+        select(UmareadChunkProgress)
+        .where(
+            and_(
+                UmareadChunkProgress.student_id == current_user.id,
+                UmareadChunkProgress.assignment_id == assignment_id
+            )
+        )
+    )
+    chunk_scores = {}
+    for chunk_progress in chunk_scores_result.scalars():
+        chunk_scores[str(chunk_progress.chunk_number)] = {
+            "chunk_number": chunk_progress.chunk_number,
+            "summary_completed": chunk_progress.summary_completed,
+            "comprehension_completed": chunk_progress.comprehension_completed,
+            "summary_attempts": 0,  # Would need to count from responses table
+            "comprehension_attempts": 0,  # Would need to count from responses table
+            "time_spent_seconds": 0  # Would need to sum from responses table
+        }
+    
+    return {
+        "assignment_id": str(assignment_id),
+        "student_id": str(current_user.id),
+        "current_chunk": progress.current_chunk,
+        "total_chunks": total_chunks,
+        "difficulty_level": progress.current_difficulty_level,
+        "chunks_completed": completed_chunk_numbers,
+        "chunk_scores": chunk_scores,
+        "status": "completed" if progress.completed_at else "in_progress",
+        "last_activity": progress.last_activity_at.isoformat()
+    }
+
+
+@router.get("/assignments/{assignment_id}/progress/detailed")
+async def get_detailed_progress(
+    assignment_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get detailed student progress including which chunks are completed"""
+    
+    # Get assignment progress
+    progress_result = await db.execute(
+        select(UmareadAssignmentProgress)
+        .where(
+            and_(
+                UmareadAssignmentProgress.student_id == current_user.id,
+                UmareadAssignmentProgress.assignment_id == assignment_id
+            )
+        )
+    )
+    progress = progress_result.scalar_one_or_none()
+    
+    if not progress:
+        return {
             "chunks_completed": 0,
             "current_chunk": 1,
             "difficulty_level": 3,
-            "is_complete": False
+            "is_complete": False,
+            "completed_chunks": []
         }
+    
+    # Get list of completed chunks
+    completed_chunks_result = await db.execute(
+        select(UmareadChunkProgress.chunk_number)
+        .where(
+            and_(
+                UmareadChunkProgress.student_id == current_user.id,
+                UmareadChunkProgress.assignment_id == assignment_id,
+                UmareadChunkProgress.comprehension_completed == True
+            )
+        )
+        .order_by(UmareadChunkProgress.chunk_number)
+    )
+    completed_chunk_numbers = [row[0] for row in completed_chunks_result.fetchall()]
     
     # Get total chunks
     chunk_count = await db.execute(
@@ -498,7 +650,8 @@ async def get_progress(
         "current_chunk": progress.current_chunk,
         "difficulty_level": progress.current_difficulty_level,
         "is_complete": progress.completed_at is not None,
-        "total_chunks": total_chunks
+        "total_chunks": total_chunks,
+        "completed_chunks": completed_chunk_numbers
     }
 
 
