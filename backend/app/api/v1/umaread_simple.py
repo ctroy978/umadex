@@ -465,6 +465,7 @@ async def submit_answer(
         # Summary question
         if evaluation.is_correct:
             question_state[state_key] = "summary_complete"
+            print(f"DEBUG: Setting state to summary_complete for {state_key}")
             return {
                 "is_correct": True,
                 "feedback": evaluation.feedback,
