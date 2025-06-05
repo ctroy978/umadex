@@ -119,12 +119,9 @@ class TestGenerationService:
         descriptions = []
         for image in images:
             if image.ai_description:
+                image_label = image.image_tag if image.image_tag else f"Image {len(descriptions) + 1}"
                 descriptions.append(
-                    f"Image {image.image_order}: {image.ai_description}"
-                )
-            elif image.caption:
-                descriptions.append(
-                    f"Image {image.image_order}: {image.caption}"
+                    f"{image_label}: {image.ai_description}"
                 )
         
         return "\n\n".join(descriptions) if descriptions else "Images present but no descriptions available."

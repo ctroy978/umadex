@@ -27,11 +27,8 @@ interface TestData {
 }
 
 export default function TestReviewPage({ params }: { params: { id: string } }) {
-  console.log('TestReviewPage component rendering with params:', params);
   const router = useRouter();
   const { user, isLoading } = useAuth();
-  console.log('User from useAuth:', !!user);
-  console.log('Auth loading:', isLoading);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [test, setTest] = useState<TestData | null>(null);
@@ -47,22 +44,15 @@ export default function TestReviewPage({ params }: { params: { id: string } }) {
 
   useEffect(() => {
     const token = tokenStorage.getAccessToken();
-    console.log('useEffect triggered - token:', !!token, 'user:', !!user, 'isLoading:', isLoading, 'params.id:', params.id);
     if (token && user && !isLoading && !hasAttemptedFetch) {
-      console.log('Token and user exist, calling fetchTest');
       setHasAttemptedFetch(true);
       fetchTest();
-    } else {
-      console.log('Waiting for auth - token:', !!token, 'user:', !!user, 'isLoading:', isLoading);
     }
   }, [user, isLoading, params.id, hasAttemptedFetch]);
 
   const fetchTest = async () => {
     try {
       const token = tokenStorage.getAccessToken();
-      console.log('Fetching test for assignment:', params.id);
-      console.log('API URL:', `${process.env.NEXT_PUBLIC_API_URL}/v1/tests/assignment/${params.id}`);
-      console.log('Token present:', !!token);
       
       if (!token) {
         console.error('No token available');
@@ -78,12 +68,8 @@ export default function TestReviewPage({ params }: { params: { id: string } }) {
         headers: { 'Authorization': `Bearer ${token}` }
       });
 
-      console.log('Response status:', response.status);
-      console.log('Response ok:', response.ok);
-
       if (!response.ok) {
         if (response.status === 404) {
-          console.log('Test not found, checking if assignment exists...');
           // First check if the assignment exists
           const assignmentCheck = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/v1/teacher/assignments/reading/${params.id}`, {
             headers: { 'Authorization': `Bearer ${token}` }
@@ -102,7 +88,6 @@ export default function TestReviewPage({ params }: { params: { id: string } }) {
       }
 
       const data = await response.json();
-      console.log('Test data received:', data);
       setTest(data);
       setTestId(data.id);
       setQuestions(data.test_questions);
@@ -113,7 +98,6 @@ export default function TestReviewPage({ params }: { params: { id: string } }) {
       console.error('Error in fetchTest:', err);
       setError('Failed to load test. The assignment may have been deleted.');
     } finally {
-      console.log('Setting loading to false');
       setLoading(false);
     }
   };
@@ -121,7 +105,6 @@ export default function TestReviewPage({ params }: { params: { id: string } }) {
   const generateTest = async () => {
     try {
       const token = tokenStorage.getAccessToken();
-      console.log('Generating test for assignment:', params.id);
       
       if (!token) {
         console.error('No token available for generation');
@@ -138,9 +121,6 @@ export default function TestReviewPage({ params }: { params: { id: string } }) {
         }
       });
 
-      console.log('Generate response status:', response.status);
-      console.log('Generate response ok:', response.ok);
-
       if (!response.ok) {
         const errorText = await response.text();
         console.error('Generate error response:', errorText);
@@ -148,7 +128,6 @@ export default function TestReviewPage({ params }: { params: { id: string } }) {
       }
 
       const data = await response.json();
-      console.log('Generated test data:', data);
       setTest(data);
       setTestId(data.id);
       setQuestions(data.test_questions);
@@ -160,7 +139,6 @@ export default function TestReviewPage({ params }: { params: { id: string } }) {
       console.error('Error in generateTest:', err);
       setError('Failed to generate test. The assignment may not exist.');
     } finally {
-      console.log('Setting loading to false in generateTest');
       setLoading(false);
     }
   };
