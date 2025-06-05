@@ -21,6 +21,7 @@ from app.schemas.umaread import (
 from app.services.umaread_simple import UMAReadService
 from app.services.question_generation import generate_questions_for_chunk, Question
 from app.services.answer_evaluation import evaluate_answer, should_increase_difficulty
+from app.services.bypass_validation import validate_bypass_code
 from app.models.reading import AnswerEvaluation
 from app.models.classroom import StudentAssignment, ClassroomAssignment, Classroom, StudentEvent
 import bcrypt
@@ -288,135 +289,40 @@ async def submit_answer(
             "new_difficulty_level": None
         }
     
-    # Check if this is a bypass code attempt
-    bypass_pattern = r'^!BYPASS-(\d{4})$'
-    bypass_match = re.match(bypass_pattern, student_answer.upper())
+    # Check if this is a bypass code attempt using unified validation
+    bypass_valid, bypass_type, teacher_id = await validate_bypass_code(
+        db=db,
+        student_id=current_user.id,
+        answer_text=student_answer,
+        context_type="umaread",
+        context_id=str(assignment_id),
+        assignment_id=assignment_id
+    )
     
-    if bypass_match:
-        # Extract the 4-digit code
-        provided_code = bypass_match.group(1)
+    if bypass_valid:
+        # Bypass successful - mark answer as correct and continue
+        # Update state for this chunk
+        current_state = question_state.get(state_key, "answering_summary")
         
-        # Check rate limiting - max 5 attempts per hour
-        one_hour_ago = datetime.utcnow() - timedelta(hours=1)
-        bypass_attempts_result = await db.execute(
-            select(func.count(StudentEvent.id))
-            .where(
-                and_(
-                    StudentEvent.student_id == current_user.id,
-                    StudentEvent.event_type.in_(["bypass_code_used", "bypass_code_failed"]),
-                    StudentEvent.created_at >= one_hour_ago
-                )
-            )
-        )
-        bypass_attempts = bypass_attempts_result.scalar() or 0
-        
-        if bypass_attempts >= 5:
-            # Too many attempts - treat as normal answer without revealing
-            print(f"Rate limit exceeded for bypass attempts by student {current_user.id}")
-            # Continue with normal evaluation without revealing it was a bypass attempt
+        if current_state == "answering_summary" or current_state != "summary_complete":
+            # Just completed summary, move to comprehension
+            question_state[state_key] = "summary_complete"
+            next_question_type = "comprehension"
         else:
-            # Get the classroom context through student assignment
-            classroom_id = None
-            try:
-                # Find the student's assignment
-                student_assignment_result = await db.execute(
-                    select(StudentAssignment).where(
-                        and_(
-                            StudentAssignment.student_id == current_user.id,
-                            StudentAssignment.assignment_id == assignment_id
-                        )
-                    )
-                )
-                student_assignment = student_assignment_result.scalar_one_or_none()
-                
-                if student_assignment:
-                    # Get the classroom assignment
-                    classroom_assignment_result = await db.execute(
-                        select(ClassroomAssignment).where(
-                            ClassroomAssignment.id == student_assignment.classroom_assignment_id
-                        )
-                    )
-                    classroom_assignment = classroom_assignment_result.scalar_one_or_none()
-                    
-                    if classroom_assignment:
-                        classroom_id = classroom_assignment.classroom_id
-            except Exception as e:
-                print(f"Error finding classroom context: {e}")
-            
-            # Check if bypass code is valid for the teacher
-            bypass_valid = False
-            teacher_id = None
-            if classroom_id:
-                # Get the classroom to find the teacher
-                classroom_result = await db.execute(
-                    select(Classroom).where(Classroom.id == classroom_id)
-                )
-                classroom = classroom_result.scalar_one_or_none()
-                
-                if classroom:
-                    teacher_id = classroom.teacher_id
-                    
-                    # Get the teacher's bypass code
-                    teacher_result = await db.execute(
-                        select(User).where(User.id == teacher_id)
-                    )
-                    teacher = teacher_result.scalar_one_or_none()
-                    
-                    if teacher and teacher.bypass_code:
-                        # Verify the bypass code
-                        try:
-                            bypass_valid = bcrypt.checkpw(
-                                provided_code.encode('utf-8'),
-                                teacher.bypass_code.encode('utf-8')
-                            )
-                        except Exception as e:
-                            print(f"Error checking bypass code: {e}")
-            
-            if bypass_valid:
-                # Log bypass usage
-                event = StudentEvent(
-                    student_id=current_user.id,
-                    classroom_id=classroom_id,
-                    assignment_id=assignment_id,
-                    event_type="bypass_code_used",
-                    event_data={
-                        "chunk_number": chunk_number,
-                        "question_type": "summary" if question_state.get(state_key) != "summary_complete" else "comprehension"
-                    }
-                )
-                db.add(event)
-                await db.commit()
-                
-                # Mark both questions as complete
-                question_state[state_key] = "complete"
-                
-                # Return success
-                return {
-                    "is_correct": True,
-                    "feedback": "Instructor override accepted. Moving to next question.",
-                    "can_proceed": True,
-                    "next_question_type": None,
-                    "difficulty_changed": False,
-                    "new_difficulty_level": current_difficulty
-                }
-            else:
-                # Log failed bypass attempt
-                if classroom_id:
-                    event = StudentEvent(
-                        student_id=current_user.id,
-                        classroom_id=classroom_id,
-                        assignment_id=assignment_id,
-                        event_type="bypass_code_failed",
-                        event_data={
-                            "chunk_number": chunk_number,
-                            "attempted_code": provided_code
-                        }
-                    )
-                    db.add(event)
-                    await db.commit()
-                
-                # Invalid bypass code - treat as normal answer
-                print(f"Invalid bypass attempt by student {current_user.id}")
+            # Completed comprehension, ready to proceed
+            question_state[state_key] = "complete"
+            next_question_type = None
+        
+        await db.commit()
+        
+        return {
+            "is_correct": True,
+            "feedback": "Instructor override accepted. Moving to next question.",
+            "can_proceed": next_question_type is None,
+            "next_question_type": next_question_type,
+            "difficulty_changed": False,
+            "new_difficulty_level": current_difficulty
+        }
     
     # Determine which question we're evaluating
     is_summary = question_state.get(state_key) != "summary_complete"

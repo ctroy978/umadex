@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 from app.core.config import settings
 from app.core.database import engine, Base
-from app.api.v1 import auth, admin, teacher, student, umaread_simple as umaread, tests, umaread_hybrid
+from app.api.v1 import auth, admin, teacher, student, umaread_simple as umaread, tests, umaread_hybrid, student_tests, teacher_settings
 from app.core.redis import redis_client
 
 load_dotenv()
@@ -48,6 +48,8 @@ app.include_router(student.router, prefix="/api/v1/student", tags=["student"])
 app.include_router(umaread.router, prefix="/api/v1/student", tags=["umaread"])
 app.include_router(umaread_hybrid.router, prefix="/api/v1/student", tags=["umaread-v2"])
 app.include_router(tests.router, prefix="/api/v1", tags=["tests"])
+app.include_router(student_tests.router, prefix="/api/v1/student", tags=["student-tests"])
+app.include_router(teacher_settings.router, prefix="/api/v1/teacher", tags=["teacher-settings"])
 
 @app.get("/")
 async def root():

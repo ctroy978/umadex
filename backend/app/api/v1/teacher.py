@@ -1350,3 +1350,72 @@ async def restore_assignment(
     await db.commit()
     
     return {"message": "Assignment restored successfully"}
+
+
+# Security monitoring endpoints (bypass codes moved to teacher_settings.py)
+@router.get("/classroom/{classroom_id}/security-incidents")
+async def get_classroom_security_incidents(
+    classroom_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """View security incidents for all students in classroom"""
+    from app.models.tests import TestSecurityIncident, StudentTestAttempt
+    from app.models.reading import ReadingAssignment as ReadingAssignmentModel
+    
+    # Verify teacher owns classroom
+    classroom_query = await db.execute(
+        select(Classroom)
+        .where(
+            and_(
+                Classroom.id == classroom_id,
+                Classroom.teacher_id == current_user.id
+            )
+        )
+    )
+    
+    if not classroom_query.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have access to this classroom"
+        )
+    
+    # Get all security incidents for students in this classroom
+    incidents_query = await db.execute(
+        select(
+            TestSecurityIncident,
+            StudentTestAttempt,
+            User,
+            ReadingAssignmentModel
+        )
+        .join(StudentTestAttempt, TestSecurityIncident.test_attempt_id == StudentTestAttempt.id)
+        .join(User, TestSecurityIncident.student_id == User.id)
+        .join(ReadingAssignmentModel, StudentTestAttempt.assignment_id == ReadingAssignmentModel.id)
+        .join(ClassroomStudent, 
+              and_(
+                  ClassroomStudent.student_id == User.id,
+                  ClassroomStudent.classroom_id == classroom_id
+              ))
+        .order_by(TestSecurityIncident.created_at.desc())
+    )
+    
+    incidents = []
+    for incident, attempt, student, assignment in incidents_query.all():
+        incidents.append({
+            "id": incident.id,
+            "student_name": f"{student.first_name} {student.last_name}",
+            "student_id": student.id,
+            "assignment_title": assignment.assignment_title,
+            "incident_type": incident.incident_type,
+            "incident_data": incident.incident_data,
+            "resulted_in_lock": incident.resulted_in_lock,
+            "created_at": incident.created_at,
+            "test_locked": attempt.is_locked,
+            "test_attempt_id": attempt.id
+        })
+    
+    return {
+        "classroom_id": classroom_id,
+        "incidents": incidents,
+        "total_incidents": len(incidents)
+    }

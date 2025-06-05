@@ -70,11 +70,86 @@ export const teacherApi = {
     return response.data;
   },
 
+  async generateOneTimeBypassCode(
+    contextType: string = 'general',
+    studentEmail?: string
+  ): Promise<{
+    bypass_code: string;
+    expires_at: string;
+    context_type: string;
+    student_email?: string;
+  }> {
+    const response = await api.post('/v1/teacher/settings/one-time-bypass', {
+      context_type: contextType,
+      student_email: studentEmail
+    });
+    return response.data;
+  },
+
+  async getActiveOneTimeCodes(): Promise<Array<{
+    id: string;
+    bypass_code: string;
+    context_type: string;
+    student_email?: string;
+    created_at: string;
+    expires_at: string;
+    used: boolean;
+  }>> {
+    const response = await api.get('/v1/teacher/settings/one-time-bypass/active');
+    return response.data;
+  },
+
+  async revokeOneTimeCode(codeId: string): Promise<{ message: string }> {
+    const response = await api.delete(`/v1/teacher/settings/one-time-bypass/${codeId}`);
+    return response.data;
+  },
+
   // Reports
   async getBypassCodeUsageReport(days: number = 30): Promise<BypassCodeReport> {
     const response = await api.get('/v1/teacher/reports/bypass-code-usage', {
       params: { days }
     });
+    return response.data;
+  },
+
+  // Test Security - Bypass codes for locked tests
+  async generateBypassCode(testAttemptId: string): Promise<{
+    bypass_code: string;
+    expires_at: string;
+    test_attempt_id: string;
+  }> {
+    const response = await api.post(`/v1/teacher/tests/${testAttemptId}/generate-bypass`);
+    return response.data;
+  },
+
+  async unlockTestWithBypass(testAttemptId: string, bypassCode: string): Promise<{
+    success: boolean;
+    message: string;
+    test_attempt_id: string;
+  }> {
+    const formData = new FormData();
+    formData.append('bypass_code', bypassCode);
+    const response = await api.post(`/v1/teacher/tests/${testAttemptId}/unlock`, formData);
+    return response.data;
+  },
+
+  async getClassroomSecurityIncidents(classroomId: string): Promise<{
+    classroom_id: string;
+    incidents: Array<{
+      id: string;
+      student_name: string;
+      student_id: string;
+      assignment_title: string;
+      incident_type: string;
+      incident_data: any;
+      resulted_in_lock: boolean;
+      created_at: string;
+      test_locked: boolean;
+      test_attempt_id: string;
+    }>;
+    total_incidents: number;
+  }> {
+    const response = await api.get(`/v1/teacher/classroom/${classroomId}/security-incidents`);
     return response.data;
   }
 };

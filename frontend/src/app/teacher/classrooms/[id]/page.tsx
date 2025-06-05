@@ -4,13 +4,15 @@ import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { teacherClassroomApi } from '@/lib/classroomApi'
+import { teacherApi } from '@/lib/teacherApi'
 import {
   UserGroupIcon,
   ClipboardDocumentListIcon,
   ArrowLeftIcon,
   DocumentDuplicateIcon,
   TrashIcon,
-  PlusIcon
+  PlusIcon,
+  ShieldExclamationIcon
 } from '@heroicons/react/24/outline'
 import type {
   ClassroomDetail,
@@ -26,11 +28,20 @@ export default function ClassroomDetailPage() {
 
   const [classroom, setClassroom] = useState<ClassroomDetail | null>(null)
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<'students' | 'assignments'>('students')
+  const [activeTab, setActiveTab] = useState<'students' | 'assignments' | 'security'>('students')
+  const [securityIncidents, setSecurityIncidents] = useState<any[]>([])
+  const [lockedTests, setLockedTests] = useState<any[]>([])
+  const [loadingSecurity, setLoadingSecurity] = useState(false)
 
   useEffect(() => {
     fetchClassroomDetails()
   }, [classroomId])
+
+  useEffect(() => {
+    if (activeTab === 'security') {
+      fetchSecurityData()
+    }
+  }, [activeTab, classroomId])
 
   const fetchClassroomDetails = async () => {
     try {
@@ -40,6 +51,36 @@ export default function ClassroomDetailPage() {
       console.error('Failed to fetch classroom details:', error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const fetchSecurityData = async () => {
+    try {
+      setLoadingSecurity(true)
+      const data = await teacherApi.getClassroomSecurityIncidents(classroomId)
+      setSecurityIncidents(data.incidents)
+      
+      // Group locked tests by test_attempt_id to avoid duplicates
+      const lockedTestsMap = new Map()
+      data.incidents.forEach(incident => {
+        if (incident.test_locked && !lockedTestsMap.has(incident.test_attempt_id)) {
+          // Count total violations for this test attempt
+          const violations = data.incidents.filter(i => i.test_attempt_id === incident.test_attempt_id)
+          lockedTestsMap.set(incident.test_attempt_id, {
+            test_attempt_id: incident.test_attempt_id,
+            student_name: incident.student_name,
+            assignment_title: incident.assignment_title,
+            locked_at: incident.created_at,
+            locked_reason: incident.incident_type,
+            violation_count: violations.length
+          })
+        }
+      })
+      setLockedTests(Array.from(lockedTestsMap.values()))
+    } catch (error) {
+      console.error('Failed to fetch security data:', error)
+    } finally {
+      setLoadingSecurity(false)
     }
   }
 
@@ -156,6 +197,22 @@ export default function ClassroomDetailPage() {
             <ClipboardDocumentListIcon className="h-5 w-5 inline mr-2" />
             Assignments
           </button>
+          <button
+            onClick={() => setActiveTab('security')}
+            className={`py-2 px-1 border-b-2 font-medium text-sm ${
+              activeTab === 'security'
+                ? 'border-primary-500 text-primary-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            <ShieldExclamationIcon className="h-5 w-5 inline mr-2" />
+            Test Security
+            {lockedTests.length > 0 && (
+              <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                {lockedTests.length}
+              </span>
+            )}
+          </button>
         </nav>
       </div>
 
@@ -234,6 +291,135 @@ export default function ClassroomDetailPage() {
                   </li>
                 ))}
               </ul>
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'security' && (
+        <div>
+          {loadingSecurity ? (
+            <div className="flex justify-center py-12">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {/* Locked Tests Section */}
+              <div className="bg-white rounded-lg shadow p-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                  Locked Tests ({lockedTests.length})
+                </h3>
+                {lockedTests.length === 0 ? (
+                  <div className="text-center py-8">
+                    <ShieldExclamationIcon className="h-12 w-12 mx-auto mb-3 text-green-400" />
+                    <p className="text-gray-500">No locked tests - all students are on track!</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {lockedTests.map((lockedTest) => (
+                      <div
+                        key={lockedTest.test_attempt_id}
+                        className="bg-red-50 border border-red-200 rounded-lg p-4"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <h4 className="font-medium text-red-900">
+                              {lockedTest.student_name}
+                            </h4>
+                            <p className="text-sm text-red-600">
+                              {lockedTest.assignment_title}
+                            </p>
+                            <p className="text-xs text-red-500 mt-1">
+                              Locked: {new Date(lockedTest.locked_at).toLocaleString()}
+                            </p>
+                          </div>
+                          <div className="text-sm text-red-600 bg-white px-3 py-1 rounded border">
+                            Use bypass codes in Settings
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Security Incidents Section */}
+              <div className="bg-white rounded-lg shadow p-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                  Recent Security Incidents ({securityIncidents.length})
+                </h3>
+                {securityIncidents.length === 0 ? (
+                  <div className="text-center py-8">
+                    <p className="text-gray-500">No security incidents reported</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Student
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Assignment
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Incident Type
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            When
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Status
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {securityIncidents.slice(0, 20).map((incident, index) => (
+                          <tr key={index}>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                              {incident.student_name}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                              {incident.assignment_title}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                              <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800">
+                                {incident.incident_type.replace('_', ' ')}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                              {new Date(incident.created_at).toLocaleString()}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                              {incident.test_locked ? (
+                                <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-800">
+                                  Test Locked
+                                </span>
+                              ) : incident.resulted_in_lock ? (
+                                <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-orange-100 text-orange-800">
+                                  Warning Given
+                                </span>
+                              ) : (
+                                <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-800">
+                                  Monitored
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {securityIncidents.length > 20 && (
+                      <div className="mt-4 text-center">
+                        <p className="text-sm text-gray-500">
+                          Showing 20 of {securityIncidents.length} incidents
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>
