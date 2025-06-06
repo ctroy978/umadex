@@ -32,6 +32,11 @@ class TestQuestion(BaseModel):
     answer_key: str
     grading_context: str
     difficulty: int = Field(ge=1, le=8)
+    answer_explanation: Optional[str] = None  # New comprehensive explanation for AI evaluation
+    evaluation_criteria: Optional[str] = None  # New rubric criteria for scoring
+    
+    class Config:
+        extra = "allow"  # Allow extra fields for backward compatibility
 
 
 class TestUpdateRequest(BaseModel):
