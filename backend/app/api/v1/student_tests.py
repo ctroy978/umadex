@@ -386,30 +386,44 @@ async def get_reading_content_for_test(
     )
     chunks = chunks_query.scalars().all()
     
-    # Get images for chunks
+    # Get all images for this assignment
     from app.models.reading import AssignmentImage
+    import re
+    
     images_query = await db.execute(
         select(AssignmentImage)
         .where(AssignmentImage.assignment_id == assignment_id)
     )
-    images = {img.chunk_number: img for img in images_query.scalars().all()}
+    images_by_tag = {img.image_tag: img for img in images_query.scalars().all()}
     
     # Format chunks
     chunk_data = []
+    image_pattern = re.compile(r'<image>(.*?)</image>')
+    
     for chunk in chunks:
+        # Extract image tags from content
+        image_tags = image_pattern.findall(chunk.content)
+        
         chunk_dict = {
             "chunk_number": chunk.chunk_order,
             "content": chunk.content,
-            "has_image": chunk.chunk_order in images
+            "has_image": len(image_tags) > 0
         }
         
-        if chunk.chunk_order in images:
-            img = images[chunk.chunk_order]
-            chunk_dict["image"] = {
-                "url": img.image_url,
-                "thumbnail_url": img.thumbnail_url,
-                "alt_text": img.alt_text
-            }
+        # Add images if present
+        if image_tags:
+            chunk_images = []
+            for tag in image_tags:
+                if tag in images_by_tag:
+                    img = images_by_tag[tag]
+                    chunk_images.append({
+                        "url": img.display_url or img.image_url or "",
+                        "thumbnail_url": img.thumbnail_url,
+                        "description": img.ai_description,
+                        "image_tag": img.image_tag
+                    })
+            if chunk_images:
+                chunk_dict["images"] = chunk_images
         
         chunk_data.append(chunk_dict)
     

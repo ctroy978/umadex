@@ -31,11 +31,12 @@ export interface ReadingChunk {
   chunk_number: number
   content: string
   has_image: boolean
-  image?: {
+  images?: {
     url: string
     thumbnail_url: string
-    alt_text: string
-  }
+    description?: string
+    image_tag: string
+  }[]
 }
 
 export interface ReadingContentResponse {
