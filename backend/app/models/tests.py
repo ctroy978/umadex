@@ -100,6 +100,7 @@ class StudentTestAttempt(Base):
     student = relationship("User", foreign_keys=[student_id])
     test = relationship("AssignmentTest")
     assignment = relationship("ReadingAssignment")
+    override_usage = relationship("TestOverrideUsage", back_populates="test_attempt", uselist=False)
     
     __table_args__ = (
         CheckConstraint("status IN ('in_progress', 'completed', 'submitted', 'graded')", 

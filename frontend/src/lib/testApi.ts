@@ -15,6 +15,12 @@ export const testApi = {
     return response.data
   },
 
+  // Start test with override code
+  async startTestWithOverride(assignmentId: string, overrideCode: string): Promise<TestStartResponse> {
+    const response = await api.get(`/v1/student/tests/${assignmentId}/start?override_code=${encodeURIComponent(overrideCode)}`)
+    return response.data
+  },
+
   // Save answer for a question
   async saveAnswer(testId: string, data: SaveAnswerRequest): Promise<{ success: boolean; message: string }> {
     const response = await api.post(`/v1/student/tests/${testId}/save-answer`, data)

@@ -21,6 +21,8 @@ class Classroom(Base):
     teacher = relationship("User", foreign_keys=[teacher_id])
     students = relationship("ClassroomStudent", back_populates="classroom")
     assignments = relationship("ClassroomAssignment", back_populates="classroom")
+    test_schedule = relationship("ClassroomTestSchedule", back_populates="classroom", uselist=False)
+    test_overrides = relationship("ClassroomTestOverride", back_populates="classroom")
 
 
 class ClassroomStudent(Base):

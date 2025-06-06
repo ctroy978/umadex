@@ -16,6 +16,8 @@ from app.models.reading import ReadingAssignment, ReadingChunk
 from app.models.classroom import ClassroomAssignment, ClassroomStudent
 from app.utils.deps import get_current_user
 from app.services.bypass_validation import validate_bypass_code
+from app.services.test_schedule import TestScheduleService
+from app.schemas.test_schedule import ValidateOverrideRequest
 
 
 router = APIRouter(prefix="/tests", tags=["student-tests"])
@@ -80,6 +82,7 @@ class SecurityStatusResponse(BaseModel):
 @router.get("/{assignment_id}/start", response_model=TestStartResponse)
 async def start_test(
     assignment_id: UUID,
+    override_code: Optional[str] = None,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -163,6 +166,22 @@ async def start_test(
     )
     test_attempt = existing_attempt.scalar_one_or_none()
     
+    # If resuming an existing attempt, check if it's still allowed
+    if test_attempt:
+        # Check if the test was started within a valid schedule window
+        if test_attempt.started_within_schedule:
+            # Check if we're still within the grace period
+            if test_attempt.grace_period_end:
+                current_time = datetime.now(timezone.utc)
+                if current_time > test_attempt.grace_period_end:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Test grace period has expired. Please wait for the next testing window.",
+                        headers={"X-Grace-Period-Expired": "true"}
+                    )
+        # If test was started with override, allow continuation
+        # (Override codes are typically for emergency access)
+    
     if not test_attempt:
         # Check if max attempts reached
         if assignment_test.max_attempts and last_attempt_number >= assignment_test.max_attempts:
@@ -171,7 +190,76 @@ async def start_test(
                 detail=f"Maximum attempts ({assignment_test.max_attempts}) reached for this test"
             )
         
+        # Check classroom test schedule before creating new attempt
+        classroom_id = classroom_assignment.classroom_id
+        
+        # Convert async db session to sync for TestScheduleService
+        # Note: In production, we should make TestScheduleService async
+        from sqlalchemy.orm import Session
+        sync_db = Session(bind=db.bind.sync_engine)
+        
+        try:
+            availability = TestScheduleService.check_test_availability(sync_db, classroom_id)
+            
+            if not availability.allowed:
+                # Check if there's an override code
+                if override_code:
+                    validation = TestScheduleService.validate_and_use_override(
+                        sync_db,
+                        ValidateOverrideRequest(
+                            override_code=override_code,
+                            student_id=current_user.id
+                        )
+                    )
+                    
+                    if not validation["valid"]:
+                        raise HTTPException(
+                            status_code=status.HTTP_403_FORBIDDEN,
+                            detail=f"Testing not available: {availability.message}. Override code invalid: {validation['message']}",
+                            headers={
+                                "X-Next-Window": str(availability.next_window) if availability.next_window else "",
+                                "X-Schedule-Active": str(availability.schedule_active)
+                            }
+                        )
+                else:
+                    # No override code provided
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=availability.message,
+                        headers={
+                            "X-Next-Window": str(availability.next_window) if availability.next_window else "",
+                            "X-Schedule-Active": str(availability.schedule_active),
+                            "X-Override-Required": "true"
+                        }
+                    )
+        finally:
+            sync_db.close()
+        
         # Create new test attempt
+        override_id = None
+        grace_period_end = None
+        started_within_schedule = True
+        
+        # If we used an override code, track it
+        if override_code and not availability.allowed:
+            validation = TestScheduleService.validate_and_use_override(
+                sync_db,
+                ValidateOverrideRequest(
+                    override_code=override_code,
+                    student_id=current_user.id
+                )
+            )
+            if validation["valid"]:
+                override_id = validation.get("override_id")
+                started_within_schedule = False
+        
+        # If test is allowed due to schedule, calculate grace period end
+        if availability.allowed and availability.current_window_end:
+            schedule = TestScheduleService.get_schedule(sync_db, classroom_id)
+            if schedule and schedule.grace_period_minutes:
+                from datetime import timedelta
+                grace_period_end = availability.current_window_end + timedelta(minutes=schedule.grace_period_minutes)
+        
         test_attempt = StudentTestAttempt(
             student_id=current_user.id,
             assignment_test_id=assignment_test.id,
@@ -179,7 +267,10 @@ async def start_test(
             attempt_number=last_attempt_number + 1,
             current_question=1,
             answers_data={},
-            status="in_progress"
+            status="in_progress",
+            started_within_schedule=started_within_schedule,
+            override_code_used=override_id,
+            grace_period_end=grace_period_end
         )
         db.add(test_attempt)
         await db.commit()

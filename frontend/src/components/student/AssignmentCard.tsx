@@ -10,9 +10,12 @@ import {
   CalendarIcon,
   UserIcon,
   CheckCircleIcon,
-  DocumentCheckIcon as FileCheckIcon
+  DocumentCheckIcon as FileCheckIcon,
+  LockClosedIcon,
+  ExclamationTriangleIcon
 } from '@heroicons/react/24/outline'
 import { useRouter } from 'next/navigation'
+import { useTestAvailability } from '@/hooks/useTestAvailability'
 
 interface AssignmentCardProps {
   assignment: StudentAssignment
@@ -23,6 +26,10 @@ export default function AssignmentCard({ assignment, classroomId }: AssignmentCa
   const router = useRouter()
   const statusColors = getStatusColor(assignment.status)
   const timeRemaining = assignment.status === 'active' ? getTimeRemaining(assignment.end_date) : null
+  
+  // Check test availability if this is a completed assignment with a test
+  const shouldCheckAvailability = assignment.is_completed && assignment.has_test
+  const { availability } = useTestAvailability(shouldCheckAvailability ? classroomId : null)
 
   const handleAssignmentClick = () => {
     if (assignment.status === 'active') {
@@ -64,12 +71,25 @@ export default function AssignmentCard({ assignment, classroomId }: AssignmentCa
         return 'Not Available Yet'
       case 'active':
         if (assignment.is_completed) {
-          return assignment.has_test ? 'Start Completion Test' : 'Completed'
+          if (assignment.has_test) {
+            // Check test availability
+            if (availability && !availability.allowed) {
+              return 'Test Locked'
+            }
+            return 'Start Completion Test'
+          }
+          return 'Completed'
         }
         return 'Start Assignment'
       case 'expired':
         return 'Assignment Ended'
     }
+  }
+  
+  const canStartTest = () => {
+    if (!assignment.is_completed || !assignment.has_test) return false
+    if (!availability) return true // Default to allowing if no schedule info
+    return availability.allowed
   }
 
   return (
@@ -136,6 +156,24 @@ export default function AssignmentCard({ assignment, classroomId }: AssignmentCa
           )}
         </div>
 
+        {/* Test Availability Notice */}
+        {assignment.is_completed && assignment.has_test && availability && !availability.allowed && (
+          <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+            <div className="flex items-start space-x-2">
+              <ExclamationTriangleIcon className="h-5 w-5 text-amber-600 mt-0.5 flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-amber-800">Test Currently Unavailable</p>
+                <p className="text-sm text-amber-700">{availability.message}</p>
+                {availability.next_window && (
+                  <p className="text-xs text-amber-600 mt-1">
+                    Next available: {new Date(availability.next_window).toLocaleString()}
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Type Badge */}
         <div className="flex items-center justify-between">
           <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
@@ -150,21 +188,25 @@ export default function AssignmentCard({ assignment, classroomId }: AssignmentCa
 
           <button
             onClick={handleAssignmentClick}
-            disabled={assignment.status !== 'active' || (assignment.is_completed && !assignment.has_test)}
+            disabled={assignment.status !== 'active' || (assignment.is_completed && !canStartTest())}
             className={`flex items-center px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
               assignment.status === 'active'
                 ? assignment.is_completed
                   ? assignment.has_test
-                    ? 'bg-green-600 text-white hover:bg-green-700'
+                    ? canStartTest()
+                      ? 'bg-green-600 text-white hover:bg-green-700'
+                      : 'bg-red-100 text-red-800 cursor-not-allowed'
                     : 'bg-green-100 text-green-800 cursor-not-allowed'
                   : 'bg-primary-600 text-white hover:bg-primary-700'
                 : 'bg-gray-100 text-gray-400 cursor-not-allowed'
             }`}
           >
             {getButtonText()}
-            {assignment.status === 'active' && (!assignment.is_completed || assignment.has_test) && (
+            {assignment.status === 'active' && (!assignment.is_completed || canStartTest()) && (
               assignment.has_test && assignment.is_completed 
-                ? <FileCheckIcon className="h-4 w-4 ml-2" />
+                ? canStartTest()
+                  ? <FileCheckIcon className="h-4 w-4 ml-2" />
+                  : <LockClosedIcon className="h-4 w-4 ml-2" />
                 : <ArrowRightIcon className="h-4 w-4 ml-2" />
             )}
           </button>
