@@ -8,11 +8,95 @@ interface ReadingTabsProps {
   chunks: ReadingChunk[]
 }
 
+interface ChunkImage {
+  url: string
+  thumbnail_url: string
+  description?: string
+  image_tag: string
+}
+
 export default function ReadingTabs({ chunks }: ReadingTabsProps) {
   const [activeTab, setActiveTab] = useState(0)
-  const [selectedImage, setSelectedImage] = useState<{ url: string; alt: string } | null>(null)
+  const [selectedImage, setSelectedImage] = useState<ChunkImage | null>(null)
 
   const currentChunk = chunks[activeTab]
+
+  // Create a map of image tags to image data for the current chunk
+  const imageMap = (currentChunk.images || []).reduce((acc, img) => {
+    if (img.image_tag) {
+      acc[img.image_tag] = img
+    }
+    return acc
+  }, {} as Record<string, ChunkImage>)
+
+  // Render content with embedded images
+  const renderContent = () => {
+    const segments: React.ReactNode[] = []
+    let currentText = currentChunk.content
+    let keyIndex = 0
+    
+    // Regex to find image tags
+    const imageRegex = /<image>(.*?)<\/image>/g
+    let lastIndex = 0
+    let match
+    
+    while ((match = imageRegex.exec(currentText)) !== null) {
+      // Add text before the image tag
+      if (match.index > lastIndex) {
+        const textBefore = currentText.substring(lastIndex, match.index)
+        if (textBefore.trim()) {
+          segments.push(
+            <span key={`text-${keyIndex++}`}>
+              {textBefore}
+            </span>
+          )
+        }
+      }
+      
+      // Add the image
+      const imageTag = match[1]
+      const image = imageMap[imageTag]
+      
+      if (image) {
+        segments.push(
+          <button
+            key={`img-${keyIndex++}`}
+            onClick={() => setSelectedImage(image)}
+            className="inline-block mx-2 my-2 relative group cursor-pointer overflow-hidden rounded-lg shadow-md hover:shadow-xl transition-shadow align-middle"
+            style={{ maxWidth: '200px' }}
+          >
+            <img
+              src={image.thumbnail_url || image.url}
+              alt={image.description || ''}
+              className="w-full h-auto object-cover"
+              style={{ maxHeight: '150px' }}
+            />
+            <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-opacity flex items-center justify-center">
+              <span className="text-white opacity-0 group-hover:opacity-100 transition-opacity bg-black bg-opacity-60 px-2 py-1 rounded text-xs">
+                Click to enlarge
+              </span>
+            </div>
+          </button>
+        )
+      }
+      
+      lastIndex = match.index + match[0].length
+    }
+    
+    // Add any remaining text after the last image
+    if (lastIndex < currentText.length) {
+      const remainingText = currentText.substring(lastIndex)
+      if (remainingText.trim()) {
+        segments.push(
+          <span key={`text-${keyIndex++}`}>
+            {remainingText}
+          </span>
+        )
+      }
+    }
+    
+    return segments
+  }
 
   return (
     <div className="h-full flex flex-col">
@@ -48,29 +132,10 @@ export default function ReadingTabs({ chunks }: ReadingTabsProps) {
             }
           `}</style>
           
-          {/* Chunk Text */}
-          <div 
-            className="whitespace-pre-wrap text-gray-800 leading-relaxed"
-            dangerouslySetInnerHTML={{ __html: currentChunk.content }}
-          />
-          
-          {/* Chunk Image */}
-          {currentChunk.has_image && currentChunk.image && (
-            <div className="mt-6">
-              <img
-                src={currentChunk.image.thumbnail_url || currentChunk.image.url}
-                alt={currentChunk.image.alt_text}
-                className="w-full max-w-md mx-auto rounded-lg shadow-sm cursor-pointer hover:shadow-md transition-shadow"
-                onClick={() => setSelectedImage({
-                  url: currentChunk.image!.url,
-                  alt: currentChunk.image!.alt_text
-                })}
-              />
-              <p className="text-sm text-gray-600 text-center mt-2">
-                Click image to enlarge
-              </p>
-            </div>
-          )}
+          {/* Rendered content with embedded images */}
+          <div className="whitespace-pre-wrap text-gray-800 leading-relaxed">
+            {renderContent()}
+          </div>
         </div>
       </div>
 
@@ -78,7 +143,7 @@ export default function ReadingTabs({ chunks }: ReadingTabsProps) {
       {selectedImage && (
         <ImageModal
           imageUrl={selectedImage.url}
-          altText={selectedImage.alt}
+          altText={selectedImage.description || ''}
           onClose={() => setSelectedImage(null)}
         />
       )}
