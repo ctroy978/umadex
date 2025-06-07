@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { studentApi, type StudentClassroomDetail } from '@/lib/studentApi'
-import StudentGuard from '@/components/StudentGuard'
 import AssignmentCard from '@/components/student/AssignmentCard'
 import LeaveClassroomDialog from '@/components/student/LeaveClassroomDialog'
 import {
@@ -75,20 +74,17 @@ export default function StudentClassroomPage() {
 
   if (loading) {
     return (
-      <StudentGuard>
         <div className="min-h-screen bg-gray-50 flex items-center justify-center">
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto"></div>
             <p className="mt-4 text-gray-500">Loading classroom...</p>
           </div>
         </div>
-      </StudentGuard>
     )
   }
 
   if (error || !classroom) {
     return (
-      <StudentGuard>
         <div className="min-h-screen bg-gray-50 flex items-center justify-center">
           <div className="text-center">
             <ExclamationCircleIcon className="h-12 w-12 text-red-500 mx-auto mb-4" />
@@ -101,12 +97,10 @@ export default function StudentClassroomPage() {
             </button>
           </div>
         </div>
-      </StudentGuard>
     )
   }
 
   return (
-    <StudentGuard>
       <div className="min-h-screen bg-gray-50">
         {/* Header */}
         <div className="bg-white shadow">
@@ -307,6 +301,5 @@ export default function StudentClassroomPage() {
           assignmentCount={classroom.assignments.length}
         />
       </div>
-    </StudentGuard>
   )
 }

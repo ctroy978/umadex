@@ -4,7 +4,6 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { studentApi } from '@/lib/studentApi'
-import StudentGuard from '@/components/StudentGuard'
 import { AcademicCapIcon, CheckCircleIcon } from '@heroicons/react/24/outline'
 
 export default function JoinClassroomPage() {
@@ -54,7 +53,6 @@ export default function JoinClassroomPage() {
   }
 
   return (
-    <StudentGuard>
       <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
         <div className="max-w-md w-full space-y-8">
         <div>
@@ -150,6 +148,5 @@ export default function JoinClassroomPage() {
         </div>
         </div>
       </div>
-    </StudentGuard>
   )
 }

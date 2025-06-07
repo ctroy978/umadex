@@ -85,7 +85,7 @@ class UMAReadService:
             
             if not classroom_assignment:
                 # Check if student is in any classroom with this assignment
-                from ..models.classroom import StudentClassroom, Classroom
+                from ..models.classroom import ClassroomStudent, Classroom
                 
                 # Find classrooms that have this assignment
                 classroom_with_assignment = await db.execute(
@@ -100,10 +100,10 @@ class UMAReadService:
                 
                 # Check if student is in the classroom
                 student_in_classroom = await db.execute(
-                    select(StudentClassroom).where(
+                    select(ClassroomStudent).where(
                         and_(
-                            StudentClassroom.student_id == student_id,
-                            StudentClassroom.classroom_id == classroom_assignment.classroom_id
+                            ClassroomStudent.student_id == student_id,
+                            ClassroomStudent.classroom_id == classroom_assignment.classroom_id
                         )
                     )
                 )

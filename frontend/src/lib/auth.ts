@@ -3,6 +3,28 @@ import { tokenStorage } from './tokenStorage'
 import { OTPRequestData, OTPVerifyData, AuthResponse, User, RefreshTokenResponse } from '@/types/auth'
 import Cookies from 'js-cookie'
 
+/**
+ * SECURITY SERVICE: Authentication Management
+ * 
+ * This service handles all authentication operations including login, token management,
+ * and logout. It's the primary interface between the frontend and backend auth system.
+ * 
+ * SECURITY PRINCIPLES:
+ * 1. Secure token storage with automatic refresh
+ * 2. Graceful error handling for auth failures
+ * 3. Clean logout that removes all traces of user session
+ * 4. Integration with API client for automatic token inclusion
+ * 
+ * TOKEN SECURITY:
+ * - Access tokens have short expiry (configurable on backend)
+ * - Refresh tokens allow seamless token renewal
+ * - All tokens cleared on logout or auth failure
+ * 
+ * EXTENDING AUTH:
+ * When adding features like MFA, extend this service while maintaining
+ * the same interface patterns for consistency.
+ */
+
 export const authService = {
   async requestOTP(data: OTPRequestData) {
     const response = await api.post('/v1/auth/request-otp', data)

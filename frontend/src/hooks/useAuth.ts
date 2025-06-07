@@ -2,6 +2,27 @@ import { create } from 'zustand'
 import { User } from '@/types/auth'
 import { authService } from '@/lib/auth'
 
+/**
+ * SECURITY ARCHITECTURE: Authentication State Management
+ * 
+ * This is the central authentication store for the application. All auth-related
+ * state should flow through this hook to ensure consistency.
+ * 
+ * SECURITY PRINCIPLES:
+ * 1. Single source of truth for auth state
+ * 2. Automatic token validation and refresh
+ * 3. Secure logout that clears all user data
+ * 4. Loading states prevent unauthorized access during auth checks
+ * 
+ * USAGE PATTERNS:
+ * - Guards: Use isLoading to prevent premature redirects
+ * - Components: Use user.role for permission checks
+ * - API calls: Token management is handled automatically
+ * 
+ * When adding new user roles, update the User type in /types/auth.ts
+ * and ensure all guards handle the new role appropriately.
+ */
+
 interface AuthState {
   user: User | null
   isLoading: boolean

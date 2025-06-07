@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
-import StudentGuard from '@/components/StudentGuard';
 import { CheckCircleIcon, XCircleIcon, ClockIcon, ArrowLeftIcon } from '@heroicons/react/24/outline';
 
 interface QuestionResult {
@@ -87,20 +86,17 @@ export default function TestResultsPage({ params }: { params: { resultId: string
 
   if (loading) {
     return (
-      <StudentGuard>
         <div className="min-h-screen bg-gray-50 flex items-center justify-center">
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
             <p className="text-lg text-gray-600">Loading your results...</p>
           </div>
         </div>
-      </StudentGuard>
     );
   }
 
   if (error || !testResult) {
     return (
-      <StudentGuard>
         <div className="min-h-screen bg-gray-50 flex items-center justify-center">
           <div className="bg-white rounded-lg shadow-lg p-8 max-w-md w-full mx-4">
             <div className="text-center">
@@ -116,7 +112,6 @@ export default function TestResultsPage({ params }: { params: { resultId: string
             </div>
           </div>
         </div>
-      </StudentGuard>
     );
   }
 
@@ -126,7 +121,6 @@ export default function TestResultsPage({ params }: { params: { resultId: string
   })).sort((a, b) => a.questionNumber - b.questionNumber);
 
   return (
-    <StudentGuard>
       <div className="min-h-screen bg-gray-50">
         {/* Header */}
         <div className="bg-white shadow-sm border-b">
@@ -273,6 +267,5 @@ export default function TestResultsPage({ params }: { params: { resultId: string
           </div>
         </div>
       </div>
-    </StudentGuard>
   );
 }

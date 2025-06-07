@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { testApi } from '@/lib/testApi'
-import StudentGuard from '@/components/StudentGuard'
 import TestInterface from '@/components/student/test/TestInterface'
 import { TestStartResponse, ReadingContentResponse } from '@/types/test'
 import { Loader2 } from 'lucide-react'
@@ -71,7 +70,6 @@ export default function TestPage({ params }: { params: { testId: string } }) {
 
   if (loading) {
     return (
-      <StudentGuard>
         <div className="min-h-screen bg-gray-50 flex items-center justify-center">
           <div className="text-center">
             <Loader2 className="w-12 h-12 text-blue-600 animate-spin mx-auto mb-4" />
@@ -79,13 +77,11 @@ export default function TestPage({ params }: { params: { testId: string } }) {
             <p className="text-gray-500 text-sm mt-2">Preparing your comprehension test</p>
           </div>
         </div>
-      </StudentGuard>
     )
   }
 
   if (error) {
     return (
-      <StudentGuard>
         <div className="min-h-screen bg-gray-50 p-4">
           <div className="max-w-2xl mx-auto mt-8">
             <div className="bg-red-50 border border-red-200 rounded-lg p-6">
@@ -100,7 +96,6 @@ export default function TestPage({ params }: { params: { testId: string } }) {
             </div>
           </div>
         </div>
-      </StudentGuard>
     )
   }
 
@@ -109,7 +104,7 @@ export default function TestPage({ params }: { params: { testId: string } }) {
   }
 
   return (
-    <StudentGuard>
+    <>
       {showOverrideDialog && (
         <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
@@ -153,6 +148,6 @@ export default function TestPage({ params }: { params: { testId: string } }) {
         readingContent={readingContent}
         onComplete={handleTestComplete}
       />
-    </StudentGuard>
+    </>
   )
 }

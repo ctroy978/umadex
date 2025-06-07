@@ -9,7 +9,6 @@ import ChunkReader from '@/components/student/umaread/ChunkReader';
 import QuestionFlow from '@/components/student/umaread/QuestionFlow';
 import ProgressIndicator from '@/components/student/umaread/ProgressIndicator';
 import CompletionScreen from '@/components/student/umaread/CompletionScreen';
-import StudentGuard from '@/components/StudentGuard';
 import type { 
   AssignmentStartResponse, 
   ChunkContent, 
@@ -207,7 +206,6 @@ export default function UMAReadAssignmentPage({ params }: { params: { id: string
 
   if (loading && !assignment) {
     return (
-      <StudentGuard>
         <div className="min-h-screen bg-gray-50 flex items-center justify-center">
           <div className="text-center">
             <Loader2 className="w-12 h-12 text-blue-600 animate-spin mx-auto mb-4" />
@@ -215,13 +213,11 @@ export default function UMAReadAssignmentPage({ params }: { params: { id: string
             <p className="text-gray-500 text-sm mt-2">Please wait while we prepare your reading</p>
           </div>
         </div>
-      </StudentGuard>
     );
   }
 
   if (error) {
     return (
-      <StudentGuard>
         <div className="min-h-screen bg-gray-50 p-4">
           <div className="max-w-2xl mx-auto mt-8">
             <div className="bg-red-50 border border-red-200 rounded-lg p-6">
@@ -251,7 +247,6 @@ export default function UMAReadAssignmentPage({ params }: { params: { id: string
             </div>
           </div>
         </div>
-      </StudentGuard>
     );
   }
 
@@ -262,7 +257,6 @@ export default function UMAReadAssignmentPage({ params }: { params: { id: string
   // Show completion screen if assignment is complete
   if (isComplete) {
     return (
-      <StudentGuard>
         <CompletionScreen
           title={assignment.title}
           author={assignment.author}
@@ -271,7 +265,6 @@ export default function UMAReadAssignmentPage({ params }: { params: { id: string
           assignmentId={id}
           hasTest={hasTest}
         />
-      </StudentGuard>
     );
   }
 
@@ -280,7 +273,6 @@ export default function UMAReadAssignmentPage({ params }: { params: { id: string
   }
 
   return (
-    <StudentGuard>
       <div className="min-h-screen bg-gray-50">
         {/* Header */}
         <div className="bg-white shadow-sm">
@@ -355,6 +347,5 @@ export default function UMAReadAssignmentPage({ params }: { params: { id: string
           </div>
         </div>
       </div>
-    </StudentGuard>
   )
 }

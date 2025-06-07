@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { tokenStorage } from '@/lib/tokenStorage';
-import TeacherGuard from '@/components/TeacherGuard';
 
 interface TestQuestion {
   question: string;
@@ -266,17 +265,14 @@ export default function TestReviewPage({ params }: { params: { id: string } }) {
 
   if (loading) {
     return (
-      <TeacherGuard>
         <div className="flex items-center justify-center min-h-screen">
           <div className="text-lg">Loading...</div>
         </div>
-      </TeacherGuard>
     );
   }
 
   if (!test) {
     return (
-      <TeacherGuard>
         <div className="container mx-auto p-4">
           <div className="bg-red-50 border border-red-200 rounded-lg p-4">
             <p className="text-red-800 mb-2">{error || 'Test not found'}</p>
@@ -288,12 +284,10 @@ export default function TestReviewPage({ params }: { params: { id: string } }) {
             </button>
           </div>
         </div>
-      </TeacherGuard>
     );
   }
 
   return (
-    <TeacherGuard>
       <div className="container mx-auto p-4 max-w-6xl">
         <div className="mb-6">
           <h1 className="text-3xl font-bold mb-2">Test Review</h1>
@@ -490,6 +484,5 @@ export default function TestReviewPage({ params }: { params: { id: string } }) {
           </button>
         </div>
       </div>
-    </TeacherGuard>
   );
 }

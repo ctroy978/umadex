@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import StudentGuard from '@/components/StudentGuard'
 import { studentApi, type StudentClassroom } from '@/lib/studentApi'
 import { useAuth } from '@/hooks/useAuth'
 import { 
@@ -90,8 +89,7 @@ export default function StudentDashboard() {
   }
 
   return (
-    <StudentGuard>
-      <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50">
         {/* Header */}
         <div className="bg-white shadow-sm">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -308,6 +306,5 @@ export default function StudentDashboard() {
           )}
         </div>
       </div>
-    </StudentGuard>
   )
 }

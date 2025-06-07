@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
-import TeacherGuard from '@/components/TeacherGuard'
 import AssignmentEditor from '@/components/AssignmentEditor'
 import AssignmentMetadataEditor from '@/components/AssignmentMetadataEditor'
 import { readingApi } from '@/lib/readingApi'
@@ -99,26 +98,21 @@ export default function EditAssignmentPage({ params }: { params: { id: string } 
 
   if (loading) {
     return (
-      <TeacherGuard>
         <div className="flex items-center justify-center h-screen">
           <div className="text-gray-500">Loading assignment...</div>
         </div>
-      </TeacherGuard>
     )
   }
 
   if (error || !assignment) {
     return (
-      <TeacherGuard>
         <div className="flex items-center justify-center h-screen">
           <div className="text-red-500">{error || 'Assignment not found'}</div>
         </div>
-      </TeacherGuard>
     )
   }
 
   return (
-    <TeacherGuard>
       <div className="h-screen flex flex-col">
         {/* Header */}
         <div className="bg-white border-b px-6 py-4">
@@ -179,6 +173,5 @@ export default function EditAssignmentPage({ params }: { params: { id: string } 
           )}
         </div>
       </div>
-    </TeacherGuard>
   )
 }
