@@ -536,7 +536,7 @@ export default function AssignmentManagementPage() {
                                       <label className="text-sm text-gray-600 w-16">Start:</label>
                                       <input
                                         type="date"
-                                        defaultValue={schedule?.start_date ? new Date(schedule.start_date).toISOString().slice(0, 10) : ''}
+                                        value={schedule?.start_date ? new Date(schedule.start_date).toISOString().slice(0, 10) : ''}
                                         onChange={(e) => {
                                           if (e.target.value) {
                                             // Set to beginning of day in user's timezone
@@ -548,19 +548,21 @@ export default function AssignmentManagementPage() {
                                         }}
                                         className="text-sm border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary-500"
                                       />
-                                      <select
-                                        defaultValue={schedule?.start_date ? new Date(schedule.start_date).getHours().toString() : '9'}
-                                        onChange={(e) => {
-                                          const existingDate = schedule?.start_date ? new Date(schedule.start_date) : new Date()
-                                          existingDate.setHours(parseInt(e.target.value), 0, 0, 0)
-                                          updateSchedule(assignment.id, 'start_date', existingDate.toISOString())
-                                        }}
-                                        className="text-sm border border-gray-300 rounded px-2 py-1"
-                                      >
-                                        {Array.from({length: 24}, (_, i) => (
-                                          <option key={i} value={i}>{i.toString().padStart(2, '0')}:00</option>
-                                        ))}
-                                      </select>
+                                      {schedule?.start_date && (
+                                        <select
+                                          value={new Date(schedule.start_date).getHours().toString()}
+                                          onChange={(e) => {
+                                            const existingDate = new Date(schedule.start_date)
+                                            existingDate.setHours(parseInt(e.target.value), 0, 0, 0)
+                                            updateSchedule(assignment.id, 'start_date', existingDate.toISOString())
+                                          }}
+                                          className="text-sm border border-gray-300 rounded px-2 py-1"
+                                        >
+                                          {Array.from({length: 24}, (_, i) => (
+                                            <option key={i} value={i}>{i.toString().padStart(2, '0')}:00</option>
+                                          ))}
+                                        </select>
+                                      )}
                                       {schedule?.start_date && (
                                         <button
                                           onClick={() => updateSchedule(assignment.id, 'start_date', null)}
@@ -575,7 +577,7 @@ export default function AssignmentManagementPage() {
                                       <label className="text-sm text-gray-600 w-16">End:</label>
                                       <input
                                         type="date"
-                                        defaultValue={schedule?.end_date ? new Date(schedule.end_date).toISOString().slice(0, 10) : ''}
+                                        value={schedule?.end_date ? new Date(schedule.end_date).toISOString().slice(0, 10) : ''}
                                         onChange={(e) => {
                                           if (e.target.value) {
                                             // Set to end of day (23:59) in user's timezone
@@ -587,19 +589,21 @@ export default function AssignmentManagementPage() {
                                         }}
                                         className="text-sm border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary-500"
                                       />
-                                      <select
-                                        defaultValue={schedule?.end_date ? new Date(schedule.end_date).getHours().toString() : '23'}
-                                        onChange={(e) => {
-                                          const existingDate = schedule?.end_date ? new Date(schedule.end_date) : new Date()
-                                          existingDate.setHours(parseInt(e.target.value), 59, 59, 999)
-                                          updateSchedule(assignment.id, 'end_date', existingDate.toISOString())
-                                        }}
-                                        className="text-sm border border-gray-300 rounded px-2 py-1"
-                                      >
-                                        {Array.from({length: 24}, (_, i) => (
-                                          <option key={i} value={i}>{i.toString().padStart(2, '0')}:59</option>
-                                        ))}
-                                      </select>
+                                      {schedule?.end_date && (
+                                        <select
+                                          value={new Date(schedule.end_date).getHours().toString()}
+                                          onChange={(e) => {
+                                            const existingDate = new Date(schedule.end_date)
+                                            existingDate.setHours(parseInt(e.target.value), 59, 59, 999)
+                                            updateSchedule(assignment.id, 'end_date', existingDate.toISOString())
+                                          }}
+                                          className="text-sm border border-gray-300 rounded px-2 py-1"
+                                        >
+                                          {Array.from({length: 24}, (_, i) => (
+                                            <option key={i} value={i}>{i.toString().padStart(2, '0')}:59</option>
+                                          ))}
+                                        </select>
+                                      )}
                                       {schedule?.end_date && (
                                         <button
                                           onClick={() => updateSchedule(assignment.id, 'end_date', null)}

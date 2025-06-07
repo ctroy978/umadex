@@ -108,18 +108,15 @@ export default function UMAReadAssignmentPage({ params }: { params: { id: string
   const loadQuestion = async () => {
     if (!assignment || !chunk) return;
     
-    console.log('Loading question for chunk:', chunk.chunk_number);
     
     try {
       setLoading(true);
       const data = await umareadApi.getCurrentQuestion(id, chunk.chunk_number);
-      console.log('Question loaded:', data);
       setQuestion(data);
     } catch (err: any) {
       console.error('Error loading question:', err.response?.data);
       if (err.response?.status === 400 && err.response?.data?.detail?.includes('already completed')) {
         // Chunk is complete, move to next
-        console.log('Chunk already completed, moving to next');
         handleNavigate('next');
       } else {
         setError(err.response?.data?.detail || 'Failed to load question');
