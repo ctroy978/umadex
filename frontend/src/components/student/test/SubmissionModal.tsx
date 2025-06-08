@@ -118,7 +118,12 @@ export default function SubmissionModal({
               Review Answers
             </button>
             <button
-              onClick={onConfirm}
+              onClick={() => {
+                console.log('=== SUBMISSION MODAL: Submit button clicked ===')
+                console.log('Answered questions:', answeredQuestions)
+                console.log('Total questions:', totalQuestions)
+                onConfirm()
+              }}
               className={`flex-1 px-4 py-2 text-white rounded-lg transition-colors ${
                 allAnswered
                   ? 'bg-green-600 hover:bg-green-700'

@@ -571,11 +571,19 @@ async def submit_test(
     logger.info(f"Test submission - Attempt ID: {test_attempt.id}, Answers: {test_attempt.answers_data}")
     
     # Trigger AI evaluation using the new V2 service
+    print(f"=== STUDENT_TESTS API: About to trigger AI evaluation ===")
+    print(f"=== Test Attempt ID: {test_attempt.id} ===")
+    print(f"=== Number of answers: {len(test_attempt.answers_data)} ===")
+    
     try:
         from app.services.test_evaluation_v2 import TestEvaluationServiceV2
         
+        print(f"=== Successfully imported TestEvaluationServiceV2 ===")
+        
         # Create evaluation service instance with database session
         evaluation_service = TestEvaluationServiceV2(db)
+        
+        print(f"=== Created evaluation service instance ===")
         
         # Perform evaluation asynchronously
         evaluation_result = await evaluation_service.evaluate_test_submission(
@@ -594,8 +602,12 @@ async def submit_test(
         }
     except Exception as e:
         logger.error(f"Error evaluating test: {str(e)}")
+        print(f"=== STUDENT_TESTS API ERROR: Failed to evaluate test ===")
+        print(f"=== Error Type: {type(e).__name__} ===")
+        print(f"=== Error Message: {str(e)} ===")
+        print(f"=== Full Error: {repr(e)} ===")
         # Don't fail the submission if evaluation fails
-        test_attempt.evaluation_status = "failed"
+        # Note: evaluation_status column doesn't exist, so we'll track this differently
         await db.commit()
         
         return {
@@ -1108,9 +1120,9 @@ async def get_test_result_details(
             
             question_evaluations.append(eval_data)
     
-    # For now, we'll set needs_review based on evaluation status
+    # For now, we'll set needs_review based on whether we have evaluation results
     # TODO: Implement proper audit system later
-    needs_review = test_attempt.evaluation_status in ["failed", "error"] if hasattr(test_attempt, 'evaluation_status') else False
+    needs_review = not eval_rows  # No evaluation results means it needs review
     
     # Get feedback summary
     feedback_summary = None

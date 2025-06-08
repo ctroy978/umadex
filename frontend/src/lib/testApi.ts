@@ -35,7 +35,9 @@ export const testApi = {
 
   // Submit test for grading
   async submitTest(testId: string): Promise<{ success: boolean; message: string; attempt_id: string }> {
+    console.log('=== TEST API: submitTest called with testId:', testId)
     const response = await api.post(`/v1/student/tests/${testId}/submit`)
+    console.log('=== TEST API: submitTest response:', response.data)
     return response.data
   },
 

@@ -170,18 +170,27 @@ export default function TestInterface({ testData, readingContent, onComplete }: 
   }
 
   const handleSubmit = async () => {
+    console.log('=== FRONTEND: handleSubmit called ===')
+    console.log('Test ID:', testData.test_id)
+    console.log('Answers:', answers)
+    
     try {
       // Save current answer
       const currentAnswer = answers[String(currentQuestionIndex)] || ''
       if (currentAnswer) {
+        console.log('=== FRONTEND: Saving current answer before submit ===')
         await saveAnswer(currentQuestionIndex, currentAnswer)
       }
 
       // Submit test
-      await testApi.submitTest(testData.test_id)
+      console.log('=== FRONTEND: Calling testApi.submitTest ===')
+      const result = await testApi.submitTest(testData.test_id)
+      console.log('=== FRONTEND: Submit result:', result)
+      
       onComplete()
     } catch (error) {
-      console.error('Failed to submit test:', error)
+      console.error('=== FRONTEND: Failed to submit test ===', error)
+      console.error('Error details:', error.response?.data)
     }
   }
 

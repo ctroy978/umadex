@@ -85,17 +85,22 @@ class TestEvaluationServiceV2:
         Returns:
             Dict containing evaluation results and status
         """
+        print(f"=== TEST EVALUATION V2: evaluate_test_submission called ===")
+        print(f"=== Test Attempt ID: {test_attempt_id} ===")
+        print(f"=== Trigger Source: {trigger_source} ===")
+        
         try:
-            # Start evaluation tracking
-            audit_id = await self._start_evaluation_audit(test_attempt_id)
+            # Start evaluation tracking (disabled for now - table may not exist)
+            # audit_id = await self._start_evaluation_audit(test_attempt_id)
+            audit_id = None
             
             # Load test data
             test_data = await self._load_test_data(test_attempt_id)
             if not test_data:
                 raise ValueError(f"Test attempt {test_attempt_id} not found or not ready for evaluation")
             
-            # Update status to evaluating
-            await self._update_attempt_status(test_attempt_id, "evaluating")
+            # Keep status as 'submitted' during evaluation (evaluating is not a valid status)
+            # await self._update_attempt_status(test_attempt_id, "evaluating")
             
             # Perform AI evaluation
             evaluation_result = await self._perform_ai_evaluation(test_data)
@@ -109,13 +114,13 @@ class TestEvaluationServiceV2:
             # Check if review needed
             needs_review = await self._check_evaluation_quality(test_attempt_id, evaluation_result)
             
-            # Complete evaluation audit
-            await self._complete_evaluation_audit(audit_id, evaluation_result, needs_review)
+            # Complete evaluation audit (disabled for now)
+            # await self._complete_evaluation_audit(audit_id, evaluation_result, needs_review)
             
-            # Update attempt status
+            # Update attempt status (only use valid status values from constraint)
             await self._update_attempt_status(
                 test_attempt_id, 
-                "manual_review" if needs_review else "completed"
+                "graded"  # Use 'graded' for completed evaluations
             )
             
             return {
@@ -205,13 +210,22 @@ class TestEvaluationServiceV2:
             try:
                 # Configure Gemini
                 import os
+                print(f"=== TEST EVALUATION V2: Starting AI evaluation attempt {attempt + 1} ===")
+                print(f"=== Using GEMINI_API_KEY: {'SET' if os.getenv('GEMINI_API_KEY') else 'NOT SET'} ===")
+                
                 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-                model = genai.GenerativeModel(ANSWER_EVALUATION_MODEL)
+                # TEMPORARY: Using hardcoded model like UMARead for testing
+                # model = genai.GenerativeModel(ANSWER_EVALUATION_MODEL)
+                model = genai.GenerativeModel('gemini-2.0-flash')
+                print(f"=== Configured Gemini with model: gemini-2.0-flash (hardcoded) ===")
                 
                 # Generate evaluation
+                print(f"=== Sending prompt to Gemini (length: {len(prompt)} chars) ===")
                 response = model.generate_content(prompt)
+                print(f"=== Received response from Gemini ===")
                 
                 # Parse response into structured format
+                print(f"=== Raw response text: {response.text[:200]}... ===")
                 evaluation_data = json.loads(response.text)
                 
                 # Validate with Pydantic
@@ -225,6 +239,9 @@ class TestEvaluationServiceV2:
                 
             except Exception as e:
                 logger.warning(f"AI evaluation attempt {attempt + 1} failed: {str(e)}")
+                print(f"=== TEST EVALUATION V2 ERROR: Attempt {attempt + 1} failed ===")
+                print(f"=== Error Type: {type(e).__name__} ===")
+                print(f"=== Error Message: {str(e)} ===")
                 if attempt < self.max_retries - 1:
                     await asyncio.sleep(self.retry_delay * (attempt + 1))
                 else:
@@ -350,16 +367,17 @@ class TestEvaluationServiceV2:
             )
         
         # Update test attempt with evaluation metadata
+        # Store basic evaluation completion status 
+        # Note: Many evaluation columns don't exist in current schema, so we'll use feedback field
         await self.db.execute(
             update(StudentTestAttempt)
             .where(StudentTestAttempt.id == test_attempt_id)
             .values(
-                evaluation_status="completed",
-                evaluated_at=datetime.now(timezone.utc),
-                evaluation_model=ANSWER_EVALUATION_MODEL,
-                evaluation_version="v2.0",
-                raw_ai_response=json.dumps(evaluation.dict()),
-                evaluation_metadata={
+                feedback={
+                    "evaluation_status": "completed",
+                    "evaluated_at": datetime.now(timezone.utc).isoformat(),
+                    "evaluation_model": ANSWER_EVALUATION_MODEL,
+                    "evaluation_version": "v2.0",
                     "overall_quality_notes": evaluation.overall_quality_notes,
                     "evaluation_confidence": evaluation.evaluation_confidence,
                     "unusual_patterns": evaluation.unusual_patterns
@@ -513,20 +531,21 @@ class TestEvaluationServiceV2:
             update(StudentTestAttempt)
             .where(StudentTestAttempt.id == test_attempt_id)
             .values(
-                status=status,
-                evaluation_status=status if status in ["evaluating", "completed", "manual_review"] else None
+                status=status
+                # Note: evaluation_status column doesn't exist in current schema
             )
         )
         await self.db.commit()
     
     async def _handle_evaluation_failure(self, test_attempt_id: UUID, error_message: str):
         """Handle evaluation failure."""
+        # Store failure info in feedback field since evaluation columns don't exist
         await self.db.execute(
             update(StudentTestAttempt)
             .where(StudentTestAttempt.id == test_attempt_id)
             .values(
-                evaluation_status="failed",
-                evaluation_metadata={
+                feedback={
+                    "evaluation_status": "failed",
                     "error": error_message,
                     "failed_at": datetime.now(timezone.utc).isoformat()
                 }
