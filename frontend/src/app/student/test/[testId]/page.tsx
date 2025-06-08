@@ -78,7 +78,21 @@ export default function TestPage({ params }: { params: { testId: string } }) {
   }
 
   const handleTestComplete = () => {
-    router.push('/student/dashboard')
+    console.log('=== TEST COMPLETE: Redirecting and triggering data refresh ===')
+    
+    // Try to go back to where they came from, or default to dashboard
+    // Check if they came from a classroom page
+    const referrer = document.referrer
+    const classroomMatch = referrer.match(/\/student\/classrooms\/([^\/]+)/)
+    
+    if (classroomMatch) {
+      // They came from a classroom page, redirect back there with refresh
+      const classroomId = classroomMatch[1]
+      router.push(`/student/classrooms/${classroomId}?refresh=true`)
+    } else {
+      // Default to dashboard with refresh
+      router.push('/student/dashboard?refresh=true')
+    }
   }
 
   if (loading) {

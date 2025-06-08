@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { studentApi, type StudentClassroom } from '@/lib/studentApi'
 import { useAuth } from '@/hooks/useAuth'
 import { tokenStorage } from '@/lib/tokenStorage'
@@ -30,6 +30,7 @@ interface AvailableTest {
 
 export default function StudentDashboard() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { logout } = useAuth()
   const [classrooms, setClassrooms] = useState<StudentClassroom[]>([])
   const [availableTests, setAvailableTests] = useState<AvailableTest[]>([])
@@ -41,6 +42,19 @@ export default function StudentDashboard() {
     fetchClassrooms()
     fetchAvailableTests()
   }, [])
+
+  // Listen for refresh parameter from test completion
+  useEffect(() => {
+    const refresh = searchParams.get('refresh')
+    if (refresh === 'true') {
+      console.log('=== DASHBOARD: Refreshing data after test completion ===')
+      // Remove the refresh parameter from URL
+      router.replace('/student/dashboard')
+      // Refetch data to show updated test status
+      fetchClassrooms()
+      fetchAvailableTests()
+    }
+  }, [searchParams, router])
 
   const fetchClassrooms = async () => {
     try {

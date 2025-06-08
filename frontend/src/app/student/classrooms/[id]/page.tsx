@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { studentApi, type StudentClassroomDetail } from '@/lib/studentApi'
 import AssignmentCard from '@/components/student/AssignmentCard'
@@ -21,6 +21,7 @@ import {
 export default function StudentClassroomPage() {
   const params = useParams()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { user, logout } = useAuth()
   const classroomId = params.id as string
 
@@ -33,6 +34,18 @@ export default function StudentClassroomPage() {
   useEffect(() => {
     fetchClassroomData()
   }, [classroomId])
+
+  // Listen for refresh parameter from test completion
+  useEffect(() => {
+    const refresh = searchParams.get('refresh')
+    if (refresh === 'true') {
+      console.log('=== CLASSROOM: Refreshing data after test completion ===')
+      // Remove the refresh parameter from URL
+      router.replace(`/student/classrooms/${classroomId}`)
+      // Refetch data to show updated test status
+      fetchClassroomData()
+    }
+  }, [searchParams, router, classroomId])
 
   const fetchClassroomData = async () => {
     try {

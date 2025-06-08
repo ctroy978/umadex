@@ -386,7 +386,7 @@ async def get_classroom_detail(
             and_(
                 StudentTestAttempt.assignment_test_id == AssignmentTest.id,
                 StudentTestAttempt.student_id == current_user.id,
-                StudentTestAttempt.status.in_(["submitted", "evaluated"])
+                StudentTestAttempt.status.in_(["submitted", "evaluated", "graded"])
             )
         )
         .where(
@@ -411,8 +411,8 @@ async def get_classroom_detail(
         # Assignment has test if there's an approved test
         has_test = test_id is not None and test_status == "approved"
         
-        # Test is completed if there's a submitted or evaluated attempt
-        test_completed = test_attempt_id is not None and attempt_status in ["submitted", "evaluated"]
+        # Test is completed if there's a submitted, evaluated, or graded attempt
+        test_completed = test_attempt_id is not None and attempt_status in ["submitted", "evaluated", "graded"]
         
         status = calculate_assignment_status(ca.start_date, ca.end_date)
         assignments.append(StudentAssignmentResponse(
