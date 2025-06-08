@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { studentApi, type StudentClassroom } from '@/lib/studentApi'
 import { useAuth } from '@/hooks/useAuth'
-import { tokenStorage } from '@/lib/tokenStorage'
 import { 
   PlusIcon, 
   BookOpenIcon, 
@@ -12,35 +11,19 @@ import {
   UsersIcon,
   ClockIcon,
   ArrowRightIcon,
-  ArrowRightOnRectangleIcon,
-  CheckCircleIcon
+  ArrowRightOnRectangleIcon
 } from '@heroicons/react/24/outline'
-
-interface AvailableTest {
-  test_id: string;
-  assignment_id: string;
-  assignment_title: string;
-  time_limit_minutes: number;
-  attempts_remaining: number;
-  expires_at: string;
-  classroom_assignment_id: string;
-  status: 'available' | 'completed';
-  result_id?: string;
-}
 
 export default function StudentDashboard() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { logout } = useAuth()
   const [classrooms, setClassrooms] = useState<StudentClassroom[]>([])
-  const [availableTests, setAvailableTests] = useState<AvailableTest[]>([])
   const [loading, setLoading] = useState(true)
-  const [testsLoading, setTestsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     fetchClassrooms()
-    fetchAvailableTests()
   }, [])
 
   // Listen for refresh parameter from test completion
@@ -52,7 +35,6 @@ export default function StudentDashboard() {
       router.replace('/student/dashboard')
       // Refetch data to show updated test status
       fetchClassrooms()
-      fetchAvailableTests()
     }
   }, [searchParams, router])
 
@@ -66,24 +48,6 @@ export default function StudentDashboard() {
       setError('Failed to load classrooms')
     } finally {
       setLoading(false)
-    }
-  }
-
-  const fetchAvailableTests = async () => {
-    try {
-      setTestsLoading(true)
-      const token = tokenStorage.getAccessToken()
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/v1/tests/available`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      })
-      if (response.ok) {
-        const data = await response.json()
-        setAvailableTests(data)
-      }
-    } catch (err) {
-      console.error('Failed to fetch available tests:', err)
-    } finally {
-      setTestsLoading(false)
     }
   }
 
@@ -119,7 +83,7 @@ export default function StudentDashboard() {
                     {getGreeting()}! Ready to learn?
                   </h1>
                   <p className="text-gray-600 mt-1">
-                    Access your assignments and track your progress
+                    Access your classrooms and assignments
                   </p>
                 </div>
                 <div className="flex items-center space-x-3">
@@ -185,65 +149,6 @@ export default function StudentDashboard() {
                     </p>
                   </div>
                 </div>
-              </div>
-            </div>
-          )}
-
-          {/* Tests Section */}
-          {!testsLoading && availableTests.length > 0 && (
-            <div className="mb-8">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold text-gray-900">Tests</h2>
-                <span className="text-sm text-gray-500">
-                  {availableTests.filter(t => t.status === 'available').length} available, {availableTests.filter(t => t.status === 'completed').length} completed
-                </span>
-              </div>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {availableTests.map((test) => (
-                  <div
-                    key={test.test_id}
-                    className={`bg-white rounded-lg shadow hover:shadow-md transition-shadow border ${
-                      test.status === 'available' ? 'border-green-200' : 'border-blue-200'
-                    }`}
-                  >
-                    <div className="p-4">
-                      <div className="flex items-start justify-between mb-3">
-                        <div className="flex-1">
-                          <h3 className="font-medium text-gray-900 mb-1">
-                            {test.assignment_title}
-                          </h3>
-                          <div className="space-y-1 text-sm text-gray-600">
-                            <p>Time limit: {test.time_limit_minutes} minutes</p>
-                            {test.status === 'available' ? (
-                              <p>Attempts remaining: {test.attempts_remaining}</p>
-                            ) : (
-                              <p>Status: Completed</p>
-                            )}
-                            <p>Expires: {new Date(test.expires_at).toLocaleDateString()}</p>
-                          </div>
-                        </div>
-                        <CheckCircleIcon className={`h-5 w-5 ${test.status === 'available' ? 'text-green-500' : 'text-blue-500'}`} />
-                      </div>
-                      
-                      {test.status === 'available' ? (
-                        <button
-                          onClick={() => router.push(`/student/test/${test.assignment_id}`)}
-                          className="w-full px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-sm font-medium"
-                        >
-                          Start Test
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => router.push(`/student/test/results/${test.result_id}`)}
-                          className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-sm font-medium"
-                        >
-                          View Results
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
               </div>
             </div>
           )}
