@@ -77,12 +77,18 @@ export default function UMAReadAssignmentPage({ params }: { params: { id: string
       const errorMessage = err.response?.data?.detail || 'Failed to load assignment';
       setError(errorMessage);
       
-      // Auto-retry on 500 errors
-      if (err.response?.status === 500 && retryCount < 2) {
+      // Auto-retry on 500 errors (extend retry count and delay for better UX)
+      if (err.response?.status === 500 && retryCount < 3) {
         setRetryCount(prev => prev + 1);
+        // Don't show error on first few retries, just keep loading state
+        if (retryCount < 2) {
+          setError(null);
+          setLoading(true);
+        }
         setTimeout(() => {
           loadAssignment();
-        }, 1000);
+        }, 1500 + (retryCount * 500)); // Increasing delay: 1.5s, 2s, 2.5s
+        return; // Don't set loading to false
       }
     } finally {
       setLoading(false);
@@ -209,8 +215,22 @@ export default function UMAReadAssignmentPage({ params }: { params: { id: string
         <div className="min-h-screen bg-gray-50 flex items-center justify-center">
           <div className="text-center">
             <Loader2 className="w-12 h-12 text-blue-600 animate-spin mx-auto mb-4" />
-            <p className="text-gray-600 text-lg font-medium">Loading assignment...</p>
-            <p className="text-gray-500 text-sm mt-2">Please wait while we prepare your reading</p>
+            <p className="text-gray-600 text-lg font-medium">
+              {retryCount > 0 ? 'Connecting to assignment...' : 'Loading assignment...'}
+            </p>
+            <p className="text-gray-500 text-sm mt-2">
+              {retryCount > 0 
+                ? 'Getting everything ready for you...' 
+                : 'Please wait while we prepare your reading'
+              }
+            </p>
+            {retryCount > 0 && (
+              <div className="mt-4">
+                <div className="inline-flex items-center px-3 py-1 rounded-full text-xs bg-blue-100 text-blue-700">
+                  Initializing reading session...
+                </div>
+              </div>
+            )}
           </div>
         </div>
     );
@@ -242,7 +262,9 @@ export default function UMAReadAssignmentPage({ params }: { params: { id: string
                 </button>
               </div>
               {retryCount > 0 && (
-                <p className="text-sm text-red-600 mt-3">Retry attempt {retryCount} of 2</p>
+                <p className="text-sm text-red-600 mt-3">
+                  We tried {retryCount} time{retryCount > 1 ? 's' : ''} to load this assignment
+                </p>
               )}
             </div>
           </div>

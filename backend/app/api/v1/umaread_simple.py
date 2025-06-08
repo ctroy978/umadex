@@ -495,8 +495,8 @@ async def request_simpler_question(
     
     # Clear cached questions to force regeneration
     question_key = f"{current_user.id}:{assignment_id}:{chunk_number}"
-    if question_key in question_cache:
-        del question_cache[question_key]
+    if question_key in current_questions:
+        del current_questions[question_key]
     
     # Get assignment and chunk for new question generation
     assignment = await db.get(ReadingAssignment, assignment_id)
@@ -534,7 +534,7 @@ async def request_simpler_question(
             )
             
             # Cache the new questions
-            question_cache[question_key] = questions
+            current_questions[question_key] = questions
             
             # Return the comprehension question
             return {

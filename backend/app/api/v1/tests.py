@@ -15,6 +15,7 @@ from app.models.user import User
 from app.models.reading import ReadingAssignment
 from app.models.tests import AssignmentTest, TestResult
 from app.models.classroom import ClassroomAssignment
+from app.models.umaread import UmareadAssignmentProgress
 from app.services.test_generation import TestGenerationService
 from app.services.test_evaluation import TestEvaluationService
 from app.schemas.auth import UserRole
@@ -177,6 +178,76 @@ async def get_test_by_assignment(
         created_at=test.created_at,
         teacher_notes=test.teacher_notes
     )
+
+
+@router.get("/available", response_model=List[Dict[str, Any]])
+async def get_available_tests(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get available tests for current student."""
+    
+    if current_user.role != UserRole.STUDENT:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only students can view available tests"
+        )
+    
+    # Query for available tests - only show tests for completed assignments
+    query = select(
+        AssignmentTest.id,
+        AssignmentTest.assignment_id,
+        AssignmentTest.time_limit_minutes,
+        AssignmentTest.max_attempts,
+        AssignmentTest.expires_at,
+        ReadingAssignment.assignment_title,
+        func.count(TestResult.id).label("attempts_used")
+    ).select_from(AssignmentTest).join(
+        ReadingAssignment,
+        AssignmentTest.assignment_id == ReadingAssignment.id
+    ).join(
+        UmareadAssignmentProgress,
+        and_(
+            UmareadAssignmentProgress.assignment_id == ReadingAssignment.id,
+            UmareadAssignmentProgress.student_id == current_user.id,
+            UmareadAssignmentProgress.completed_at.isnot(None)  # Must be completed
+        )
+    ).outerjoin(
+        TestResult,
+        and_(
+            TestResult.test_id == AssignmentTest.id,
+            TestResult.student_id == current_user.id
+        )
+    ).where(
+        and_(
+            AssignmentTest.status == "approved",
+            AssignmentTest.expires_at > datetime.utcnow()
+        )
+    ).group_by(
+        AssignmentTest.id,
+        AssignmentTest.assignment_id,
+        AssignmentTest.time_limit_minutes,
+        AssignmentTest.max_attempts,
+        AssignmentTest.expires_at,
+        ReadingAssignment.assignment_title
+    )
+    
+    results = await db.execute(query)
+    
+    available_tests = []
+    for row in results:
+        if row.attempts_used < row.max_attempts:
+            available_tests.append({
+                "test_id": str(row.id),
+                "assignment_id": str(row.assignment_id),
+                "assignment_title": row.assignment_title,
+                "time_limit_minutes": row.time_limit_minutes,
+                "attempts_remaining": row.max_attempts - row.attempts_used,
+                "expires_at": row.expires_at.isoformat(),
+                "classroom_assignment_id": ""  # Simplified for now
+            })
+    
+    return available_tests
 
 
 @router.get("/{test_id}", response_model=TestResponse)
@@ -367,66 +438,6 @@ async def delete_test(
 
 
 # Student endpoints
-
-@router.get("/available", response_model=List[Dict[str, Any]])
-async def get_available_tests(
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
-):
-    """Get available tests for current student."""
-    
-    if current_user.role != UserRole.STUDENT:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only students can view available tests"
-        )
-    
-    # This is a simplified query for now
-    # In a real implementation, you'd need to check completed assignments
-    query = select(
-        AssignmentTest.id,
-        AssignmentTest.time_limit_minutes,
-        AssignmentTest.max_attempts,
-        AssignmentTest.expires_at,
-        ReadingAssignment.assignment_title,
-        func.count(TestResult.id).label("attempts_used")
-    ).select_from(AssignmentTest).join(
-        ReadingAssignment,
-        AssignmentTest.assignment_id == ReadingAssignment.id
-    ).outerjoin(
-        TestResult,
-        and_(
-            TestResult.test_id == AssignmentTest.id,
-            TestResult.student_id == current_user.id
-        )
-    ).where(
-        and_(
-            AssignmentTest.status == "approved",
-            AssignmentTest.expires_at > datetime.utcnow()
-        )
-    ).group_by(
-        AssignmentTest.id,
-        AssignmentTest.time_limit_minutes,
-        AssignmentTest.max_attempts,
-        AssignmentTest.expires_at,
-        ReadingAssignment.assignment_title
-    )
-    
-    results = await db.execute(query)
-    
-    available_tests = []
-    for row in results:
-        if row.attempts_used < row.max_attempts:
-            available_tests.append({
-                "test_id": str(row.id),
-                "assignment_title": row.assignment_title,
-                "time_limit_minutes": row.time_limit_minutes,
-                "attempts_remaining": row.max_attempts - row.attempts_used,
-                "expires_at": row.expires_at.isoformat(),
-                "classroom_assignment_id": ""  # Simplified for now
-            })
-    
-    return available_tests
 
 
 @router.post("/start", response_model=Dict[str, Any])

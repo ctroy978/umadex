@@ -92,6 +92,12 @@ class StudentTestAttempt(Base):
     locked_at = Column(DateTime(timezone=True))
     locked_reason = Column(String(255))
     
+    # Schedule and override tracking (added in migration 033)
+    started_within_schedule = Column(Boolean, default=True)
+    override_code_used = Column(UUID(as_uuid=True), ForeignKey("classroom_test_overrides.id"))
+    grace_period_end = Column(DateTime(timezone=True))
+    schedule_violation_reason = Column(Text)
+    
     # Audit
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow)

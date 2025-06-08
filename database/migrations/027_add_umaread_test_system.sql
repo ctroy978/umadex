@@ -3,7 +3,7 @@
 -- Main test storage table
 CREATE TABLE assignment_tests (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    assignment_id UUID NOT NULL REFERENCES umaread_assignments(id) ON DELETE CASCADE,
+    assignment_id UUID NOT NULL REFERENCES reading_assignments(id) ON DELETE CASCADE,
     status VARCHAR(20) NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'approved', 'archived')),
     test_questions JSONB NOT NULL, -- stores questions + answer keys + grading context
     teacher_notes TEXT,

@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { studentApi, type StudentClassroom } from '@/lib/studentApi'
 import { useAuth } from '@/hooks/useAuth'
+import { tokenStorage } from '@/lib/tokenStorage'
 import { 
   PlusIcon, 
   BookOpenIcon, 
@@ -17,6 +18,7 @@ import {
 
 interface AvailableTest {
   test_id: string;
+  assignment_id: string;
   assignment_title: string;
   time_limit_minutes: number;
   attempts_remaining: number;
@@ -26,7 +28,7 @@ interface AvailableTest {
 
 export default function StudentDashboard() {
   const router = useRouter()
-  const { logout, token } = useAuth()
+  const { logout } = useAuth()
   const [classrooms, setClassrooms] = useState<StudentClassroom[]>([])
   const [availableTests, setAvailableTests] = useState<AvailableTest[]>([])
   const [loading, setLoading] = useState(true)
@@ -54,6 +56,7 @@ export default function StudentDashboard() {
   const fetchAvailableTests = async () => {
     try {
       setTestsLoading(true)
+      const token = tokenStorage.getAccessToken()
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/v1/tests/available`, {
         headers: { 'Authorization': `Bearer ${token}` }
       })
@@ -202,7 +205,7 @@ export default function StudentDashboard() {
                       </div>
                       
                       <button
-                        onClick={() => router.push(`/student/test/${test.test_id}`)}
+                        onClick={() => router.push(`/student/test/${test.assignment_id}`)}
                         className="w-full px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-sm font-medium"
                       >
                         Start Test
