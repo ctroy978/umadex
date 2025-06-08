@@ -27,6 +27,8 @@ export interface StudentAssignment {
   status: 'not_started' | 'active' | 'expired'
   is_completed: boolean
   has_test: boolean
+  test_completed: boolean
+  test_attempt_id?: string
 }
 
 export interface StudentClassroomDetail {

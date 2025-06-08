@@ -24,6 +24,8 @@ interface AvailableTest {
   attempts_remaining: number;
   expires_at: string;
   classroom_assignment_id: string;
+  status: 'available' | 'completed';
+  result_id?: string;
 }
 
 export default function StudentDashboard() {
@@ -173,13 +175,13 @@ export default function StudentDashboard() {
             </div>
           )}
 
-          {/* Available Tests Section */}
+          {/* Tests Section */}
           {!testsLoading && availableTests.length > 0 && (
             <div className="mb-8">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold text-gray-900">Available Tests</h2>
+                <h2 className="text-lg font-semibold text-gray-900">Tests</h2>
                 <span className="text-sm text-gray-500">
-                  {availableTests.length} {availableTests.length === 1 ? 'test' : 'tests'} available
+                  {availableTests.filter(t => t.status === 'available').length} available, {availableTests.filter(t => t.status === 'completed').length} completed
                 </span>
               </div>
               
@@ -187,7 +189,9 @@ export default function StudentDashboard() {
                 {availableTests.map((test) => (
                   <div
                     key={test.test_id}
-                    className="bg-white rounded-lg shadow hover:shadow-md transition-shadow border border-green-200"
+                    className={`bg-white rounded-lg shadow hover:shadow-md transition-shadow border ${
+                      test.status === 'available' ? 'border-green-200' : 'border-blue-200'
+                    }`}
                   >
                     <div className="p-4">
                       <div className="flex items-start justify-between mb-3">
@@ -197,19 +201,32 @@ export default function StudentDashboard() {
                           </h3>
                           <div className="space-y-1 text-sm text-gray-600">
                             <p>Time limit: {test.time_limit_minutes} minutes</p>
-                            <p>Attempts remaining: {test.attempts_remaining}</p>
+                            {test.status === 'available' ? (
+                              <p>Attempts remaining: {test.attempts_remaining}</p>
+                            ) : (
+                              <p>Status: Completed</p>
+                            )}
                             <p>Expires: {new Date(test.expires_at).toLocaleDateString()}</p>
                           </div>
                         </div>
-                        <CheckCircleIcon className="h-5 w-5 text-green-500" />
+                        <CheckCircleIcon className={`h-5 w-5 ${test.status === 'available' ? 'text-green-500' : 'text-blue-500'}`} />
                       </div>
                       
-                      <button
-                        onClick={() => router.push(`/student/test/${test.assignment_id}`)}
-                        className="w-full px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-sm font-medium"
-                      >
-                        Start Test
-                      </button>
+                      {test.status === 'available' ? (
+                        <button
+                          onClick={() => router.push(`/student/test/${test.assignment_id}`)}
+                          className="w-full px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-sm font-medium"
+                        >
+                          Start Test
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => router.push(`/student/test/results/${test.result_id}`)}
+                          className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-sm font-medium"
+                        >
+                          View Results
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}

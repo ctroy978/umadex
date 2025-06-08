@@ -1,12 +1,13 @@
 """
 Student test-taking API endpoints
 """
+import logging
 from typing import Optional, Dict, Any, List
 from uuid import UUID
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, func, or_
+from sqlalchemy import select, and_, func, or_, text
 from pydantic import BaseModel, Field
 
 from app.core.database import get_db
@@ -19,7 +20,7 @@ from app.services.bypass_validation import validate_bypass_code
 from app.services.test_schedule import TestScheduleService
 from app.schemas.test_schedule import ValidateOverrideRequest
 
-
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/tests", tags=["student-tests"])
 
 
@@ -140,19 +141,7 @@ async def start_test(
             detail="You must complete the reading assignment before taking the test"
         )
     
-    # Get the latest attempt number
-    attempt_query = await db.execute(
-        select(func.coalesce(func.max(StudentTestAttempt.attempt_number), 0))
-        .where(
-            and_(
-                StudentTestAttempt.student_id == current_user.id,
-                StudentTestAttempt.assignment_test_id == assignment_test.id
-            )
-        )
-    )
-    last_attempt_number = attempt_query.scalar() or 0
-    
-    # Check for existing in-progress attempt
+    # Check for existing in-progress attempt first
     existing_attempt = await db.execute(
         select(StudentTestAttempt)
         .where(
@@ -165,6 +154,20 @@ async def start_test(
         .order_by(StudentTestAttempt.created_at.desc())
     )
     test_attempt = existing_attempt.scalar_one_or_none()
+    
+    # Get the latest attempt number only if we need to create a new attempt
+    last_attempt_number = 0
+    if not test_attempt:
+        attempt_query = await db.execute(
+            select(func.coalesce(func.max(StudentTestAttempt.attempt_number), 0))
+            .where(
+                and_(
+                    StudentTestAttempt.student_id == current_user.id,
+                    StudentTestAttempt.assignment_test_id == assignment_test.id
+                )
+            )
+        )
+        last_attempt_number = attempt_query.scalar() or 0
     
     # Clean up any "zombie" test attempts that were created outside valid windows
     # and have no answers (indicating they were never properly started)
@@ -287,61 +290,126 @@ async def start_test(
                 from datetime import timedelta
                 grace_period_end = availability.current_window_end + timedelta(minutes=schedule.grace_period_minutes)
         
-        # Create test attempt with proper error handling
-        try:
-            test_attempt = StudentTestAttempt(
-                student_id=current_user.id,
-                assignment_test_id=assignment_test.id,
-                assignment_id=assignment_id,
-                attempt_number=last_attempt_number + 1,
-                current_question=1,
-                answers_data={},
-                status="in_progress",
-                started_within_schedule=started_within_schedule,
-                override_code_used=override_id,
-                grace_period_end=grace_period_end
-            )
-            db.add(test_attempt)
-            await db.commit()
-            await db.refresh(test_attempt)
-            
-            # If override was used, record the usage now that we have the test_attempt_id
-            if override_id and override_code:
-                try:
-                    # Record the override usage and increment count
-                    from app.models.test_schedule import TestOverrideUsage, ClassroomTestOverride
-                    
-                    # Create usage record
-                    usage = TestOverrideUsage(
-                        override_id=override_id,
-                        student_id=current_user.id,
-                        test_attempt_id=test_attempt.id
+        # Create test attempt with race condition handling
+        max_retries = 3
+        retry_count = 0
+        
+        while retry_count < max_retries:
+            try:
+                # Re-check for existing attempt in case one was created during race condition
+                if retry_count > 0:
+                    existing_check = await db.execute(
+                        select(StudentTestAttempt)
+                        .where(
+                            and_(
+                                StudentTestAttempt.student_id == current_user.id,
+                                StudentTestAttempt.assignment_test_id == assignment_test.id,
+                                StudentTestAttempt.status == "in_progress"
+                            )
+                        )
+                        .order_by(StudentTestAttempt.created_at.desc())
                     )
-                    db.add(usage)
+                    existing_test_attempt = existing_check.scalar_one_or_none()
+                    if existing_test_attempt:
+                        test_attempt = existing_test_attempt
+                        break
                     
-                    # Increment usage count on the override
-                    override_result = await db.execute(
-                        select(ClassroomTestOverride).where(
-                            ClassroomTestOverride.id == override_id
+                    # Refresh attempt number in case it changed
+                    attempt_query = await db.execute(
+                        select(func.coalesce(func.max(StudentTestAttempt.attempt_number), 0))
+                        .where(
+                            and_(
+                                StudentTestAttempt.student_id == current_user.id,
+                                StudentTestAttempt.assignment_test_id == assignment_test.id
+                            )
                         )
                     )
-                    override_record = override_result.scalar_one_or_none()
-                    if override_record:
-                        override_record.current_uses += 1
-                        override_record.used_at = datetime.now(timezone.utc)
-                    
-                    await db.commit()
-                except Exception as usage_error:
-                    # Log the error but don't fail the test start
-                    print(f"Warning: Failed to record override usage: {usage_error}")
-                    
-        except Exception as e:
-            await db.rollback()
-            print(f"Error creating test attempt: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to create test attempt: {str(e)}"
-            )
+                    last_attempt_number = attempt_query.scalar() or 0
+                
+                test_attempt = StudentTestAttempt(
+                    student_id=current_user.id,
+                    assignment_test_id=assignment_test.id,
+                    assignment_id=assignment_id,
+                    attempt_number=last_attempt_number + 1,
+                    current_question=1,
+                    answers_data={},
+                    status="in_progress",
+                    started_within_schedule=started_within_schedule,
+                    override_code_used=override_id,
+                    grace_period_end=grace_period_end
+                )
+                db.add(test_attempt)
+                await db.commit()
+                await db.refresh(test_attempt)
+                break  # Success, exit retry loop
+                
+            except Exception as e:
+                await db.rollback()
+                retry_count += 1
+                
+                # Check if it's a unique constraint violation
+                error_str = str(e).lower()
+                if "unique_student_test_attempt" in error_str or "duplicate key" in error_str:
+                    if retry_count < max_retries:
+                        # Wait a small amount before retrying
+                        import asyncio
+                        await asyncio.sleep(0.1 * retry_count)
+                        continue
+                    else:
+                        # Final retry failed, check if another attempt was created
+                        final_check = await db.execute(
+                            select(StudentTestAttempt)
+                            .where(
+                                and_(
+                                    StudentTestAttempt.student_id == current_user.id,
+                                    StudentTestAttempt.assignment_test_id == assignment_test.id,
+                                    StudentTestAttempt.status == "in_progress"
+                                )
+                            )
+                            .order_by(StudentTestAttempt.created_at.desc())
+                        )
+                        existing_attempt_final = final_check.scalar_one_or_none()
+                        if existing_attempt_final:
+                            test_attempt = existing_attempt_final
+                            break
+                
+                # If it's not a constraint violation or we've exhausted retries, raise the error
+                print(f"Error creating test attempt (retry {retry_count}): {e}")
+                if retry_count >= max_retries:
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=f"Failed to create test attempt: {str(e)}"
+                    )
+        
+        # If override was used, record the usage now that we have the test_attempt_id
+        if override_id and override_code:
+            try:
+                # Record the override usage and increment count
+                from app.models.test_schedule import TestOverrideUsage, ClassroomTestOverride
+                
+                # Create usage record
+                usage = TestOverrideUsage(
+                    override_id=override_id,
+                    student_id=current_user.id,
+                    test_attempt_id=test_attempt.id
+                )
+                db.add(usage)
+                
+                # Increment usage count on the override
+                override_result = await db.execute(
+                    select(ClassroomTestOverride).where(
+                        ClassroomTestOverride.id == override_id
+                    )
+                )
+                override_record = override_result.scalar_one_or_none()
+                if override_record:
+                    override_record.current_uses += 1
+                    override_record.used_at = datetime.now(timezone.utc)
+                
+                await db.commit()
+            except Exception as usage_error:
+                # Log the error but don't fail the test start
+                print(f"Warning: Failed to record override usage: {usage_error}")
     
     # Parse test questions
     test_questions = assignment_test.test_questions or []
@@ -399,14 +467,23 @@ async def save_answer(
     answers = test_attempt.answers_data or {}
     answers[str(request.question_index)] = request.answer
     
+    # Log the save operation for debugging
+    logger.info(f"Saving answer - Test ID: {test_id}, Question: {request.question_index}, Answer length: {len(request.answer)}")
+    logger.debug(f"All answers so far: {answers}")
+    
     # Update current question and time spent
     test_attempt.answers_data = answers
     test_attempt.current_question = request.question_index + 1  # Next question
     test_attempt.time_spent_seconds = (test_attempt.time_spent_seconds or 0) + request.time_spent_seconds
+    test_attempt.last_activity_at = datetime.now(timezone.utc)
+    
+    # Explicitly mark the answers_data as modified to ensure SQLAlchemy updates the JSONB field
+    from sqlalchemy.orm.attributes import flag_modified
+    flag_modified(test_attempt, "answers_data")
     
     await db.commit()
     
-    return {"success": True, "message": "Answer saved"}
+    return {"success": True, "message": "Answer saved", "saved_count": len(answers)}
 
 
 @router.get("/{test_id}/progress", response_model=TestProgressResponse)
@@ -490,13 +567,43 @@ async def submit_test(
     
     await db.commit()
     
-    # TODO: Trigger AI evaluation in Phase 4
+    # Log submission details for debugging
+    logger.info(f"Test submission - Attempt ID: {test_attempt.id}, Answers: {test_attempt.answers_data}")
     
-    return {
-        "success": True,
-        "message": "Test submitted successfully",
-        "attempt_id": test_attempt.id
-    }
+    # Trigger AI evaluation using the new V2 service
+    try:
+        from app.services.test_evaluation_v2 import TestEvaluationServiceV2
+        
+        # Create evaluation service instance with database session
+        evaluation_service = TestEvaluationServiceV2(db)
+        
+        # Perform evaluation asynchronously
+        evaluation_result = await evaluation_service.evaluate_test_submission(
+            test_attempt_id=test_attempt.id,
+            trigger_source="student_submission"
+        )
+        
+        logger.info(f"Test evaluation completed - Score: {evaluation_result.get('score')}")
+        
+        return {
+            "success": True,
+            "message": "Test submitted and evaluated successfully",
+            "attempt_id": test_attempt.id,
+            "score": evaluation_result.get("score"),
+            "needs_review": evaluation_result.get("needs_review", False)
+        }
+    except Exception as e:
+        logger.error(f"Error evaluating test: {str(e)}")
+        # Don't fail the submission if evaluation fails
+        test_attempt.evaluation_status = "failed"
+        await db.commit()
+        
+        return {
+            "success": True,
+            "message": "Test submitted successfully. Evaluation will be completed shortly.",
+            "attempt_id": test_attempt.id,
+            "evaluation_error": str(e)
+        }
 
 
 @router.get("/{assignment_id}/reading-content", response_model=ReadingContentResponse)
@@ -864,3 +971,167 @@ async def unlock_test_with_code(
         "test_attempt_id": str(test_attempt_id),
         "bypass_type": bypass_type
     }
+
+
+class TestResultDetailResponse(BaseModel):
+    attempt_id: UUID
+    assignment_id: UUID
+    assignment_title: str
+    student_name: str
+    overall_score: float
+    total_points: int
+    passed: bool
+    status: str
+    submitted_at: Optional[datetime]
+    evaluated_at: Optional[datetime]
+    question_evaluations: List[Dict[str, Any]]
+    feedback_summary: Optional[str]
+    needs_review: bool
+
+
+@router.get("/results/{test_attempt_id}", response_model=TestResultDetailResponse)
+async def get_test_result_details(
+    test_attempt_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get detailed test results with evaluation breakdown"""
+    
+    # Get test attempt with related data
+    attempt_query = await db.execute(
+        select(StudentTestAttempt, ReadingAssignment, User)
+        .join(ReadingAssignment, ReadingAssignment.id == StudentTestAttempt.assignment_id)
+        .join(User, User.id == StudentTestAttempt.student_id)
+        .where(StudentTestAttempt.id == test_attempt_id)
+    )
+    result = attempt_query.first()
+    
+    if not result:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Test result not found"
+        )
+    
+    test_attempt, assignment, student = result
+    
+    # Check authorization
+    if current_user.role.value == "student":
+        if test_attempt.student_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You can only view your own test results"
+            )
+    elif current_user.role.value == "teacher":
+        # Verify teacher owns the assignment
+        if assignment.teacher_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You can only view results for your assignments"
+            )
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient permissions"
+        )
+    
+    # Get question evaluations if available, otherwise show submitted answers
+    eval_query = await db.execute(
+        text("""
+        SELECT 
+            qe.question_number,
+            qe.question_text,
+            qe.student_answer,
+            qe.rubric_score,
+            qe.points_earned,
+            qe.scoring_rationale,
+            qe.feedback_text,
+            qe.key_concepts_identified,
+            qe.misconceptions_detected,
+            qe.evaluation_confidence
+        FROM test_question_evaluations qe
+        WHERE qe.test_attempt_id = :attempt_id
+        ORDER BY qe.question_number
+        """),
+        {"attempt_id": test_attempt_id}
+    )
+    
+    question_evaluations = []
+    eval_rows = eval_query.fetchall()
+    
+    if eval_rows:
+        # We have AI evaluation results
+        for row in eval_rows:
+            eval_data = {
+                "question_number": row[0],
+                "question_text": row[1],
+                "student_answer": row[2],
+                "rubric_score": row[3],
+                "points_earned": row[4],
+                "scoring_rationale": row[5],
+                "feedback": row[6],
+                "confidence": row[9] if row[9] is not None else 0.0
+            }
+            
+            # Handle JSON fields (they're already parsed as dict/list in PostgreSQL JSONB)
+            eval_data["key_concepts"] = row[7] if row[7] else []
+            eval_data["misconceptions"] = row[8] if row[8] else []
+            
+            question_evaluations.append(eval_data)
+    else:
+        # No AI evaluation yet, show basic submitted answers
+        # Get the test questions and student answers from the test attempt
+        test_query = await db.execute(
+            select(AssignmentTest)
+            .where(AssignmentTest.id == test_attempt.assignment_test_id)
+        )
+        assignment_test = test_query.scalar_one()
+        
+        # Parse answers from the test attempt
+        student_answers = test_attempt.answers_data or {}
+        
+        for i, question in enumerate(assignment_test.test_questions):
+            question_key = str(i)
+            student_answer = student_answers.get(question_key, "No answer provided")
+            
+            eval_data = {
+                "question_number": i + 1,
+                "question_text": question.get("question", "Question text not available"),
+                "student_answer": student_answer,
+                "rubric_score": 0,  # No score yet
+                "points_earned": 0,
+                "scoring_rationale": "Evaluation pending - your teacher will review your responses.",
+                "feedback": None,
+                "confidence": 0.0,
+                "key_concepts": [],
+                "misconceptions": []
+            }
+            
+            question_evaluations.append(eval_data)
+    
+    # For now, we'll set needs_review based on evaluation status
+    # TODO: Implement proper audit system later
+    needs_review = test_attempt.evaluation_status in ["failed", "error"] if hasattr(test_attempt, 'evaluation_status') else False
+    
+    # Get feedback summary
+    feedback_summary = None
+    if test_attempt.feedback and isinstance(test_attempt.feedback, dict):
+        feedback_summary = test_attempt.feedback.get("summary")
+    elif not eval_rows:
+        # No evaluation yet
+        feedback_summary = "Your test has been submitted successfully. Your teacher will review and provide feedback soon."
+    
+    return TestResultDetailResponse(
+        attempt_id=test_attempt.id,
+        assignment_id=test_attempt.assignment_id,
+        assignment_title=assignment.assignment_title,
+        student_name=f"{student.first_name} {student.last_name}",
+        overall_score=float(test_attempt.score or 0),
+        total_points=100,  # Standard total
+        passed=test_attempt.passed or False,
+        status=test_attempt.status,
+        submitted_at=test_attempt.submitted_at,
+        evaluated_at=test_attempt.evaluated_at if hasattr(test_attempt, 'evaluated_at') else None,
+        question_evaluations=question_evaluations,
+        feedback_summary=feedback_summary,
+        needs_review=needs_review
+    )

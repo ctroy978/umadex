@@ -5,6 +5,7 @@ import { AlertTriangle, CheckCircle, X } from 'lucide-react'
 interface SubmissionModalProps {
   answeredCount: number
   totalQuestions: number
+  answeredQuestions: number[]
   onConfirm: () => void
   onCancel: () => void
 }
@@ -12,6 +13,7 @@ interface SubmissionModalProps {
 export default function SubmissionModal({
   answeredCount,
   totalQuestions,
+  answeredQuestions,
   onConfirm,
   onCancel
 }: SubmissionModalProps) {
@@ -70,11 +72,11 @@ export default function SubmissionModal({
 
           {/* Question Summary */}
           <div className="bg-gray-50 rounded-lg p-4 mb-6">
-            <div className="flex justify-between text-sm">
+            <div className="flex justify-between text-sm mb-3">
               <span className="text-gray-600">Questions Answered:</span>
               <span className="font-medium text-gray-900">{answeredCount} / {totalQuestions}</span>
             </div>
-            <div className="mt-2">
+            <div className="mt-2 mb-3">
               <div className="bg-gray-200 rounded-full h-2">
                 <div
                   className={`h-2 rounded-full transition-all ${
@@ -83,6 +85,27 @@ export default function SubmissionModal({
                   style={{ width: `${(answeredCount / totalQuestions) * 100}%` }}
                 />
               </div>
+            </div>
+            
+            {/* Question Status Grid */}
+            <div className="text-xs text-gray-600 mb-2">Questions with saved answers:</div>
+            <div className="grid grid-cols-10 gap-1">
+              {Array.from({length: totalQuestions}, (_, i) => {
+                const questionNum = i + 1
+                const isAnswered = answeredQuestions.includes(i)
+                return (
+                  <div
+                    key={i}
+                    className={`w-6 h-6 rounded text-xs flex items-center justify-center font-medium ${
+                      isAnswered 
+                        ? 'bg-green-100 text-green-800 border border-green-300' 
+                        : 'bg-red-100 text-red-800 border border-red-300'
+                    }`}
+                  >
+                    {questionNum}
+                  </div>
+                )
+              })}
             </div>
           </div>
 

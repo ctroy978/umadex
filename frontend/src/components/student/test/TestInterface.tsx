@@ -24,6 +24,8 @@ export default function TestInterface({ testData, readingContent, onComplete }: 
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(testData.current_question - 1)
   const [answers, setAnswers] = useState<Record<string, string>>(testData.saved_answers || {})
   const [isSaving, setIsSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [lastSaveTime, setLastSaveTime] = useState<Date | null>(null)
   const [showSubmitModal, setShowSubmitModal] = useState(false)
   const [timeSpent, setTimeSpent] = useState(0)
   const [questionStartTime, setQuestionStartTime] = useState(Date.now())
@@ -100,13 +102,14 @@ export default function TestInterface({ testData, readingContent, onComplete }: 
   // Auto-save functionality
   useEffect(() => {
     const timer = setTimeout(() => {
-      if (Object.keys(answers).length > 0 && !isSaving) {
-        saveAnswer(currentQuestionIndex, answers[String(currentQuestionIndex)] || '')
+      const currentAnswer = answers[String(currentQuestionIndex)]
+      if (currentAnswer && currentAnswer.trim() && !isSaving) {
+        saveAnswer(currentQuestionIndex, currentAnswer)
       }
     }, 2000) // Save 2 seconds after typing stops
 
     return () => clearTimeout(timer)
-  }, [answers, currentQuestionIndex])
+  }, [answers, currentQuestionIndex, isSaving])
 
   // Track time spent on current question
   useEffect(() => {
@@ -114,7 +117,10 @@ export default function TestInterface({ testData, readingContent, onComplete }: 
   }, [currentQuestionIndex])
 
   const saveAnswer = async (questionIndex: number, answer: string) => {
+    if (isSaving) return // Prevent multiple simultaneous saves
+    
     setIsSaving(true)
+    setSaveError(null)
     try {
       const timeOnQuestion = Math.floor((Date.now() - questionStartTime) / 1000)
       await testApi.saveAnswer(testData.test_id, {
@@ -123,8 +129,11 @@ export default function TestInterface({ testData, readingContent, onComplete }: 
         time_spent_seconds: timeOnQuestion
       })
       setTimeSpent(prev => prev + timeOnQuestion)
-    } catch (error) {
+      setLastSaveTime(new Date())
+    } catch (error: any) {
       console.error('Failed to save answer:', error)
+      const errorMessage = error.response?.data?.detail || error.message || 'Failed to save answer'
+      setSaveError(errorMessage)
     } finally {
       setIsSaving(false)
     }
@@ -273,14 +282,50 @@ export default function TestInterface({ testData, readingContent, onComplete }: 
         <SubmissionModal
           answeredCount={answeredQuestions.length}
           totalQuestions={questions.length}
+          answeredQuestions={answeredQuestions}
           onConfirm={handleSubmit}
           onCancel={() => setShowSubmitModal(false)}
         />
       )}
 
-      {/* Copy/Paste Disabled Indicator */}
-      <div className="fixed bottom-4 right-4 bg-gray-800 text-white text-xs px-3 py-2 rounded-lg opacity-75">
-        Copy/Paste Disabled for Test Integrity
+      {/* Save Status Indicator */}
+      <div className="fixed bottom-4 right-4 space-y-2">
+        {/* Save Status */}
+        {isSaving && (
+          <div className="bg-blue-600 text-white text-xs px-3 py-2 rounded-lg flex items-center space-x-2">
+            <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white"></div>
+            <span>Saving...</span>
+          </div>
+        )}
+        
+        {saveError && (
+          <div className="bg-red-600 text-white text-xs px-3 py-2 rounded-lg max-w-xs">
+            <div className="font-medium">Save Failed!</div>
+            <div className="text-red-100 mt-1">{saveError}</div>
+            <button
+              onClick={() => {
+                const currentAnswer = answers[String(currentQuestionIndex)]
+                if (currentAnswer) {
+                  saveAnswer(currentQuestionIndex, currentAnswer)
+                }
+              }}
+              className="text-red-100 underline mt-1 text-xs hover:text-white"
+            >
+              Retry Save
+            </button>
+          </div>
+        )}
+        
+        {!isSaving && !saveError && lastSaveTime && (
+          <div className="bg-green-600 text-white text-xs px-3 py-2 rounded-lg">
+            Saved {lastSaveTime.toLocaleTimeString()}
+          </div>
+        )}
+        
+        {/* Copy/Paste Disabled Indicator */}
+        <div className="bg-gray-800 text-white text-xs px-3 py-2 rounded-lg opacity-75">
+          Copy/Paste Disabled for Test Integrity
+        </div>
       </div>
 
       {/* Security Warning Modal */}

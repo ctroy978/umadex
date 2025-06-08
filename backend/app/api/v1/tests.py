@@ -13,7 +13,7 @@ from app.core.database import get_db
 from app.utils.deps import get_current_user
 from app.models.user import User
 from app.models.reading import ReadingAssignment
-from app.models.tests import AssignmentTest, TestResult
+from app.models.tests import AssignmentTest, TestResult, StudentTestAttempt
 from app.models.classroom import ClassroomAssignment
 from app.models.umaread import UmareadAssignmentProgress
 from app.services.test_generation import TestGenerationService
@@ -201,7 +201,7 @@ async def get_available_tests(
         AssignmentTest.max_attempts,
         AssignmentTest.expires_at,
         ReadingAssignment.assignment_title,
-        func.count(TestResult.id).label("attempts_used")
+        func.count(StudentTestAttempt.id).label("attempts_used")
     ).select_from(AssignmentTest).join(
         ReadingAssignment,
         AssignmentTest.assignment_id == ReadingAssignment.id
@@ -213,10 +213,11 @@ async def get_available_tests(
             UmareadAssignmentProgress.completed_at.isnot(None)  # Must be completed
         )
     ).outerjoin(
-        TestResult,
+        StudentTestAttempt,
         and_(
-            TestResult.test_id == AssignmentTest.id,
-            TestResult.student_id == current_user.id
+            StudentTestAttempt.assignment_test_id == AssignmentTest.id,
+            StudentTestAttempt.student_id == current_user.id,
+            StudentTestAttempt.status.in_(["submitted", "evaluated"])  # Only count completed attempts
         )
     ).where(
         and_(
@@ -237,6 +238,7 @@ async def get_available_tests(
     available_tests = []
     for row in results:
         if row.attempts_used < row.max_attempts:
+            # Still has attempts remaining - can take test
             available_tests.append({
                 "test_id": str(row.id),
                 "assignment_id": str(row.assignment_id),
@@ -244,8 +246,38 @@ async def get_available_tests(
                 "time_limit_minutes": row.time_limit_minutes,
                 "attempts_remaining": row.max_attempts - row.attempts_used,
                 "expires_at": row.expires_at.isoformat(),
-                "classroom_assignment_id": ""  # Simplified for now
+                "classroom_assignment_id": "",  # Simplified for now
+                "status": "available"
             })
+        elif row.attempts_used > 0:
+            # Has used all attempts - show as completed with link to results
+            # Get the most recent attempt ID for results viewing
+            attempt_query = await db.execute(
+                select(StudentTestAttempt.id)
+                .where(
+                    and_(
+                        StudentTestAttempt.assignment_test_id == row.id,
+                        StudentTestAttempt.student_id == current_user.id,
+                        StudentTestAttempt.status.in_(["submitted", "evaluated"])
+                    )
+                )
+                .order_by(StudentTestAttempt.created_at.desc())
+                .limit(1)
+            )
+            latest_attempt = attempt_query.scalar_one_or_none()
+            
+            if latest_attempt:
+                available_tests.append({
+                    "test_id": str(row.id),
+                    "assignment_id": str(row.assignment_id),
+                    "assignment_title": row.assignment_title,
+                    "time_limit_minutes": row.time_limit_minutes,
+                    "attempts_remaining": 0,
+                    "expires_at": row.expires_at.isoformat(),
+                    "classroom_assignment_id": "",
+                    "status": "completed",
+                    "result_id": str(latest_attempt)
+                })
     
     return available_tests
 

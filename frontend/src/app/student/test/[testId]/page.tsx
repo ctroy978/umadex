@@ -17,12 +17,13 @@ export default function TestPage({ params }: { params: { testId: string } }) {
   const [readingContent, setReadingContent] = useState<ReadingContentResponse | null>(null)
   const [showOverrideDialog, setShowOverrideDialog] = useState(false)
   const [overrideCode, setOverrideCode] = useState('')
+  const [retryAttempt, setRetryAttempt] = useState(0)
 
   useEffect(() => {
     loadTestData()
   }, [assignmentId])
 
-  const loadTestData = async (retryWithOverride?: string) => {
+  const loadTestData = async (retryWithOverride?: string, retryCount: number = 0) => {
     try {
       setLoading(true)
       setError(null)
@@ -40,6 +41,7 @@ export default function TestPage({ params }: { params: { testId: string } }) {
       setTestData(test)
       setReadingContent(content)
       setShowOverrideDialog(false)
+      setRetryAttempt(0) // Reset retry count on success
     } catch (err: any) {
       console.error('Failed to load test:', err)
       
@@ -50,6 +52,17 @@ export default function TestPage({ params }: { params: { testId: string } }) {
           setShowOverrideDialog(true)
           return
         }
+      }
+      
+      // Handle 500 errors (like duplicate key constraints) with automatic retry
+      if (err.response?.status === 500 && retryCount < 2) {
+        console.log(`Retrying test start (attempt ${retryCount + 1})...`)
+        setRetryAttempt(retryCount + 1)
+        // Wait a short time before retrying
+        setTimeout(() => {
+          loadTestData(retryWithOverride, retryCount + 1)
+        }, 1000 + (retryCount * 500)) // Increasing delay: 1s, 1.5s
+        return
       }
       
       setError(err.response?.data?.detail || 'Failed to load test')
@@ -74,7 +87,12 @@ export default function TestPage({ params }: { params: { testId: string } }) {
           <div className="text-center">
             <Loader2 className="w-12 h-12 text-blue-600 animate-spin mx-auto mb-4" />
             <p className="text-gray-600 text-lg font-medium">Loading test...</p>
-            <p className="text-gray-500 text-sm mt-2">Preparing your comprehension test</p>
+            <p className="text-gray-500 text-sm mt-2">
+              {retryAttempt > 0 
+                ? `Retrying connection (attempt ${retryAttempt})...`
+                : 'Preparing your comprehension test'
+              }
+            </p>
           </div>
         </div>
     )
@@ -87,12 +105,20 @@ export default function TestPage({ params }: { params: { testId: string } }) {
             <div className="bg-red-50 border border-red-200 rounded-lg p-6">
               <h3 className="text-lg font-semibold text-red-800 mb-2">Unable to Load Test</h3>
               <p className="text-red-700 mb-4">{error}</p>
-              <button
-                onClick={() => router.back()}
-                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors"
-              >
-                Go Back
-              </button>
+              <div className="flex space-x-3">
+                <button
+                  onClick={() => loadTestData()}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                >
+                  Try Again
+                </button>
+                <button
+                  onClick={() => router.back()}
+                  className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors"
+                >
+                  Go Back
+                </button>
+              </div>
             </div>
           </div>
         </div>

@@ -13,7 +13,7 @@ from app.models.classroom import Classroom, ClassroomStudent, ClassroomAssignmen
 from app.models.reading import ReadingAssignment
 from app.models.vocabulary import VocabularyList
 from app.models.umaread import UmareadAssignmentProgress
-from app.models.tests import AssignmentTest
+from app.models.tests import AssignmentTest, StudentTestAttempt
 from app.utils.deps import get_current_user
 from app.schemas.classroom import ClassroomResponse
 
@@ -60,6 +60,8 @@ class StudentAssignmentResponse(BaseModel):
     status: str  # "not_started", "active", "expired"
     is_completed: bool = False
     has_test: bool = False
+    test_completed: bool = False
+    test_attempt_id: Optional[str] = None
 
 class StudentClassroomDetailResponse(BaseModel):
     id: UUID
@@ -355,12 +357,10 @@ async def get_classroom_detail(
             ReadingAssignment, 
             ClassroomAssignment,
             UmareadAssignmentProgress.completed_at,
-            exists().where(
-                and_(
-                    AssignmentTest.assignment_id == ReadingAssignment.id,
-                    AssignmentTest.status == "approved"
-                )
-            ).label("has_test")
+            AssignmentTest.id.label("test_id"),
+            AssignmentTest.status.label("test_status"),
+            StudentTestAttempt.id.label("test_attempt_id"),
+            StudentTestAttempt.status.label("attempt_status")
         )
         .join(ClassroomAssignment, 
               and_(
@@ -372,6 +372,21 @@ async def get_classroom_detail(
             and_(
                 UmareadAssignmentProgress.assignment_id == ReadingAssignment.id,
                 UmareadAssignmentProgress.student_id == current_user.id
+            )
+        )
+        .outerjoin(
+            AssignmentTest,
+            and_(
+                AssignmentTest.assignment_id == ReadingAssignment.id,
+                AssignmentTest.status == "approved"
+            )
+        )
+        .outerjoin(
+            StudentTestAttempt,
+            and_(
+                StudentTestAttempt.assignment_test_id == AssignmentTest.id,
+                StudentTestAttempt.student_id == current_user.id,
+                StudentTestAttempt.status.in_(["submitted", "evaluated"])
             )
         )
         .where(
@@ -388,7 +403,16 @@ async def get_classroom_detail(
         assignment = row.ReadingAssignment
         ca = row.ClassroomAssignment
         completed_at = row.completed_at
-        has_test = row.has_test
+        test_id = row.test_id
+        test_status = row.test_status
+        test_attempt_id = row.test_attempt_id
+        attempt_status = row.attempt_status
+        
+        # Assignment has test if there's an approved test
+        has_test = test_id is not None and test_status == "approved"
+        
+        # Test is completed if there's a submitted or evaluated attempt
+        test_completed = test_attempt_id is not None and attempt_status in ["submitted", "evaluated"]
         
         status = calculate_assignment_status(ca.start_date, ca.end_date)
         assignments.append(StudentAssignmentResponse(
@@ -405,7 +429,9 @@ async def get_classroom_detail(
             display_order=ca.display_order,
             status=status,
             is_completed=completed_at is not None,
-            has_test=has_test
+            has_test=has_test,
+            test_completed=test_completed,
+            test_attempt_id=str(test_attempt_id) if test_attempt_id else None
         ))
     
     # Get vocabulary assignments
@@ -441,7 +467,9 @@ async def get_classroom_detail(
             display_order=ca.display_order,
             status=status,
             is_completed=False,  # Vocabulary assignments don't have completion tracking yet
-            has_test=False  # Vocabulary assignments don't have tests
+            has_test=False,  # Vocabulary assignments don't have tests
+            test_completed=False,
+            test_attempt_id=None
         ))
     
     # Sort assignments by start date (earliest first), then display order

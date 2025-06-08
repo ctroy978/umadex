@@ -1,6 +1,6 @@
 'use client';
 
-import { CheckCircle, Trophy, ArrowLeft, FileCheck } from 'lucide-react';
+import { CheckCircle, Trophy, ArrowLeft } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 interface CompletionScreenProps {
@@ -9,7 +9,6 @@ interface CompletionScreenProps {
   totalChunks: number;
   difficultyLevel: number;
   assignmentId: string;
-  hasTest?: boolean;
 }
 
 export default function CompletionScreen({ 
@@ -17,8 +16,7 @@ export default function CompletionScreen({
   author, 
   totalChunks,
   difficultyLevel,
-  assignmentId,
-  hasTest = false
+  assignmentId
 }: CompletionScreenProps) {
   const router = useRouter();
 
@@ -70,16 +68,7 @@ export default function CompletionScreen({
           </p>
 
           {/* Action Buttons */}
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            {hasTest && (
-              <button
-                onClick={() => router.push(`/student/test/${assignmentId}`)}
-                className="inline-flex items-center px-6 py-3 bg-green-600 text-white font-medium rounded-lg hover:bg-green-700 transition-colors"
-              >
-                <FileCheck className="w-5 h-5 mr-2" />
-                Take Completion Test
-              </button>
-            )}
+          <div className="flex justify-center">
             <button
               onClick={() => router.push('/student/dashboard')}
               className="inline-flex items-center px-6 py-3 bg-gray-600 text-white font-medium rounded-lg hover:bg-gray-700 transition-colors"
