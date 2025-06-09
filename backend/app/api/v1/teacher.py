@@ -1362,6 +1362,7 @@ async def get_classroom_security_incidents(
     """View security incidents for all students in classroom"""
     from app.models.tests import TestSecurityIncident, StudentTestAttempt
     from app.models.reading import ReadingAssignment as ReadingAssignmentModel
+    from datetime import datetime, timedelta
     
     # Verify teacher owns classroom
     classroom_query = await db.execute(
@@ -1380,7 +1381,9 @@ async def get_classroom_security_incidents(
             detail="You don't have access to this classroom"
         )
     
-    # Get all security incidents for students in this classroom
+    # Get security incidents from the last 30 days for students in this classroom
+    thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+    
     incidents_query = await db.execute(
         select(
             TestSecurityIncident,
@@ -1396,6 +1399,7 @@ async def get_classroom_security_incidents(
                   ClassroomStudent.student_id == User.id,
                   ClassroomStudent.classroom_id == classroom_id
               ))
+        .where(TestSecurityIncident.created_at >= thirty_days_ago)
         .order_by(TestSecurityIncident.created_at.desc())
     )
     
@@ -1419,3 +1423,55 @@ async def get_classroom_security_incidents(
         "incidents": incidents,
         "total_incidents": len(incidents)
     }
+
+
+@router.delete("/classroom/{classroom_id}/security-incidents/{incident_id}")
+async def delete_security_incident(
+    classroom_id: UUID,
+    incident_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Delete a security incident from the classroom"""
+    from app.models.tests import TestSecurityIncident
+    
+    # Verify teacher owns classroom
+    classroom_query = await db.execute(
+        select(Classroom)
+        .where(
+            and_(
+                Classroom.id == classroom_id,
+                Classroom.teacher_id == current_user.id
+            )
+        )
+    )
+    
+    if not classroom_query.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have access to this classroom"
+        )
+    
+    # Get the security incident and verify it belongs to a student in this classroom
+    incident_query = await db.execute(
+        select(TestSecurityIncident)
+        .join(ClassroomStudent, 
+              and_(
+                  ClassroomStudent.student_id == TestSecurityIncident.student_id,
+                  ClassroomStudent.classroom_id == classroom_id
+              ))
+        .where(TestSecurityIncident.id == incident_id)
+    )
+    
+    incident = incident_query.scalar_one_or_none()
+    if not incident:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Security incident not found or not in this classroom"
+        )
+    
+    # Delete the incident
+    await db.delete(incident)
+    await db.commit()
+    
+    return {"message": "Security incident deleted successfully"}
