@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useForm, useFieldArray } from 'react-hook-form'
 import { vocabularyApi } from '@/lib/vocabularyApi'
 import { PlusIcon, XMarkIcon, InformationCircleIcon } from '@heroicons/react/24/outline'
@@ -16,12 +16,16 @@ const GRADE_LEVELS = [
   { value: 'college', label: 'College' },
 ]
 
+// Subject options matching the reading module
+const SUBJECTS = ['English Literature', 'History', 'Science', 'Social Studies', 'ESL/ELL', 'Other'] as const;
+
 interface FormData extends Omit<VocabularyListCreate, 'words'> {
   words: (VocabularyWordCreate & { id?: string })[]
 }
 
 export default function CreateVocabularyPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [autoSaveStatus, setAutoSaveStatus] = useState<'saved' | 'saving' | 'unsaved'>('saved')
   const [draftLoaded, setDraftLoaded] = useState(false)
@@ -54,6 +58,15 @@ export default function CreateVocabularyPage() {
   // Load draft from localStorage on mount (only once)
   useEffect(() => {
     if (!draftLoaded) {
+      const isNewList = searchParams.get('new') === 'true'
+      
+      if (isNewList) {
+        // Clear any existing draft when creating a new list
+        localStorage.removeItem('vocabulary-draft')
+        setDraftLoaded(true)
+        return
+      }
+      
       const savedDraft = localStorage.getItem('vocabulary-draft')
       if (savedDraft) {
         try {
@@ -89,7 +102,7 @@ export default function CreateVocabularyPage() {
       }
       setDraftLoaded(true)
     }
-  }, [draftLoaded, reset])
+  }, [draftLoaded, reset, searchParams])
 
   // Auto-save to localStorage (but only after draft is loaded)
   const formData = watch()
@@ -242,14 +255,17 @@ export default function CreateVocabularyPage() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700">
-                  Subject Area
+                  Subject *
                 </label>
-                <input
-                  type="text"
-                  {...register('subject_area', { required: 'Subject area is required' })}
+                <select
+                  {...register('subject_area', { required: 'Subject is required' })}
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
-                  placeholder="e.g., English, Science, History"
-                />
+                >
+                  <option value="">Select a subject</option>
+                  {SUBJECTS.map(subject => (
+                    <option key={subject} value={subject}>{subject}</option>
+                  ))}
+                </select>
                 {errors.subject_area && (
                   <p className="mt-1 text-sm text-red-600">{errors.subject_area.message}</p>
                 )}

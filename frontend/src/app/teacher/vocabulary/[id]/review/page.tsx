@@ -412,13 +412,44 @@ export default function VocabularyReviewPage({ params }: { params: { id: string 
       return
     }
     
+    if (list?.status === 'published') {
+      alert('This vocabulary list is already published')
+      return
+    }
+    
     try {
       setIsProcessing(true)
       await vocabularyApi.publishList(params.id)
-      router.push('/teacher/uma-vocab')
-    } catch (error) {
+      
+      // Update local state to reflect published status
+      if (list) {
+        setList({ ...list, status: 'published' })
+      }
+      
+      // Show success message
+      alert('Vocabulary list published successfully!')
+      
+      // Navigate back to the list after a short delay
+      setTimeout(() => {
+        router.push('/teacher/uma-vocab')
+      }, 1000)
+      
+    } catch (error: any) {
       console.error('Failed to publish list:', error)
-      alert('Failed to publish list')
+      
+      // Show detailed error message
+      let errorMessage = 'Failed to publish vocabulary list. '
+      if (error.response?.data?.detail) {
+        if (typeof error.response.data.detail === 'string') {
+          errorMessage += error.response.data.detail
+        } else if (Array.isArray(error.response.data.detail)) {
+          errorMessage += error.response.data.detail.map((e: any) => e.msg).join(', ')
+        }
+      } else {
+        errorMessage += 'Please try again.'
+      }
+      
+      alert(errorMessage)
     } finally {
       setIsProcessing(false)
     }
@@ -486,7 +517,8 @@ export default function VocabularyReviewPage({ params }: { params: { id: string 
   }
 
   const currentWord = list.words?.[currentWordIndex]
-  const canPublish = progress && progress.pending === 0
+  const canPublish = progress && progress.pending === 0 && list?.status !== 'published'
+  const isPublished = list?.status === 'published'
 
   return (
     <div className="max-w-6xl mx-auto p-6">
@@ -623,7 +655,10 @@ export default function VocabularyReviewPage({ params }: { params: { id: string 
               : 'bg-gray-400 cursor-not-allowed'
           } disabled:opacity-50`}
         >
-          {canPublish ? 'Publish List' : `Review ${progress?.pending || 0} Remaining Words`}
+          {isProcessing ? 'Publishing...' : 
+           isPublished ? 'Already Published' :
+           canPublish ? 'Publish List' : 
+           `Review ${progress?.pending || 0} Remaining Words`}
         </button>
       </div>
     </div>

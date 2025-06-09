@@ -338,8 +338,27 @@ async def publish_vocabulary_list(
         )
     
     try:
-        published_list = await VocabularyService.publish_vocabulary_list(db, list_id)
-        return VocabularyListResponse.model_validate(published_list)
+        await VocabularyService.publish_vocabulary_list(db, list_id)
+        # Reload the vocabulary list with proper relationship loading
+        published_list = await VocabularyService.get_vocabulary_list(db, list_id, include_words=False)
+        
+        # Create response manually to avoid relationship access issues
+        response_data = {
+            'id': published_list.id,
+            'teacher_id': published_list.teacher_id,
+            'title': published_list.title,
+            'context_description': published_list.context_description,
+            'grade_level': published_list.grade_level,
+            'subject_area': published_list.subject_area,
+            'status': published_list.status,
+            'created_at': published_list.created_at,
+            'updated_at': published_list.updated_at,
+            'deleted_at': published_list.deleted_at,
+            'words': None,
+            'word_count': None
+        }
+        
+        return VocabularyListResponse.model_validate(response_data)
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
