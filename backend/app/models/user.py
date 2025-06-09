@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Boolean, DateTime, Enum as SQLEnum
+from sqlalchemy import Column, String, Boolean, DateTime, Enum as SQLEnum, ForeignKey, Text
 from sqlalchemy.types import Enum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
@@ -29,6 +29,11 @@ class User(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     bypass_code = Column(String(255), nullable=True)  # Hashed 4-digit code for teachers
     bypass_code_updated_at = Column(DateTime(timezone=True), nullable=True)
+    
+    # Soft delete fields
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(UUID(as_uuid=True), ForeignKey('users.id'), nullable=True)
+    deletion_reason = Column(Text, nullable=True)
     
     # Relationships
     classrooms = relationship("Classroom", back_populates="teacher", foreign_keys="Classroom.teacher_id")

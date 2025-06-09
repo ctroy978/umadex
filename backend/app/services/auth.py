@@ -1,8 +1,10 @@
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any, Tuple
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, or_
+from sqlalchemy.orm import Session
+from sqlalchemy import select, and_, or_, text
 from uuid import UUID
+import json
 
 from app.models import User, EmailWhitelist, OTPRequest, UserSession, RefreshToken
 from app.core.security import (
@@ -89,7 +91,8 @@ class AuthService:
             select(User).join(UserSession).where(
                 and_(
                     UserSession.token == token,
-                    UserSession.expires_at > datetime.now(timezone.utc)
+                    UserSession.expires_at > datetime.now(timezone.utc),
+                    User.deleted_at.is_(None)  # Exclude soft deleted users
                 )
             )
         )
@@ -214,6 +217,52 @@ class AuthService:
             return None
         
         result = await db.execute(
-            select(User).where(User.id == UUID(user_id))
+            select(User).where(
+                and_(
+                    User.id == UUID(user_id),
+                    User.deleted_at.is_(None)  # Exclude soft deleted users
+                )
+            )
         )
         return result.scalar_one_or_none()
+
+
+def log_admin_action(
+    db: AsyncSession,
+    admin_id: UUID,
+    action_type: str,
+    target_id: Optional[UUID] = None,
+    target_type: Optional[str] = None,
+    action_data: Optional[Dict[str, Any]] = None,
+    ip_address: Optional[str] = None,
+    user_agent: Optional[str] = None
+) -> None:
+    """Log an admin action to the admin_actions table"""
+    try:
+        # Convert action_data to JSON string
+        action_data_json = json.dumps(action_data) if action_data else '{}'
+        
+        # Insert into admin_actions table
+        db.execute(
+            text("""
+                INSERT INTO admin_actions (
+                    admin_id, action_type, target_id, target_type,
+                    action_data, ip_address, user_agent, created_at
+                ) VALUES (
+                    :admin_id, :action_type, :target_id, :target_type,
+                    :action_data::jsonb, :ip_address, :user_agent, CURRENT_TIMESTAMP
+                )
+            """),
+            {
+                "admin_id": admin_id,
+                "action_type": action_type,
+                "target_id": target_id,
+                "target_type": target_type,
+                "action_data": action_data_json,
+                "ip_address": ip_address,
+                "user_agent": user_agent
+            }
+        )
+    except Exception as e:
+        # Log error but don't fail the main operation
+        print(f"Failed to log admin action: {e}")

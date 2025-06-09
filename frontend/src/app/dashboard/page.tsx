@@ -15,7 +15,9 @@ export default function DashboardPage() {
   const [loadingClassrooms, setLoadingClassrooms] = useState(true)
 
   useEffect(() => {
-    if (user?.role === 'teacher') {
+    if (user?.is_admin) {
+      router.push('/admin/dashboard')
+    } else if (user?.role === 'teacher') {
       router.push('/teacher/dashboard')
     } else if (user?.role === 'student') {
       fetchClassrooms()

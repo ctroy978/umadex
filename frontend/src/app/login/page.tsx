@@ -64,7 +64,14 @@ export default function LoginPage() {
       
       // Small delay to ensure token is saved
       setTimeout(() => {
-        router.push('/dashboard')
+        // Smart redirect based on user role and admin status
+        if (response.user.is_admin) {
+          router.push('/admin/dashboard')
+        } else if (response.user.role === 'teacher') {
+          router.push('/teacher/dashboard')
+        } else {
+          router.push('/dashboard')
+        }
       }, 100)
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Invalid OTP')

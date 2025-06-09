@@ -9,17 +9,23 @@ from app.schemas.user import UserCreate
 class UserService:
     @staticmethod
     async def get_user_by_email(db: AsyncSession, email: str) -> Optional[User]:
-        """Get user by email"""
+        """Get user by email (excluding soft deleted users)"""
         result = await db.execute(
-            select(User).where(User.email == email)
+            select(User).where(
+                User.email == email,
+                User.deleted_at.is_(None)
+            )
         )
         return result.scalar_one_or_none()
     
     @staticmethod
     async def get_user_by_id(db: AsyncSession, user_id: UUID) -> Optional[User]:
-        """Get user by ID"""
+        """Get user by ID (excluding soft deleted users)"""
         result = await db.execute(
-            select(User).where(User.id == user_id)
+            select(User).where(
+                User.id == user_id,
+                User.deleted_at.is_(None)
+            )
         )
         return result.scalar_one_or_none()
     

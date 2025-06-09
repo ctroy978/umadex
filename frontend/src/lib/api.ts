@@ -116,5 +116,26 @@ api.interceptors.response.use(
   }
 )
 
+// Helper function for simpler API requests
+export async function apiRequest(url: string, options?: {
+  method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
+  body?: string;
+  headers?: Record<string, string>;
+}) {
+  const method = options?.method || 'GET';
+  const config = {
+    method: method.toLowerCase(),
+    data: options?.body ? JSON.parse(options.body) : undefined,
+    headers: options?.headers || {},
+  };
+
+  const response = await api({
+    url,
+    ...config,
+  });
+
+  return response.data;
+}
+
 export { api }
 export default api

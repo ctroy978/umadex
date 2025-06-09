@@ -15,7 +15,8 @@ import {
   UsersIcon,
   ChartBarIcon,
   Cog6ToothIcon,
-  ArrowLeftOnRectangleIcon
+  ArrowLeftOnRectangleIcon,
+  ShieldCheckIcon
 } from '@heroicons/react/24/outline'
 
 const navigation = [
@@ -121,6 +122,35 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
                       })}
                     </div>
                   </div>
+                  {/* Admin Section */}
+                  {user?.is_admin && (
+                    <div>
+                      <h3 className="px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                        Admin
+                      </h3>
+                      <div className="mt-2 space-y-1">
+                        <Link
+                          href="/admin/dashboard"
+                          className={`
+                            group flex items-center px-2 py-2 text-sm font-medium rounded-md
+                            ${pathname.startsWith('/admin')
+                              ? 'bg-purple-100 text-purple-900'
+                              : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                            }
+                          `}
+                        >
+                          <ShieldCheckIcon
+                            className={`
+                              mr-3 flex-shrink-0 h-6 w-6
+                              ${pathname.startsWith('/admin') ? 'text-purple-600' : 'text-gray-400 group-hover:text-gray-500'}
+                            `}
+                            aria-hidden="true"
+                          />
+                          Admin Panel
+                        </Link>
+                      </div>
+                    </div>
+                  )}
                 </nav>
               </div>
               <div className="flex-shrink-0 flex border-t border-gray-200 p-4">

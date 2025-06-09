@@ -168,9 +168,14 @@ async def get_bypass_code_usage_report(
         if is_success:
             successful_uses += 1
         
-        # Get student info
+        # Get student info (exclude soft deleted students)
         student_result = await db.execute(
-            select(User).where(User.id == event.student_id)
+            select(User).where(
+                and_(
+                    User.id == event.student_id,
+                    User.deleted_at.is_(None)
+                )
+            )
         )
         student = student_result.scalar_one_or_none()
         
@@ -302,7 +307,8 @@ async def get_gradebook(
             Classroom.teacher_id == teacher.id,
             Classroom.deleted_at.is_(None),
             StudentAssignment.assignment_type == 'reading',
-            ReadingAssignment.assignment_type == 'UMARead'
+            ReadingAssignment.assignment_type == 'UMARead',
+            User.deleted_at.is_(None)  # Exclude soft deleted students
         )
     )
     
@@ -551,15 +557,18 @@ async def get_student_gradebook_details(
 ):
     """Get detailed breakdown for an individual student's assignment"""
     
-    # Verify the student is in one of the teacher's classrooms
+    # Verify the student is in one of the teacher's classrooms and is active
     student_in_classroom = await db.execute(
         select(ClassroomStudent).join(
             Classroom, ClassroomStudent.classroom_id == Classroom.id
+        ).join(
+            User, ClassroomStudent.student_id == User.id
         ).where(
             and_(
                 ClassroomStudent.student_id == student_id,
                 Classroom.teacher_id == teacher.id,
-                Classroom.deleted_at.is_(None)
+                Classroom.deleted_at.is_(None),
+                User.deleted_at.is_(None)  # Exclude soft deleted students
             )
         )
     )

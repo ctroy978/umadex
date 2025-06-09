@@ -248,7 +248,8 @@ async def get_classroom_details(
         .where(
             and_(
                 ClassroomStudent.classroom_id == classroom_id,
-                ClassroomStudent.removed_at.is_(None)
+                ClassroomStudent.removed_at.is_(None),
+                User.deleted_at.is_(None)  # Exclude soft deleted students
             )
         )
         .order_by(User.last_name, User.first_name)
@@ -1396,6 +1397,7 @@ async def get_classroom_security_incidents(
                   ClassroomStudent.student_id == User.id,
                   ClassroomStudent.classroom_id == classroom_id
               ))
+        .where(User.deleted_at.is_(None))  # Exclude soft deleted students
         .order_by(TestSecurityIncident.created_at.desc())
     )
     
