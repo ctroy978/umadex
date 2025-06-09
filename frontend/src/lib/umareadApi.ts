@@ -61,5 +61,20 @@ export const umareadApi = {
       `/v1/student/umaread/v2/assignments/${assignmentId}/chunks/${chunkNumber}/simpler`
     );
     return response.data;
+  },
+
+  // Get simplified text for chunk (Crunch Text feature)
+  crunchText: async (
+    assignmentId: string,
+    chunkNumber: number
+  ): Promise<{
+    simplified_text: string;
+    chunk_number: number;
+    message: string;
+  }> => {
+    const response = await api.post(
+      `/v1/student/umaread/v2/assignments/${assignmentId}/chunks/${chunkNumber}/crunch`
+    );
+    return response.data;
   }
 };

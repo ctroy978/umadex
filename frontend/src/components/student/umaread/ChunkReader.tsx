@@ -1,12 +1,15 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, BookOpen, Loader2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, BookOpen, Loader2, Zap } from 'lucide-react';
 import ImageModal from './ImageModal';
+import CrunchTextModal from './CrunchTextModal';
+import { umareadApi } from '@/lib/umareadApi';
 import type { ChunkContent, ChunkImage } from '@/types/umaread';
 
 interface ChunkReaderProps {
   chunk: ChunkContent;
+  assignmentId: string;
   onNavigate: ((direction: 'prev' | 'next') => void) | null;
   onComplete: (() => void) | null;
   isLoading?: boolean;
@@ -16,6 +19,7 @@ interface ChunkReaderProps {
 
 export default function ChunkReader({ 
   chunk, 
+  assignmentId,
   onNavigate, 
   onComplete,
   isLoading = false,
@@ -23,6 +27,36 @@ export default function ChunkReader({
   largeText = false
 }: ChunkReaderProps) {
   const [selectedImage, setSelectedImage] = useState<ChunkImage | null>(null);
+  const [showCrunchModal, setShowCrunchModal] = useState(false);
+  const [simplifiedText, setSimplifiedText] = useState('');
+  const [crunchLoading, setCrunchLoading] = useState(false);
+  const [crunchError, setCrunchError] = useState<string | null>(null);
+
+  const handleCrunchText = async () => {
+    setShowCrunchModal(true);
+    setCrunchLoading(true);
+    setCrunchError(null);
+    
+    try {
+      const response = await umareadApi.crunchText(assignmentId, chunk.chunk_number);
+      setSimplifiedText(response.simplified_text);
+    } catch (error) {
+      console.error('Error getting simplified text:', error);
+      setCrunchError('Unable to generate simplified text. Please try again.');
+    } finally {
+      setCrunchLoading(false);
+    }
+  };
+
+  const handleRetrycrunch = () => {
+    handleCrunchText();
+  };
+
+  const handleCloseCrunchModal = () => {
+    setShowCrunchModal(false);
+    setCrunchError(null);
+    setSimplifiedText('');
+  };
 
   // Create a map of image tags to image data
   const imageMap = chunk.images.reduce((acc, img) => {
@@ -133,7 +167,25 @@ export default function ChunkReader({
   return (
     <>
       <div className="bg-white rounded-lg shadow-sm">
-        {/* Content - no header needed */}
+        {/* Header with controls */}
+        <div className="flex justify-between items-center p-4 border-b border-gray-200">
+          <h2 className="text-lg font-medium text-gray-900 flex items-center">
+            <BookOpen className="w-5 h-5 mr-2 text-blue-600" />
+            Reading Text
+          </h2>
+          <div className="flex gap-2">
+            <button
+              onClick={handleCrunchText}
+              className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-1.5"
+              title="Get an easier-to-read version of this text"
+            >
+              <Zap className="w-4 h-4" />
+              Crunch Text
+            </button>
+          </div>
+        </div>
+
+        {/* Content */}
         <div className={`${largeText ? 'p-8' : 'p-6'} max-h-[80vh] overflow-y-auto`}>
           <div className="prose prose-lg max-w-none">
             <div className="clearfix">
@@ -152,6 +204,16 @@ export default function ChunkReader({
           onClose={() => setSelectedImage(null)}
         />
       )}
+
+      {/* Crunch Text Modal */}
+      <CrunchTextModal
+        isOpen={showCrunchModal}
+        onClose={handleCloseCrunchModal}
+        simplifiedText={simplifiedText}
+        isLoading={crunchLoading}
+        error={crunchError}
+        onRetry={handleRetrycrunch}
+      />
     </>
   );
 }

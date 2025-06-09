@@ -338,6 +338,7 @@ export default function UMAReadAssignmentPage({ params }: { params: { id: string
             <div className="col-span-2">
               <ChunkReader
                 chunk={chunk}
+                assignmentId={id}
                 onNavigate={null}
                 onComplete={null}
                 isLoading={loading}

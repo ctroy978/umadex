@@ -22,6 +22,7 @@ from app.services.umaread_simple import UMAReadService
 from app.services.question_generation import generate_questions_for_chunk, Question
 from app.services.answer_evaluation import evaluate_answer, should_increase_difficulty
 from app.services.bypass_validation import validate_bypass_code
+from app.services.text_simplification import simplify_chunk_text
 from app.models.reading import AnswerEvaluation
 from app.models.classroom import StudentAssignment, ClassroomAssignment, Classroom, StudentEvent
 import bcrypt
@@ -560,6 +561,70 @@ async def request_simpler_question(
         )
 
 
+@router.post("/assignments/{assignment_id}/chunks/{chunk_number}/crunch")
+async def crunch_text(
+    assignment_id: UUID,
+    chunk_number: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get simplified version of chunk text for easier reading"""
+    try:
+        # Verify user has access to this assignment
+        assignment_info = await umaread_service.start_assignment(
+            db, current_user.id, assignment_id
+        )
+        
+        # Get simplified text
+        simplified_text = await simplify_chunk_text(
+            db, str(assignment_id), chunk_number
+        )
+        
+        # Log usage for analytics (optional)
+        try:
+            student_event = StudentEvent(
+                id=str(uuid.uuid4()),
+                student_id=current_user.id,
+                assignment_id=assignment_id,
+                event_type="crunch_text_used",
+                event_data={
+                    "chunk_number": chunk_number,
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+            )
+            db.add(student_event)
+            await db.commit()
+        except Exception as e:
+            print(f"Warning: Could not log crunch text usage: {e}")
+            # Don't fail the request if logging fails
+            pass
+        
+        return {
+            "simplified_text": simplified_text,
+            "chunk_number": chunk_number,
+            "message": "This is a simplified version to help with reading comprehension."
+        }
+        
+    except ValueError as e:
+        error_message = str(e)
+        if "join the classroom" in error_message or "Assignment not found" in error_message:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=error_message
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=error_message
+            )
+    except Exception as e:
+        print(f"Error in crunch text: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unable to generate simplified text. Please try again."
+        )
+
+
 @router.get("/test")
 async def test_endpoint():
     """Test endpoint to verify UMARead API is working"""
@@ -568,6 +633,7 @@ async def test_endpoint():
         "endpoints": [
             "/umaread/assignments/{id}/start",
             "/umaread/assignments/{id}/chunks/{n}",
+            "/umaread/assignments/{id}/chunks/{n}/crunch",
             "/umaread/test"
         ]
     }
