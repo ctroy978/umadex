@@ -296,7 +296,7 @@ export default function TestResultsPage({ params }: { params: { resultId: string
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-3">
                       <h4 className="text-lg font-medium text-gray-900">
-                        Question {evaluation.question_number}
+                        Question {evaluation.question_number + 1}
                       </h4>
                       {hasImprovement && (
                         <div className="flex items-center text-amber-600">

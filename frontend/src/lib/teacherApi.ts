@@ -151,5 +151,10 @@ export const teacherApi = {
   }> {
     const response = await api.get(`/v1/teacher/classroom/${classroomId}/security-incidents`);
     return response.data;
+  },
+
+  async deleteSecurityIncident(classroomId: string, incidentId: string): Promise<{ message: string }> {
+    const response = await api.delete(`/v1/teacher/classroom/${classroomId}/security-incidents/${incidentId}`);
+    return response.data;
   }
 };

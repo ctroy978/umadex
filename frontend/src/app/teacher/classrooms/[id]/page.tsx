@@ -13,7 +13,8 @@ import {
   TrashIcon,
   PlusIcon,
   ShieldExclamationIcon,
-  ClockIcon
+  ClockIcon,
+  XMarkIcon
 } from '@heroicons/react/24/outline'
 import type {
   ClassroomDetail,
@@ -113,6 +114,19 @@ export default function ClassroomDetailPage() {
 
   const handleManageAssignments = () => {
     router.push(`/teacher/classrooms/${classroomId}/assignments`)
+  }
+
+  const handleDeleteSecurityIncident = async (incidentId: string) => {
+    if (!confirm('Are you sure you want to delete this security incident?')) return
+
+    try {
+      await teacherApi.deleteSecurityIncident(classroomId, incidentId)
+      // Remove the incident from the local state
+      setSecurityIncidents(prev => prev.filter(incident => incident.id !== incidentId))
+    } catch (error) {
+      console.error('Failed to delete security incident:', error)
+      alert('Failed to delete security incident. Please try again.')
+    }
   }
 
   if (loading) {
@@ -358,9 +372,14 @@ export default function ClassroomDetailPage() {
 
               {/* Security Incidents Section */}
               <div className="bg-white rounded-lg shadow p-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                  Recent Security Incidents ({securityIncidents.length})
-                </h3>
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-semibold text-gray-900">
+                    Recent Security Incidents ({securityIncidents.length})
+                  </h3>
+                  <p className="text-sm text-gray-500">
+                    Showing incidents from the last 30 days
+                  </p>
+                </div>
                 {securityIncidents.length === 0 ? (
                   <div className="text-center py-8">
                     <p className="text-gray-500">No security incidents reported</p>
@@ -384,6 +403,9 @@ export default function ClassroomDetailPage() {
                           </th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                             Status
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Actions
                           </th>
                         </tr>
                       </thead>
@@ -418,6 +440,15 @@ export default function ClassroomDetailPage() {
                                   Monitored
                                 </span>
                               )}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                              <button
+                                onClick={() => handleDeleteSecurityIncident(incident.id)}
+                                className="text-red-600 hover:text-red-700"
+                                title="Delete incident"
+                              >
+                                <XMarkIcon className="h-5 w-5" />
+                              </button>
                             </td>
                           </tr>
                         ))}
