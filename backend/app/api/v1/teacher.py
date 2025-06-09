@@ -1400,11 +1400,12 @@ async def get_classroom_security_incidents(
                   ClassroomStudent.student_id == User.id,
                   ClassroomStudent.classroom_id == classroom_id
               ))
-<<<<<<< HEAD
-        .where(User.deleted_at.is_(None))  # Exclude soft deleted students
-=======
-        .where(TestSecurityIncident.created_at >= thirty_days_ago)
->>>>>>> bugCleaningOne
+        .where(
+            and_(
+                User.deleted_at.is_(None),  # Exclude soft deleted students
+                TestSecurityIncident.created_at >= thirty_days_ago  # Only last 30 days
+            )
+        )
         .order_by(TestSecurityIncident.created_at.desc())
     )
     
