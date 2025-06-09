@@ -22,8 +22,8 @@ export const testApi = {
   },
 
   // Save answer for a question
-  async saveAnswer(testId: string, data: SaveAnswerRequest): Promise<{ success: boolean; message: string }> {
-    const response = await api.post(`/v1/student/tests/${testId}/save-answer`, data)
+  async saveAnswer(testAttemptId: string, data: SaveAnswerRequest): Promise<{ success: boolean; message: string }> {
+    const response = await api.post(`/v1/student/tests/${testAttemptId}/save-answer`, data)
     return response.data
   },
 
@@ -34,9 +34,9 @@ export const testApi = {
   },
 
   // Submit test for grading
-  async submitTest(testId: string): Promise<{ success: boolean; message: string; attempt_id: string }> {
-    console.log('=== TEST API: submitTest called with testId:', testId)
-    const response = await api.post(`/v1/student/tests/${testId}/submit`)
+  async submitTest(testAttemptId: string): Promise<{ success: boolean; message: string; attempt_id: string }> {
+    console.log('=== TEST API: submitTest called with testAttemptId:', testAttemptId)
+    const response = await api.post(`/v1/student/tests/${testAttemptId}/submit`)
     console.log('=== TEST API: submitTest response:', response.data)
     return response.data
   },

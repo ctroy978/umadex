@@ -27,6 +27,7 @@ export default function TestInterface({ testData, readingContent, onComplete }: 
   const [saveError, setSaveError] = useState<string | null>(null)
   const [lastSaveTime, setLastSaveTime] = useState<Date | null>(null)
   const [showSubmitModal, setShowSubmitModal] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const [timeSpent, setTimeSpent] = useState(0)
   const [questionStartTime, setQuestionStartTime] = useState(Date.now())
   const [questions, setQuestions] = useState<TestQuestion[]>([])
@@ -123,7 +124,7 @@ export default function TestInterface({ testData, readingContent, onComplete }: 
     setSaveError(null)
     try {
       const timeOnQuestion = Math.floor((Date.now() - questionStartTime) / 1000)
-      await testApi.saveAnswer(testData.test_id, {
+      await testApi.saveAnswer(testData.test_attempt_id, {
         question_index: questionIndex,
         answer: answer,
         time_spent_seconds: timeOnQuestion
@@ -171,11 +172,13 @@ export default function TestInterface({ testData, readingContent, onComplete }: 
 
   const handleSubmit = async () => {
     console.log('=== FRONTEND: handleSubmit called ===')
-    console.log('Test ID:', testData.test_id)
+    console.log('Test Attempt ID:', testData.test_attempt_id)
     console.log('Answers:', answers)
     
+    setShowSubmitModal(false)
+    setIsSubmitting(true)
     try {
-      // Save current answer
+      // Save current answer first if needed
       const currentAnswer = answers[String(currentQuestionIndex)] || ''
       if (currentAnswer) {
         console.log('=== FRONTEND: Saving current answer before submit ===')
@@ -184,13 +187,16 @@ export default function TestInterface({ testData, readingContent, onComplete }: 
 
       // Submit test
       console.log('=== FRONTEND: Calling testApi.submitTest ===')
-      const result = await testApi.submitTest(testData.test_id)
+      const result = await testApi.submitTest(testData.test_attempt_id)
       console.log('=== FRONTEND: Submit result:', result)
       
+      // Only redirect after successful submission and evaluation
       onComplete()
     } catch (error) {
       console.error('=== FRONTEND: Failed to submit test ===', error)
       console.error('Error details:', error.response?.data)
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
@@ -280,6 +286,7 @@ export default function TestInterface({ testData, readingContent, onComplete }: 
                 onQuestionSelect={handleQuestionSelect}
                 onSubmit={() => setShowSubmitModal(true)}
                 isSaving={isSaving}
+                isSubmitting={isSubmitting}
               />
             </div>
           </div>
@@ -294,6 +301,7 @@ export default function TestInterface({ testData, readingContent, onComplete }: 
           answeredQuestions={answeredQuestions}
           onConfirm={handleSubmit}
           onCancel={() => setShowSubmitModal(false)}
+          isSubmitting={isSubmitting}
         />
       )}
 
@@ -355,6 +363,22 @@ export default function TestInterface({ testData, readingContent, onComplete }: 
           window.location.reload()
         }}
       />
+
+      {/* Submission Processing Overlay */}
+      {isSubmitting && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-8 max-w-md w-full mx-4 text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Processing Your Test</h3>
+            <p className="text-gray-600 mb-4">
+              Please wait while we save your answers and evaluate your responses. This may take a moment.
+            </p>
+            <div className="text-sm text-gray-500">
+              Do not close this window or navigate away.
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

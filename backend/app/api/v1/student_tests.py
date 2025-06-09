@@ -434,9 +434,9 @@ async def start_test(
     )
 
 
-@router.post("/{test_id}/save-answer")
+@router.post("/{test_attempt_id}/save-answer")
 async def save_answer(
-    test_id: UUID,
+    test_attempt_id: UUID,
     request: SaveAnswerRequest,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
@@ -446,11 +446,10 @@ async def save_answer(
     # Get the test attempt
     attempt_query = await db.execute(
         select(StudentTestAttempt)
-        .join(AssignmentTest, AssignmentTest.id == StudentTestAttempt.assignment_test_id)
         .where(
             and_(
+                StudentTestAttempt.id == test_attempt_id,
                 StudentTestAttempt.student_id == current_user.id,
-                StudentTestAttempt.assignment_test_id == test_id,
                 StudentTestAttempt.status == "in_progress"
             )
         )
@@ -468,7 +467,7 @@ async def save_answer(
     answers[str(request.question_index)] = request.answer
     
     # Log the save operation for debugging
-    logger.info(f"Saving answer - Test ID: {test_id}, Question: {request.question_index}, Answer length: {len(request.answer)}")
+    logger.info(f"Saving answer - Test Attempt ID: {test_attempt_id}, Question: {request.question_index}, Answer length: {len(request.answer)}")
     logger.debug(f"All answers so far: {answers}")
     
     # Update current question and time spent
@@ -534,9 +533,9 @@ async def get_test_progress(
     )
 
 
-@router.post("/{test_id}/submit")
+@router.post("/{test_attempt_id}/submit")
 async def submit_test(
-    test_id: UUID,
+    test_attempt_id: UUID,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -547,8 +546,8 @@ async def submit_test(
         select(StudentTestAttempt)
         .where(
             and_(
+                StudentTestAttempt.id == test_attempt_id,
                 StudentTestAttempt.student_id == current_user.id,
-                StudentTestAttempt.assignment_test_id == test_id,
                 StudentTestAttempt.status == "in_progress"
             )
         )

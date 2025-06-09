@@ -10,6 +10,7 @@ interface TestNavigationProps {
   onQuestionSelect: (index: number) => void
   onSubmit: () => void
   isSaving: boolean
+  isSubmitting?: boolean
 }
 
 export default function TestNavigation({
@@ -19,7 +20,8 @@ export default function TestNavigation({
   onNavigate,
   onQuestionSelect,
   onSubmit,
-  isSaving
+  isSaving,
+  isSubmitting = false
 }: TestNavigationProps) {
   const isFirstQuestion = currentQuestion === 1
   const isLastQuestion = currentQuestion === totalQuestions
@@ -80,7 +82,8 @@ export default function TestNavigation({
         {isLastQuestion ? (
           <button
             onClick={onSubmit}
-            className="flex items-center px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+            disabled={isSubmitting}
+            className="flex items-center px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             <Send className="w-4 h-4 mr-2" />
             Review & Submit

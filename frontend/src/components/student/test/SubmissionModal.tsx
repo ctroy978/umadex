@@ -8,6 +8,7 @@ interface SubmissionModalProps {
   answeredQuestions: number[]
   onConfirm: () => void
   onCancel: () => void
+  isSubmitting?: boolean
 }
 
 export default function SubmissionModal({
@@ -15,7 +16,8 @@ export default function SubmissionModal({
   totalQuestions,
   answeredQuestions,
   onConfirm,
-  onCancel
+  onCancel,
+  isSubmitting = false
 }: SubmissionModalProps) {
   const unansweredCount = totalQuestions - answeredCount
   const allAnswered = answeredCount === totalQuestions
@@ -113,7 +115,8 @@ export default function SubmissionModal({
           <div className="flex gap-3">
             <button
               onClick={onCancel}
-              className="flex-1 px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              disabled={isSubmitting}
+              className="flex-1 px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               Review Answers
             </button>
@@ -124,13 +127,14 @@ export default function SubmissionModal({
                 console.log('Total questions:', totalQuestions)
                 onConfirm()
               }}
-              className={`flex-1 px-4 py-2 text-white rounded-lg transition-colors ${
+              disabled={isSubmitting}
+              className={`flex-1 px-4 py-2 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
                 allAnswered
                   ? 'bg-green-600 hover:bg-green-700'
                   : 'bg-amber-600 hover:bg-amber-700'
               }`}
             >
-              Submit Test
+              {isSubmitting ? 'Submitting...' : 'Submit Test'}
             </button>
           </div>
         </div>
