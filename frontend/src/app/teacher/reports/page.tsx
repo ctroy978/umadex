@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { ChartBarIcon, KeyIcon, UserGroupIcon, DocumentTextIcon } from '@heroicons/react/24/outline';
 import BypassCodeUsageReport from '@/components/teacher/reports/BypassCodeUsageReport';
+import Gradebook from '@/components/teacher/reports/Gradebook';
 
 type ReportType = 'overview' | 'bypass-code' | 'student-progress' | 'assignment-stats';
 
@@ -12,9 +13,9 @@ export default function ReportsPage() {
   const reportSections = [
     {
       id: 'overview' as ReportType,
-      name: 'Overview',
+      name: 'Gradebook',
       icon: ChartBarIcon,
-      description: 'Summary of classroom activity and performance'
+      description: 'View and analyze student test scores for UMARead assignments'
     },
     {
       id: 'student-progress' as ReportType,
@@ -80,17 +81,7 @@ export default function ReportsPage() {
 
       {/* Report Content */}
       <div className="bg-white rounded-lg shadow-lg p-6">
-        {activeReport === 'overview' && (
-          <div className="text-center py-12">
-            <ChartBarIcon className="h-12 w-12 mx-auto mb-4 text-gray-400" />
-            <h2 className="text-xl font-semibold text-gray-900 mb-2">Reports Overview</h2>
-            <p className="text-gray-600 max-w-2xl mx-auto">
-              Welcome to your reports dashboard. Select a report type above to view detailed analytics
-              about your classrooms, students, and assignments. More report types and features are
-              coming soon to help you better track student progress and identify areas for improvement.
-            </p>
-          </div>
-        )}
+        {activeReport === 'overview' && <Gradebook />}
 
         {activeReport === 'bypass-code' && (
           <BypassCodeUsageReport />

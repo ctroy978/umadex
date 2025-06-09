@@ -1,19 +1,24 @@
 """
 Teacher reports endpoints including bypass code usage
 """
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
 from uuid import UUID
-from sqlalchemy import select, and_, func, desc
+from decimal import Decimal
+from sqlalchemy import select, and_, func, desc, or_
 from sqlalchemy.ext.asyncio import AsyncSession
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from sqlalchemy.orm import selectinload, joinedload
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Response
 from pydantic import BaseModel
+import csv
+import io
 
 from app.core.database import get_db
 from app.utils.deps import get_current_user
 from app.models.user import User, UserRole
-from app.models.classroom import StudentEvent, Classroom, ClassroomStudent
+from app.models.classroom import StudentEvent, Classroom, ClassroomStudent, ClassroomAssignment, StudentAssignment
 from app.models.reading import ReadingAssignment
+from app.models.tests import StudentTestAttempt
 
 router = APIRouter()
 
@@ -56,6 +61,38 @@ class BypassCodeReport(BaseModel):
     summary: BypassUsageSummary
     recent_usage: List[BypassUsageItem]
     usage_by_day: List[DailyUsage]
+
+
+class StudentGrade(BaseModel):
+    id: str
+    student_id: UUID
+    student_name: str
+    assignment_id: UUID
+    assignment_title: str
+    work_title: str
+    date_assigned: datetime
+    date_completed: Optional[datetime]
+    test_date: Optional[datetime]
+    test_score: Optional[float]
+    difficulty_reached: Optional[int]
+    time_spent: Optional[int]
+    status: str
+
+
+class GradebookSummary(BaseModel):
+    total_students: int
+    average_score: float
+    completion_rate: float
+    average_time: float
+    class_average_by_assignment: Dict[str, float]
+
+
+class GradebookResponse(BaseModel):
+    grades: List[StudentGrade]
+    summary: GradebookSummary
+    total_count: int
+    page: int
+    page_size: int
 
 
 def require_teacher(current_user: User = Depends(get_current_user)) -> User:
@@ -213,3 +250,379 @@ async def get_bypass_code_usage_report(
         recent_usage=usage_items,
         usage_by_day=daily_usage_list
     )
+
+
+@router.get("/reports/gradebook", response_model=GradebookResponse)
+async def get_gradebook(
+    teacher: User = Depends(require_teacher),
+    db: AsyncSession = Depends(get_db),
+    classrooms: Optional[str] = Query(None, description="Comma-separated classroom IDs"),
+    assignments: Optional[str] = Query(None, description="Comma-separated assignment IDs"),
+    assigned_after: Optional[datetime] = Query(None),
+    assigned_before: Optional[datetime] = Query(None),
+    completed_after: Optional[datetime] = Query(None),
+    completed_before: Optional[datetime] = Query(None),
+    student_search: Optional[str] = Query(None),
+    completion_status: Optional[str] = Query("all", regex="^(all|completed|incomplete)$"),
+    min_score: Optional[float] = Query(None, ge=0, le=100),
+    max_score: Optional[float] = Query(None, ge=0, le=100),
+    difficulty_level: Optional[int] = Query(None, ge=1, le=8),
+    sort_by: Optional[str] = Query("student_name"),
+    sort_direction: Optional[str] = Query("asc", regex="^(asc|desc)$"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100)
+):
+    """Get gradebook data for teacher's classrooms"""
+    
+    # Base query to get all student assignments for teacher's classrooms
+    query = select(
+        StudentAssignment,
+        User,
+        ClassroomAssignment,
+        ReadingAssignment,
+        Classroom,
+        StudentTestAttempt
+    ).join(
+        User, StudentAssignment.student_id == User.id
+    ).join(
+        ClassroomAssignment, StudentAssignment.classroom_assignment_id == ClassroomAssignment.id
+    ).join(
+        ReadingAssignment, ClassroomAssignment.assignment_id == ReadingAssignment.id
+    ).join(
+        Classroom, ClassroomAssignment.classroom_id == Classroom.id
+    ).outerjoin(
+        StudentTestAttempt, 
+        and_(
+            StudentTestAttempt.student_id == StudentAssignment.student_id,
+            StudentTestAttempt.assignment_id == StudentAssignment.assignment_id,
+            StudentTestAttempt.status == 'graded'
+        )
+    ).where(
+        and_(
+            Classroom.teacher_id == teacher.id,
+            Classroom.deleted_at.is_(None),
+            StudentAssignment.assignment_type == 'reading',
+            ReadingAssignment.assignment_type == 'UMARead'
+        )
+    )
+    
+    # Apply filters
+    if classrooms:
+        classroom_ids = [UUID(cid) for cid in classrooms.split(',')]
+        query = query.where(Classroom.id.in_(classroom_ids))
+    
+    if assignments:
+        assignment_ids = [UUID(aid) for aid in assignments.split(',')]
+        query = query.where(ReadingAssignment.id.in_(assignment_ids))
+    
+    if assigned_after:
+        query = query.where(ClassroomAssignment.assigned_at >= assigned_after)
+    
+    if assigned_before:
+        query = query.where(ClassroomAssignment.assigned_at <= assigned_before)
+    
+    if completed_after:
+        query = query.where(StudentAssignment.completed_at >= completed_after)
+    
+    if completed_before:
+        query = query.where(StudentAssignment.completed_at <= completed_before)
+    
+    if student_search:
+        search_term = f"%{student_search}%"
+        query = query.where(
+            or_(
+                User.first_name.ilike(search_term),
+                User.last_name.ilike(search_term),
+                func.concat(User.first_name, ' ', User.last_name).ilike(search_term)
+            )
+        )
+    
+    if completion_status == "completed":
+        query = query.where(StudentTestAttempt.id.isnot(None))
+    elif completion_status == "incomplete":
+        query = query.where(StudentTestAttempt.id.is_(None))
+    
+    if min_score is not None:
+        query = query.where(StudentTestAttempt.score >= min_score)
+    
+    if max_score is not None:
+        query = query.where(StudentTestAttempt.score <= max_score)
+    
+    # Execute query to get all results for summary statistics
+    result = await db.execute(query)
+    all_rows = result.all()
+    
+    # Calculate summary statistics
+    total_students = len(set(row.User.id for row in all_rows))
+    scores = [float(row.StudentTestAttempt.score) for row in all_rows if row.StudentTestAttempt and row.StudentTestAttempt.score]
+    average_score = sum(scores) / len(scores) if scores else 0.0
+    completion_rate = (len(scores) / len(all_rows) * 100) if all_rows else 0.0
+    
+    times = [row.StudentTestAttempt.time_spent_seconds / 60 for row in all_rows 
+             if row.StudentTestAttempt and row.StudentTestAttempt.time_spent_seconds]
+    average_time = sum(times) / len(times) if times else 0.0
+    
+    # Calculate class averages by assignment
+    assignment_scores: Dict[str, List[float]] = {}
+    for row in all_rows:
+        if row.StudentTestAttempt and row.StudentTestAttempt.score:
+            assignment_key = str(row.ReadingAssignment.id)
+            if assignment_key not in assignment_scores:
+                assignment_scores[assignment_key] = []
+            assignment_scores[assignment_key].append(float(row.StudentTestAttempt.score))
+    
+    class_average_by_assignment = {
+        aid: sum(scores) / len(scores) 
+        for aid, scores in assignment_scores.items()
+    }
+    
+    # Apply sorting
+    if sort_by == "student_name":
+        all_rows.sort(key=lambda x: f"{x.User.last_name} {x.User.first_name}", 
+                     reverse=(sort_direction == "desc"))
+    elif sort_by == "assignment_title":
+        all_rows.sort(key=lambda x: x.ReadingAssignment.assignment_title, 
+                     reverse=(sort_direction == "desc"))
+    elif sort_by == "date_assigned":
+        all_rows.sort(key=lambda x: x.ClassroomAssignment.assigned_at, 
+                     reverse=(sort_direction == "desc"))
+    elif sort_by == "test_date":
+        all_rows.sort(key=lambda x: x.StudentTestAttempt.submitted_at if x.StudentTestAttempt else datetime.min, 
+                     reverse=(sort_direction == "desc"))
+    elif sort_by == "test_score":
+        all_rows.sort(key=lambda x: float(x.StudentTestAttempt.score) if x.StudentTestAttempt and x.StudentTestAttempt.score else -1, 
+                     reverse=(sort_direction == "desc"))
+    
+    # Apply pagination
+    start = (page - 1) * page_size
+    end = start + page_size
+    paginated_rows = all_rows[start:end]
+    
+    # Format response
+    grades = []
+    for row in paginated_rows:
+        student_assignment = row.StudentAssignment
+        student = row.User
+        classroom_assignment = row.ClassroomAssignment
+        assignment = row.ReadingAssignment
+        test_attempt = row.StudentTestAttempt
+        
+        # Determine status
+        if test_attempt and test_attempt.status == 'graded':
+            status = 'completed'
+        elif student_assignment.completed_at:
+            status = 'test_available'
+        elif student_assignment.started_at:
+            status = 'in_progress'
+        else:
+            status = 'not_started'
+        
+        grades.append(StudentGrade(
+            id=str(student_assignment.id),
+            student_id=student.id,
+            student_name=f"{student.last_name}, {student.first_name}",
+            assignment_id=assignment.id,
+            assignment_title=assignment.assignment_title,
+            work_title=assignment.work_title,
+            date_assigned=classroom_assignment.assigned_at,
+            date_completed=student_assignment.completed_at,
+            test_date=test_attempt.submitted_at if test_attempt else None,
+            test_score=float(test_attempt.score) if test_attempt and test_attempt.score else None,
+            difficulty_reached=student_assignment.progress_metadata.get('highest_difficulty') if student_assignment.progress_metadata else None,
+            time_spent=test_attempt.time_spent_seconds // 60 if test_attempt and test_attempt.time_spent_seconds else None,
+            status=status
+        ))
+    
+    return GradebookResponse(
+        grades=grades,
+        summary=GradebookSummary(
+            total_students=total_students,
+            average_score=round(average_score, 1),
+            completion_rate=round(completion_rate, 1),
+            average_time=round(average_time, 1),
+            class_average_by_assignment=class_average_by_assignment
+        ),
+        total_count=len(all_rows),
+        page=page,
+        page_size=page_size
+    )
+
+
+@router.get("/reports/gradebook/export")
+async def export_gradebook(
+    teacher: User = Depends(require_teacher),
+    db: AsyncSession = Depends(get_db),
+    classrooms: Optional[str] = Query(None, description="Comma-separated classroom IDs"),
+    assignments: Optional[str] = Query(None, description="Comma-separated assignment IDs"),
+    assigned_after: Optional[datetime] = Query(None),
+    assigned_before: Optional[datetime] = Query(None),
+    completed_after: Optional[datetime] = Query(None),
+    completed_before: Optional[datetime] = Query(None),
+    student_search: Optional[str] = Query(None),
+    completion_status: Optional[str] = Query("all", regex="^(all|completed|incomplete)$"),
+    min_score: Optional[float] = Query(None, ge=0, le=100),
+    max_score: Optional[float] = Query(None, ge=0, le=100),
+    difficulty_level: Optional[int] = Query(None, ge=1, le=8),
+    format: str = Query("csv", regex="^(csv|pdf)$")
+):
+    """Export gradebook data as CSV or PDF"""
+    
+    if format == "pdf":
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="PDF export not yet implemented"
+        )
+    
+    # Get all gradebook data (no pagination for export)
+    gradebook_data = await get_gradebook(
+        teacher=teacher,
+        db=db,
+        classrooms=classrooms,
+        assignments=assignments,
+        assigned_after=assigned_after,
+        assigned_before=assigned_before,
+        completed_after=completed_after,
+        completed_before=completed_before,
+        student_search=student_search,
+        completion_status=completion_status,
+        min_score=min_score,
+        max_score=max_score,
+        difficulty_level=difficulty_level,
+        page=1,
+        page_size=10000  # Get all records
+    )
+    
+    # Create CSV
+    output = io.StringIO()
+    writer = csv.writer(output)
+    
+    # Write headers
+    writer.writerow([
+        'Student Name',
+        'Assignment Title',
+        'Work Title',
+        'Date Assigned',
+        'Date Completed',
+        'Test Date',
+        'Test Score (%)',
+        'Time Spent (min)',
+        'Status'
+    ])
+    
+    # Write data
+    for grade in gradebook_data.grades:
+        writer.writerow([
+            grade.student_name,
+            grade.assignment_title,
+            grade.work_title,
+            grade.date_assigned.strftime('%Y-%m-%d') if grade.date_assigned else '',
+            grade.date_completed.strftime('%Y-%m-%d') if grade.date_completed else '',
+            grade.test_date.strftime('%Y-%m-%d') if grade.test_date else '',
+            f"{grade.test_score:.1f}" if grade.test_score is not None else '',
+            str(grade.time_spent) if grade.time_spent is not None else '',
+            grade.status
+        ])
+    
+    # Add summary row
+    writer.writerow([])
+    writer.writerow(['Summary Statistics'])
+    writer.writerow(['Total Students:', gradebook_data.summary.total_students])
+    writer.writerow(['Average Score:', f"{gradebook_data.summary.average_score:.1f}%"])
+    writer.writerow(['Completion Rate:', f"{gradebook_data.summary.completion_rate:.1f}%"])
+    writer.writerow(['Average Time:', f"{gradebook_data.summary.average_time:.1f} min"])
+    
+    # Return CSV response
+    output.seek(0)
+    return Response(
+        content=output.getvalue(),
+        media_type='text/csv',
+        headers={
+            'Content-Disposition': f'attachment; filename=gradebook_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
+        }
+    )
+
+
+@router.get("/reports/gradebook/student/{student_id}/details")
+async def get_student_gradebook_details(
+    student_id: UUID,
+    teacher: User = Depends(require_teacher),
+    db: AsyncSession = Depends(get_db),
+    assignment_id: Optional[UUID] = Query(None)
+):
+    """Get detailed breakdown for an individual student's assignment"""
+    
+    # Verify the student is in one of the teacher's classrooms
+    student_in_classroom = await db.execute(
+        select(ClassroomStudent).join(
+            Classroom, ClassroomStudent.classroom_id == Classroom.id
+        ).where(
+            and_(
+                ClassroomStudent.student_id == student_id,
+                Classroom.teacher_id == teacher.id,
+                Classroom.deleted_at.is_(None)
+            )
+        )
+    )
+    
+    if not student_in_classroom.scalar():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Student not found in your classrooms"
+        )
+    
+    # Build query for detailed information
+    query = select(
+        StudentAssignment,
+        StudentTestAttempt,
+        ReadingAssignment
+    ).join(
+        ReadingAssignment, StudentAssignment.assignment_id == ReadingAssignment.id
+    ).outerjoin(
+        StudentTestAttempt,
+        and_(
+            StudentTestAttempt.student_id == student_id,
+            StudentTestAttempt.assignment_id == StudentAssignment.assignment_id
+        )
+    ).where(
+        StudentAssignment.student_id == student_id
+    )
+    
+    if assignment_id:
+        query = query.where(StudentAssignment.assignment_id == assignment_id)
+    
+    result = await db.execute(query)
+    rows = result.all()
+    
+    details = []
+    for row in rows:
+        student_assignment = row.StudentAssignment
+        test_attempt = row.StudentTestAttempt
+        assignment = row.ReadingAssignment
+        
+        # Get chunk-by-chunk breakdown if test was completed
+        chunk_scores = []
+        if test_attempt and test_attempt.feedback:
+            for question_id, feedback in test_attempt.feedback.items():
+                if isinstance(feedback, dict):
+                    chunk_scores.append({
+                        "chunk_number": feedback.get("chunk_number", 0),
+                        "question_type": feedback.get("question_type", "unknown"),
+                        "score": feedback.get("score", 0),
+                        "feedback": feedback.get("feedback", "")
+                    })
+        
+        details.append({
+            "assignment_id": assignment.id,
+            "assignment_title": assignment.assignment_title,
+            "work_title": assignment.work_title,
+            "status": student_assignment.status,
+            "started_at": student_assignment.started_at,
+            "completed_at": student_assignment.completed_at,
+            "test_score": float(test_attempt.score) if test_attempt and test_attempt.score else None,
+            "test_date": test_attempt.submitted_at if test_attempt else None,
+            "time_spent_minutes": test_attempt.time_spent_seconds // 60 if test_attempt and test_attempt.time_spent_seconds else None,
+            "chunk_scores": chunk_scores,
+            "progress_metadata": student_assignment.progress_metadata
+        })
+    
+    return {"student_id": student_id, "details": details}
