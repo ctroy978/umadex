@@ -1,6 +1,8 @@
 from typing import List, Optional
 from uuid import UUID
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status, Query, BackgroundTasks
+from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
@@ -388,3 +390,59 @@ async def get_review_progress(
         )
     
     return await VocabularyService.get_review_progress(db, list_id)
+
+
+@router.get("/vocabulary/{list_id}/export-presentation")
+async def export_vocabulary_presentation(
+    list_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Export vocabulary list as an interactive HTML presentation"""
+    # Get vocabulary list with all words
+    vocabulary_list = await VocabularyService.get_vocabulary_list(db, list_id, include_words=True)
+    
+    if not vocabulary_list:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Vocabulary list not found"
+        )
+    
+    # Check permissions
+    if vocabulary_list.teacher_id != current_user.id and not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have permission to export this list"
+        )
+    
+    # Check if list is published
+    if vocabulary_list.status != VocabularyStatus.PUBLISHED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only published vocabulary lists can be exported as presentations"
+        )
+    
+    # Check minimum word count
+    if len(vocabulary_list.words) < 3:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Vocabulary list must have at least 3 words to create a presentation"
+        )
+    
+    # Generate HTML presentation
+    html_content = await VocabularyService.generate_presentation_html(vocabulary_list)
+    
+    # Create filename
+    safe_title = "".join(c for c in vocabulary_list.title if c.isalnum() or c in (' ', '-', '_')).rstrip()
+    safe_title = safe_title.replace(' ', '_')[:50]  # Limit length
+    filename = f"vocab-presentation-{safe_title}-{datetime.now().strftime('%Y-%m-%d')}.html"
+    
+    # Return as downloadable file
+    return Response(
+        content=html_content,
+        media_type="text/html",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Type": "text/html; charset=utf-8"
+        }
+    )

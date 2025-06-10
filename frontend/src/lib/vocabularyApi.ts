@@ -94,5 +94,13 @@ export const vocabularyApi = {
         this.reviewWord(word.id, { action: 'accept' })
       )
     )
+  },
+
+  // Export vocabulary list as HTML presentation
+  async exportPresentation(listId: string): Promise<Blob> {
+    const response = await api.get(`/v1/teacher/vocabulary/${listId}/export-presentation`, {
+      responseType: 'blob'
+    })
+    return response.data
   }
 }

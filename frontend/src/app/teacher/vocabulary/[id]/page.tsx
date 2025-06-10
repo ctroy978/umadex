@@ -8,7 +8,8 @@ import {
   DocumentArrowDownIcon,
   PencilIcon,
   BookOpenIcon,
-  ArchiveBoxIcon
+  ArchiveBoxIcon,
+  PresentationChartBarIcon
 } from '@heroicons/react/24/outline'
 import type { VocabularyList, VocabularyWord } from '@/types/vocabulary'
 
@@ -18,6 +19,7 @@ export default function VocabularyViewPage({ params }: { params: { id: string } 
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [isExporting, setIsExporting] = useState(false)
+  const [showInstructionsModal, setShowInstructionsModal] = useState(false)
 
   useEffect(() => {
     loadVocabularyList()
@@ -39,22 +41,53 @@ export default function VocabularyViewPage({ params }: { params: { id: string } 
   const handleExport = async (format: 'pdf' | 'csv') => {
     try {
       setIsExporting(true)
-      const blob = await vocabularyApi.exportList(params.id, format)
-      
-      // Create download link
-      const url = window.URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `${list?.title || 'vocabulary'}-${new Date().toISOString().split('T')[0]}.${format}`
-      document.body.appendChild(a)
-      a.click()
-      window.URL.revokeObjectURL(url)
-      document.body.removeChild(a)
+      // Note: exportList method needs to be implemented in vocabularyApi
+      alert(`Export as ${format.toUpperCase()} is not yet implemented`)
     } catch (error) {
       console.error('Failed to export list:', error)
       alert('Failed to export vocabulary list')
     } finally {
       setIsExporting(false)
+    }
+  }
+
+  const handleExportPresentation = async () => {
+    // Check if list is published
+    if (list?.status !== 'published') {
+      alert('Only published vocabulary lists can be exported as presentations')
+      return
+    }
+
+    // Check minimum word count
+    if (!list.words || list.words.length < 3) {
+      alert('Vocabulary list must have at least 3 words to create a presentation')
+      return
+    }
+
+    try {
+      setIsExporting(true)
+      const blob = await vocabularyApi.exportPresentation(params.id)
+      
+      // Create download link
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      const safeName = list.title.replace(/[^a-zA-Z0-9 -_]/g, '').replace(/ /g, '_').substring(0, 50)
+      a.download = `vocab-presentation-${safeName}-${new Date().toISOString().split('T')[0]}.html`
+      document.body.appendChild(a)
+      a.click()
+      window.URL.revokeObjectURL(url)
+      document.body.removeChild(a)
+      
+      // Show instructions modal
+      setShowInstructionsModal(true)
+    } catch (error) {
+      console.error('Failed to export presentation:', error)
+      alert('Failed to export vocabulary presentation')
+    } finally {
+      setIsExporting(false)
+      // Hide the dropdown
+      document.getElementById('export-dropdown')?.classList.add('hidden')
     }
   }
 
@@ -153,6 +186,16 @@ export default function VocabularyViewPage({ params }: { params: { id: string } 
                     className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
                   >
                     Export as CSV
+                  </button>
+                  <div className="border-t border-gray-100"></div>
+                  <button
+                    onClick={handleExportPresentation}
+                    className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                  >
+                    <div className="flex items-center">
+                      <PresentationChartBarIcon className="h-4 w-4 mr-2" />
+                      Export as Presentation
+                    </div>
                   </button>
                 </div>
               </div>
@@ -265,6 +308,69 @@ export default function VocabularyViewPage({ params }: { params: { id: string } 
           minute: '2-digit'
         })}</p>
       </div>
+
+      {/* Instructions Modal */}
+      {showInstructionsModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-900">
+                  ✅ Presentation Downloaded Successfully!
+                </h3>
+                <button
+                  onClick={() => setShowInstructionsModal(false)}
+                  className="text-gray-400 hover:text-gray-500"
+                >
+                  <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              
+              <div className="prose prose-sm max-w-none">
+                <p className="text-gray-600 mb-4">
+                  Your vocabulary presentation has been saved to your Downloads folder.
+                </p>
+                
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                  <h4 className="font-semibold text-blue-900 mb-2">📋 How to Use:</h4>
+                  <ol className="list-decimal list-inside space-y-2 text-blue-800">
+                    <li>Copy the HTML file to a USB drive or your classroom computer</li>
+                    <li>Double-click the file to open in any web browser</li>
+                    <li>Press F11 for full-screen mode</li>
+                    <li>Use arrow keys to navigate between slides</li>
+                    <li>Click buttons or press spacebar to reveal definitions and examples</li>
+                  </ol>
+                </div>
+                
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                  <h4 className="font-semibold text-green-900 mb-2">💡 Tips:</h4>
+                  <ul className="list-disc list-inside space-y-2 text-green-800">
+                    <li>Works offline - no internet required</li>
+                    <li>Compatible with any computer or tablet</li>
+                    <li>Can be printed for student handouts</li>
+                    <li>Perfect for substitute teachers</li>
+                  </ul>
+                </div>
+                
+                <p className="text-gray-600 mt-4 text-sm">
+                  Need help? Contact your IT department or refer to the platform documentation.
+                </p>
+              </div>
+              
+              <div className="mt-6 flex justify-end">
+                <button
+                  onClick={() => setShowInstructionsModal(false)}
+                  className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700"
+                >
+                  Got it!
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

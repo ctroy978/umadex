@@ -440,3 +440,437 @@ class VocabularyService:
                 int((accepted / total * 100)) if total > 0 else 0
             )
         }
+    
+    @staticmethod
+    async def generate_presentation_html(vocabulary_list: VocabularyList) -> str:
+        """Generate a standalone HTML presentation for a vocabulary list"""
+        # Sort words alphabetically
+        sorted_words = sorted(vocabulary_list.words, key=lambda w: w.word.lower())
+        
+        # Escape HTML in content
+        def escape_html(text: str) -> str:
+            if not text:
+                return ""
+            return (text
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace('"', "&quot;")
+                .replace("'", "&#39;"))
+        
+        # Generate word slides HTML
+        word_slides_html = ""
+        for word in sorted_words:
+            # Use teacher definition/examples if available, otherwise use AI
+            definition = escape_html(word.teacher_definition or word.ai_definition or "")
+            example = escape_html(word.teacher_example_1 or word.ai_example_1 or "")
+            
+            word_slides_html += f"""
+    <div class="slide">
+        <h2 class="word-title">{escape_html(word.word)}</h2>
+        <div class="reveal-container">
+            <button class="reveal-button" id="def-btn-{word.id}" onclick="revealDefinition('{word.id}')">
+                Show Definition
+            </button>
+            <div class="definition hidden" id="def-{word.id}">{definition}</div>
+            <button class="reveal-button hidden" id="ex-btn-{word.id}" onclick="revealExample('{word.id}')">
+                Show Example
+            </button>
+            <div class="example hidden" id="ex-{word.id}">{example}</div>
+        </div>
+    </div>"""
+        
+        # Generate complete HTML
+        html_content = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{escape_html(vocabulary_list.title)} - Vocabulary Presentation</title>
+    <style>
+        * {{
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }}
+        
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }}
+        
+        .presentation-container {{
+            width: 100%;
+            height: 100vh;
+            position: relative;
+        }}
+        
+        .progress-bar {{
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.3);
+            width: 100%;
+            z-index: 10;
+        }}
+        
+        .progress-fill {{
+            height: 100%;
+            background: #fff;
+            width: 0;
+            transition: width 0.3s ease;
+        }}
+        
+        .slide-counter {{
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            color: white;
+            font-size: 18px;
+            font-weight: 500;
+            z-index: 10;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 8px 16px;
+            border-radius: 20px;
+        }}
+        
+        .slide {{
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            transform: translateX(100%);
+            transition: all 0.5s ease;
+            padding: 40px;
+            text-align: center;
+        }}
+        
+        .slide.active {{
+            opacity: 1;
+            transform: translateX(0);
+        }}
+        
+        .slide h1 {{
+            color: white;
+            font-size: clamp(48px, 8vw, 96px);
+            font-weight: 700;
+            margin-bottom: 30px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+        }}
+        
+        .slide h2.word-title {{
+            color: white;
+            font-size: clamp(60px, 10vw, 120px);
+            font-weight: 700;
+            margin-bottom: 50px;
+            text-shadow: 3px 3px 6px rgba(0, 0, 0, 0.3);
+        }}
+        
+        .slide p {{
+            color: white;
+            font-size: clamp(20px, 3vw, 32px);
+            line-height: 1.5;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.3);
+            margin-bottom: 20px;
+        }}
+        
+        .reveal-container {{
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+            margin-top: 40px;
+        }}
+        
+        .reveal-button {{
+            background: rgba(255, 255, 255, 0.2);
+            border: 2px solid white;
+            color: white;
+            padding: 16px 32px;
+            border-radius: 40px;
+            font-size: clamp(18px, 2.5vw, 24px);
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(5px);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        }}
+        
+        .reveal-button:hover {{
+            background: rgba(255, 255, 255, 0.3);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+        }}
+        
+        .reveal-button:active {{
+            transform: translateY(0);
+        }}
+        
+        .definition, .example {{
+            background: rgba(255, 255, 255, 0.95);
+            color: #333;
+            padding: 30px 50px;
+            border-radius: 20px;
+            font-size: clamp(20px, 3vw, 28px);
+            line-height: 1.6;
+            max-width: 900px;
+            margin: 0 auto;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            animation: fadeIn 0.5s ease-out;
+        }}
+        
+        .definition {{
+            margin-bottom: 10px;
+        }}
+        
+        .example {{
+            font-style: italic;
+            background: rgba(255, 255, 200, 0.95);
+        }}
+        
+        .hidden {{
+            display: none !important;
+        }}
+        
+        @keyframes fadeIn {{
+            from {{
+                opacity: 0;
+                transform: translateY(20px);
+            }}
+            to {{
+                opacity: 1;
+                transform: translateY(0);
+            }}
+        }}
+        
+        .navigation {{
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 20px;
+            z-index: 10;
+        }}
+        
+        .nav-button {{
+            background: rgba(255, 255, 255, 0.2);
+            border: 2px solid white;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 30px;
+            font-size: 18px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(5px);
+        }}
+        
+        .nav-button:hover {{
+            background: rgba(255, 255, 255, 0.3);
+            transform: translateY(-2px);
+        }}
+        
+        .nav-button:disabled {{
+            opacity: 0.5;
+            cursor: not-allowed;
+        }}
+        
+        .instructions {{
+            position: absolute;
+            bottom: 100px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: white;
+            font-size: 16px;
+            opacity: 0.8;
+            text-align: center;
+        }}
+        
+        @media print {{
+            body {{
+                background: white;
+            }}
+            
+            .slide {{
+                page-break-after: always;
+                position: relative;
+                transform: none !important;
+                opacity: 1 !important;
+                height: auto;
+                min-height: 100vh;
+            }}
+            
+            .slide h1, .slide h2, .slide p {{
+                color: #333;
+                text-shadow: none;
+            }}
+            
+            .progress-bar, .slide-counter, .navigation, .instructions {{
+                display: none;
+            }}
+            
+            .definition, .example {{
+                opacity: 1 !important;
+                transform: scale(1) !important;
+                display: block !important;
+            }}
+        }}
+        
+        @media (max-width: 768px) {{
+            .slide h1 {{
+                font-size: 48px;
+            }}
+            
+            .slide h2.word-title {{
+                font-size: 60px;
+            }}
+            
+            .definition, .example {{
+                padding: 20px 30px;
+                font-size: 20px;
+            }}
+            
+            .navigation {{
+                bottom: 20px;
+            }}
+            
+            .nav-button {{
+                padding: 10px 20px;
+                font-size: 16px;
+            }}
+        }}
+    </style>
+</head>
+<body>
+    <div class="presentation-container">
+        <div class="progress-bar">
+            <div class="progress-fill"></div>
+        </div>
+        <div class="slide-counter">1 / {len(sorted_words) + 2}</div>
+        
+        <!-- Title Slide -->
+        <div class="slide active">
+            <h1>{escape_html(vocabulary_list.title)}</h1>
+            <p>{escape_html(vocabulary_list.grade_level)} • {escape_html(vocabulary_list.subject_area)}</p>
+            <p>{len(sorted_words)} Vocabulary Words</p>
+        </div>
+        
+        <!-- Word Slides -->
+        {word_slides_html}
+        
+        <!-- Summary Slide -->
+        <div class="slide">
+            <h1>Excellent Work!</h1>
+            <p>You've learned {len(sorted_words)} new vocabulary words</p>
+        </div>
+        
+        <div class="navigation">
+            <button class="nav-button" id="prevButton" onclick="previousSlide()">← Previous</button>
+            <button class="nav-button" id="nextButton" onclick="nextSlide()">Next →</button>
+        </div>
+        
+        <div class="instructions">
+            Press arrow keys to navigate • Spacebar or click buttons to reveal content
+        </div>
+    </div>
+    
+    <script>
+        let currentSlide = 0;
+        const slides = document.querySelectorAll('.slide');
+        const totalSlides = slides.length;
+        const progressFill = document.querySelector('.progress-fill');
+        const slideCounter = document.querySelector('.slide-counter');
+        const prevButton = document.getElementById('prevButton');
+        const nextButton = document.getElementById('nextButton');
+        
+        function updateSlide() {{
+            slides.forEach((slide, index) => {{
+                slide.classList.toggle('active', index === currentSlide);
+            }});
+            
+            // Update progress bar
+            const progress = ((currentSlide + 1) / totalSlides) * 100;
+            progressFill.style.width = progress + '%';
+            
+            // Update slide counter
+            slideCounter.textContent = `${{currentSlide + 1}} / ${{totalSlides}}`;
+            
+            // Update button states
+            prevButton.disabled = currentSlide === 0;
+            nextButton.disabled = currentSlide === totalSlides - 1;
+        }}
+        
+        function revealDefinition(wordId) {{
+            const defBtn = document.getElementById(`def-btn-${{wordId}}`);
+            const def = document.getElementById(`def-${{wordId}}`);
+            const exBtn = document.getElementById(`ex-btn-${{wordId}}`);
+            
+            defBtn.classList.add('hidden');
+            def.classList.remove('hidden');
+            exBtn.classList.remove('hidden');
+        }}
+        
+        function revealExample(wordId) {{
+            const exBtn = document.getElementById(`ex-btn-${{wordId}}`);
+            const ex = document.getElementById(`ex-${{wordId}}`);
+            
+            exBtn.classList.add('hidden');
+            ex.classList.remove('hidden');
+        }}
+        
+        function nextSlide() {{
+            if (currentSlide < totalSlides - 1) {{
+                currentSlide++;
+                updateSlide();
+            }}
+        }}
+        
+        function previousSlide() {{
+            if (currentSlide > 0) {{
+                currentSlide--;
+                updateSlide();
+            }}
+        }}
+        
+        // Keyboard navigation
+        document.addEventListener('keydown', (e) => {{
+            switch(e.key) {{
+                case 'ArrowRight':
+                    e.preventDefault();
+                    nextSlide();
+                    break;
+                case 'ArrowLeft':
+                    e.preventDefault();
+                    previousSlide();
+                    break;
+                case ' ':
+                    e.preventDefault();
+                    // Spacebar triggers the first visible button on the current slide
+                    const currentSlideElement = slides[currentSlide];
+                    const visibleButton = currentSlideElement.querySelector('.reveal-button:not(.hidden)');
+                    if (visibleButton) {{
+                        visibleButton.click();
+                    }} else {{
+                        nextSlide();
+                    }}
+                    break;
+            }}
+        }});
+        
+        // Initialize
+        updateSlide();
+    </script>
+</body>
+</html>"""
+        
+        return html_content
