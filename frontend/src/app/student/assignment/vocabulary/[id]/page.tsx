@@ -315,21 +315,53 @@ export default function VocabularyAssignmentPage() {
           </div>
         </div>
 
-        {/* Coming Soon - Practice Activities */}
-        <div className="bg-gray-50 border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
-          <div className="flex items-center justify-center mb-4">
-            <div className="p-3 bg-gray-200 rounded-lg">
-              <AcademicCapIcon className="h-8 w-8 text-gray-500" />
+        {/* Practice Activities */}
+        <div className="bg-white rounded-lg shadow p-6">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center">
+              <div className="p-2 bg-amber-100 rounded-lg mr-3">
+                <AcademicCapIcon className="h-6 w-6 text-amber-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-medium text-gray-900">Practice Activities</h3>
+                <p className="text-sm text-gray-600">Complete 3 of 4 activities to unlock the test</p>
+              </div>
             </div>
+            <button
+              onClick={() => router.push(`/student/vocabulary/${assignmentId}/practice`)}
+              disabled={assignment.available_words === 0}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                assignment.available_words > 0
+                  ? 'bg-amber-600 text-white hover:bg-amber-700'
+                  : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+              }`}
+            >
+              View Activities
+              <ArrowRightIcon className="h-4 w-4 ml-2 inline" />
+            </button>
           </div>
-          <h3 className="text-lg font-medium text-gray-600 mb-2">Practice Activities Coming Soon</h3>
-          <p className="text-gray-500 mb-4">
-            Interactive practice activities and completion tests will be available in the next phase.
-          </p>
-          <div className="flex items-center justify-center space-x-6 text-sm text-gray-400">
-            <span>Practice Activities - Locked</span>
-            <span>•</span>
-            <span>Take Test - Locked</span>
+          
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="text-center p-4 bg-gray-50 rounded-lg">
+              <div className="text-2xl mb-1">🎯</div>
+              <p className="text-sm font-medium text-gray-700">Vocabulary Challenge</p>
+              <p className="text-xs text-gray-500 mt-1">Available</p>
+            </div>
+            <div className="text-center p-4 bg-gray-50 rounded-lg opacity-50">
+              <div className="text-2xl mb-1">🔗</div>
+              <p className="text-sm font-medium text-gray-700">Definition Match</p>
+              <p className="text-xs text-gray-500 mt-1">Coming Soon</p>
+            </div>
+            <div className="text-center p-4 bg-gray-50 rounded-lg opacity-50">
+              <div className="text-2xl mb-1">📖</div>
+              <p className="text-sm font-medium text-gray-700">Context Clues</p>
+              <p className="text-xs text-gray-500 mt-1">Coming Soon</p>
+            </div>
+            <div className="text-center p-4 bg-gray-50 rounded-lg opacity-50">
+              <div className="text-2xl mb-1">🔤</div>
+              <p className="text-sm font-medium text-gray-700">Word Builder</p>
+              <p className="text-xs text-gray-500 mt-1">Coming Soon</p>
+            </div>
           </div>
         </div>
 

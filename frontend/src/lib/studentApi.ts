@@ -114,5 +114,31 @@ export const studentApi = {
   async getVocabularyAssignment(assignmentId: string): Promise<any> {
     const response = await api.get(`/v1/student/vocabulary/${assignmentId}`)
     return response.data
+  },
+
+  // Vocabulary Practice Activities
+  async getVocabularyPracticeStatus(assignmentId: string): Promise<any> {
+    const response = await api.get(`/v1/student/vocabulary/${assignmentId}/practice/status`)
+    return response.data
+  },
+
+  async startVocabularyChallenge(assignmentId: string): Promise<any> {
+    const response = await api.post(`/v1/student/vocabulary/${assignmentId}/practice/start-challenge`)
+    return response.data
+  },
+
+  async submitVocabularyAnswer(gameAttemptId: string, data: {
+    question_id: string
+    student_answer: string
+    attempt_number: number
+    time_spent_seconds: number
+  }): Promise<any> {
+    const response = await api.post(`/v1/student/vocabulary/practice/submit-answer/${gameAttemptId}`, data)
+    return response.data
+  },
+
+  async getNextVocabularyQuestion(gameAttemptId: string): Promise<any> {
+    const response = await api.get(`/v1/student/vocabulary/practice/next-question/${gameAttemptId}`)
+    return response.data
   }
 }

@@ -59,6 +59,12 @@ class ClassroomAssignment(Base):
     start_date = Column(DateTime(timezone=True), nullable=True)
     end_date = Column(DateTime(timezone=True), nullable=True)
     vocab_settings = Column(JSONB, default={}, nullable=False, server_default='{}')
+    vocab_practice_settings = Column(JSONB, default={
+        'practice_required': True,
+        'assignments_to_complete': 3,
+        'allow_retakes': True,
+        'show_explanations': True
+    }, nullable=False, server_default='{"practice_required": true, "assignments_to_complete": 3, "allow_retakes": true, "show_explanations": true}')
     
     # Relationships
     classroom = relationship("Classroom", back_populates="assignments")

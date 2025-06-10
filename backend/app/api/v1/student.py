@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from uuid import UUID
 from datetime import datetime, timezone
 from sqlalchemy import select, and_, or_, func, exists, case
@@ -16,6 +16,7 @@ from app.models.umaread import UmareadAssignmentProgress
 from app.models.tests import AssignmentTest, StudentTestAttempt
 from app.utils.deps import get_current_user
 from app.schemas.classroom import ClassroomResponse
+from app.services.vocabulary_practice import VocabularyPracticeService
 
 router = APIRouter()
 
@@ -799,3 +800,153 @@ async def get_assignment_test_status(
         return TestStatusResponse(has_test=True, test_id=str(test))
     else:
         return TestStatusResponse(has_test=False)
+
+
+# Vocabulary Practice Endpoints
+
+class VocabularyPracticeStatusResponse(BaseModel):
+    assignments: List[Dict[str, Any]]
+    completed_count: int
+    required_count: int
+    test_unlocked: bool
+    test_unlock_date: Optional[str] = None
+
+
+class StartVocabularyChallengeResponse(BaseModel):
+    game_attempt_id: str
+    total_questions: int
+    passing_score: int
+    max_possible_score: int
+    current_question: int
+    question: Optional[Dict[str, Any]]
+
+
+class SubmitAnswerRequest(BaseModel):
+    question_id: str
+    student_answer: str
+    attempt_number: int = Field(..., ge=1, le=2)
+    time_spent_seconds: int = Field(..., ge=0)
+
+
+class SubmitAnswerResponse(BaseModel):
+    correct: bool
+    points_earned: int
+    explanation: str
+    correct_answer: Optional[str] = None
+    current_score: int
+    questions_remaining: int
+    is_complete: bool
+    passed: Optional[bool] = None
+    next_question: Optional[Dict[str, Any]] = None
+    can_retry: bool
+
+
+@router.get("/vocabulary/{assignment_id}/practice/status", response_model=VocabularyPracticeStatusResponse)
+async def get_vocabulary_practice_status(
+    assignment_id: UUID,
+    current_user: User = Depends(require_student_or_teacher),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get practice activity status for a vocabulary assignment"""
+    # Verify student has access to this assignment
+    access_check = await validate_assignment_access(
+        assignment_type="vocabulary",
+        assignment_id=assignment_id,
+        current_user=current_user,
+        db=db
+    )
+    
+    # Get classroom assignment ID
+    ca_result = await db.execute(
+        select(ClassroomAssignment.id)
+        .where(
+            and_(
+                ClassroomAssignment.vocabulary_list_id == assignment_id,
+                ClassroomAssignment.classroom_id == UUID(access_check['classroom_id'])
+            )
+        )
+    )
+    classroom_assignment_id = ca_result.scalar_one()
+    
+    # Get practice status
+    practice_service = VocabularyPracticeService(db)
+    status = await practice_service.get_practice_status(
+        student_id=current_user.id,
+        vocabulary_list_id=assignment_id,
+        classroom_assignment_id=classroom_assignment_id
+    )
+    
+    return VocabularyPracticeStatusResponse(**status)
+
+
+@router.post("/vocabulary/{assignment_id}/practice/start-challenge", response_model=StartVocabularyChallengeResponse)
+async def start_vocabulary_challenge(
+    assignment_id: UUID,
+    current_user: User = Depends(require_student_or_teacher),
+    db: AsyncSession = Depends(get_db)
+):
+    """Start a new vocabulary challenge game"""
+    # Verify student has access
+    access_check = await validate_assignment_access(
+        assignment_type="vocabulary",
+        assignment_id=assignment_id,
+        current_user=current_user,
+        db=db
+    )
+    
+    # Get classroom assignment ID
+    ca_result = await db.execute(
+        select(ClassroomAssignment.id)
+        .where(
+            and_(
+                ClassroomAssignment.vocabulary_list_id == assignment_id,
+                ClassroomAssignment.classroom_id == UUID(access_check['classroom_id'])
+            )
+        )
+    )
+    classroom_assignment_id = ca_result.scalar_one()
+    
+    # Start the game
+    practice_service = VocabularyPracticeService(db)
+    game_data = await practice_service.start_vocabulary_challenge(
+        student_id=current_user.id,
+        vocabulary_list_id=assignment_id,
+        classroom_assignment_id=classroom_assignment_id
+    )
+    
+    return StartVocabularyChallengeResponse(**game_data)
+
+
+@router.post("/vocabulary/practice/submit-answer/{game_attempt_id}", response_model=SubmitAnswerResponse)
+async def submit_vocabulary_answer(
+    game_attempt_id: UUID,
+    request: SubmitAnswerRequest,
+    current_user: User = Depends(require_student_or_teacher),
+    db: AsyncSession = Depends(get_db)
+):
+    """Submit an answer for a vocabulary challenge question"""
+    practice_service = VocabularyPracticeService(db)
+    
+    # Submit the answer
+    result = await practice_service.submit_answer(
+        game_attempt_id=game_attempt_id,
+        question_id=UUID(request.question_id),
+        student_answer=request.student_answer,
+        attempt_number=request.attempt_number,
+        time_spent_seconds=request.time_spent_seconds
+    )
+    
+    return SubmitAnswerResponse(**result)
+
+
+@router.get("/vocabulary/practice/next-question/{game_attempt_id}")
+async def get_next_vocabulary_question(
+    game_attempt_id: UUID,
+    current_user: User = Depends(require_student_or_teacher),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get the next question in a vocabulary challenge game"""
+    practice_service = VocabularyPracticeService(db)
+    
+    result = await practice_service.get_next_question(game_attempt_id)
+    return result
