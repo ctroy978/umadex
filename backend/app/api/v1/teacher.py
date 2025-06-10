@@ -35,6 +35,7 @@ from . import teacher_classroom_assignments
 from . import teacher_classroom_detail
 from . import teacher_settings
 from . import teacher_reports
+from . import teacher_vocabulary_settings
 
 router = APIRouter()
 
@@ -52,6 +53,9 @@ router.include_router(teacher_settings.router, tags=["teacher-settings"])
 
 # Include teacher reports routes
 router.include_router(teacher_reports.router, tags=["teacher-reports"])
+
+# Include vocabulary settings routes
+router.include_router(teacher_vocabulary_settings.router, tags=["vocabulary-settings"])
 
 def require_teacher(current_user: User = Depends(get_current_user)) -> User:
     """Require the current user to be a teacher"""
@@ -282,6 +286,7 @@ async def get_classroom_details(
     
     for assignment, ca in reading_assignments_result:
         assignment_list.append(AssignmentInClassroom(
+            id=ca.id,
             assignment_id=assignment.id,
             title=assignment.assignment_title,
             assignment_type=assignment.assignment_type,
@@ -306,6 +311,7 @@ async def get_classroom_details(
     
     for vocab_list, ca in vocab_assignments_result:
         assignment_list.append(AssignmentInClassroom(
+            id=ca.id,
             assignment_id=vocab_list.id,
             title=vocab_list.title,
             assignment_type="UMAVocab",

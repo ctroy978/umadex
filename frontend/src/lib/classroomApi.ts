@@ -12,7 +12,9 @@ import type {
   AvailableAssignmentsResponse,
   AssignmentInClassroom,
   StudentInClassroom,
-  CheckAssignmentRemovalResponse
+  CheckAssignmentRemovalResponse,
+  VocabularySettingsResponse,
+  VocabularySettingsUpdate
 } from '@/types/classroom';
 
 // Teacher APIs
@@ -100,6 +102,33 @@ export const teacherClassroomApi = {
     data: UpdateClassroomAssignmentsRequest
   ): Promise<CheckAssignmentRemovalResponse> {
     const response = await api.post(`/v1/teacher/classrooms/${classroomId}/assignments/check-removal`, data);
+    return response.data;
+  },
+
+  // Vocabulary settings
+  async getVocabularySettings(
+    classroomId: string,
+    assignmentId: number
+  ): Promise<VocabularySettingsResponse> {
+    const response = await api.get(`/v1/teacher/classrooms/${classroomId}/vocabulary/${assignmentId}/settings`);
+    return response.data;
+  },
+
+  async updateVocabularySettings(
+    classroomId: string,
+    assignmentId: number,
+    settings: VocabularySettingsUpdate
+  ): Promise<VocabularySettingsResponse> {
+    const response = await api.put(`/v1/teacher/classrooms/${classroomId}/vocabulary/${assignmentId}/settings`, settings);
+    return response.data;
+  },
+
+  async releaseVocabularyGroup(
+    classroomId: string,
+    assignmentId: number,
+    groupNumber: number
+  ): Promise<any> {
+    const response = await api.post(`/v1/teacher/classrooms/${classroomId}/vocabulary/${assignmentId}/release-group?group_number=${groupNumber}`);
     return response.data;
   }
 };

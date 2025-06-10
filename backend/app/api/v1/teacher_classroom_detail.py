@@ -69,6 +69,7 @@ async def list_all_classroom_assignments(
     
     for assignment, ca in reading_result:
         assignment_list.append(AssignmentInClassroom(
+            id=ca.id,
             assignment_id=assignment.id,
             title=assignment.assignment_title,
             assignment_type=assignment.assignment_type,
@@ -92,6 +93,7 @@ async def list_all_classroom_assignments(
     
     for vocab_list, ca in vocab_result:
         assignment_list.append(AssignmentInClassroom(
+            id=ca.id,
             assignment_id=vocab_list.id,
             title=vocab_list.title,
             assignment_type="UMAVocab",

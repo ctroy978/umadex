@@ -14,7 +14,8 @@ import {
   PlusIcon,
   ShieldExclamationIcon,
   ClockIcon,
-  XMarkIcon
+  XMarkIcon,
+  Cog6ToothIcon
 } from '@heroicons/react/24/outline'
 import type {
   ClassroomDetail,
@@ -22,6 +23,7 @@ import type {
   AssignmentInClassroom
 } from '@/types/classroom'
 import TestScheduleManager from '@/components/teacher/TestScheduleManager'
+import VocabularySettingsModal from '@/components/teacher/VocabularySettingsModal'
 
 export default function ClassroomDetailPage() {
   const params = useParams()
@@ -35,6 +37,15 @@ export default function ClassroomDetailPage() {
   const [securityIncidents, setSecurityIncidents] = useState<any[]>([])
   const [lockedTests, setLockedTests] = useState<any[]>([])
   const [loadingSecurity, setLoadingSecurity] = useState(false)
+  const [vocabSettingsModal, setVocabSettingsModal] = useState<{
+    isOpen: boolean
+    assignmentId: number | null
+    assignmentTitle: string
+  }>({
+    isOpen: false,
+    assignmentId: null,
+    assignmentTitle: ''
+  })
 
   useEffect(() => {
     fetchClassroomDetails()
@@ -307,13 +318,32 @@ export default function ClassroomDetailPage() {
                 {classroom.assignments.map((assignment, index) => (
                   <li key={`${assignment.assignment_id}-${index}`} className="px-6 py-4">
                     <div className="flex items-center justify-between">
-                      <div>
+                      <div className="flex-1">
                         <p className="text-sm font-medium text-gray-900">{assignment.title}</p>
                         <p className="text-sm text-gray-500 capitalize">{assignment.assignment_type}</p>
                         <div className="text-xs text-gray-400 mt-1">
                           <span>Assigned {new Date(assignment.assigned_at).toLocaleDateString()}</span>
+                          {assignment.start_date && (
+                            <span className="ml-2">• Starts {new Date(assignment.start_date).toLocaleDateString()}</span>
+                          )}
+                          {assignment.end_date && (
+                            <span className="ml-2">• Ends {new Date(assignment.end_date).toLocaleDateString()}</span>
+                          )}
                         </div>
                       </div>
+                      {assignment.assignment_type === 'UMAVocab' && (
+                        <button
+                          onClick={() => setVocabSettingsModal({
+                            isOpen: true,
+                            assignmentId: assignment.id,
+                            assignmentTitle: assignment.title
+                          })}
+                          className="ml-4 inline-flex items-center px-3 py-1.5 border border-gray-300 text-xs font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+                        >
+                          <Cog6ToothIcon className="h-4 w-4 mr-1" />
+                          Manage Vocabulary Settings
+                        </button>
+                      )}
                     </div>
                   </li>
                 ))}
@@ -471,6 +501,21 @@ export default function ClassroomDetailPage() {
 
       {activeTab === 'schedule' && (
         <TestScheduleManager classroomId={classroomId} />
+      )}
+
+      {/* Vocabulary Settings Modal */}
+      {vocabSettingsModal.assignmentId && (
+        <VocabularySettingsModal
+          isOpen={vocabSettingsModal.isOpen}
+          onClose={() => setVocabSettingsModal({
+            isOpen: false,
+            assignmentId: null,
+            assignmentTitle: ''
+          })}
+          classroomId={classroomId}
+          assignmentId={vocabSettingsModal.assignmentId}
+          assignmentTitle={vocabSettingsModal.assignmentTitle}
+        />
       )}
 
     </div>

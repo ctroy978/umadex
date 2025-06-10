@@ -58,6 +58,7 @@ class ClassroomAssignment(Base):
     display_order = Column(Integer, nullable=True)
     start_date = Column(DateTime(timezone=True), nullable=True)
     end_date = Column(DateTime(timezone=True), nullable=True)
+    vocab_settings = Column(JSONB, default={}, nullable=False, server_default='{}')
     
     # Relationships
     classroom = relationship("Classroom", back_populates="assignments")

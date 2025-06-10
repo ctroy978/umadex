@@ -11,7 +11,8 @@ import {
   BookOpenIcon,
   ClockIcon,
   CheckCircleIcon,
-  ArchiveBoxIcon
+  ArchiveBoxIcon,
+  ArrowUturnLeftIcon
 } from '@heroicons/react/24/outline'
 import type { VocabularyListSummary, VocabularyStatus } from '@/types/vocabulary'
 
@@ -61,6 +62,19 @@ export default function UmaVocabPage() {
     e.preventDefault()
     setCurrentPage(1)
     loadVocabularyLists()
+  }
+
+  const handleUnarchive = async (listId: string) => {
+    try {
+      await vocabularyApi.updateList(listId, { 
+        status: 'published' as VocabularyStatus 
+      })
+      // Refresh the list to show the updated status
+      loadVocabularyLists()
+    } catch (error) {
+      console.error('Failed to unarchive vocabulary list:', error)
+      alert('Failed to unarchive vocabulary list. Please try again.')
+    }
   }
 
   const getStatusBadge = (status: VocabularyStatus) => {
@@ -246,6 +260,14 @@ export default function UmaVocabPage() {
                         >
                           View
                         </Link>
+                      ) : list.status === 'archived' ? (
+                        <button
+                          onClick={() => handleUnarchive(list.id)}
+                          className="inline-flex items-center text-green-600 hover:text-green-900"
+                        >
+                          <ArrowUturnLeftIcon className="h-4 w-4 mr-1" />
+                          Unarchive
+                        </button>
                       ) : list.status === 'draft' || list.status === 'processing' ? (
                         <span className="text-gray-400">Processing...</span>
                       ) : null}

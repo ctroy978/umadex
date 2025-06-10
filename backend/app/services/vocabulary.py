@@ -87,15 +87,15 @@ class VocabularyService:
     async def get_vocabulary_list(
         db: AsyncSession,
         list_id: UUID,
-        include_words: bool = True
+        include_words: bool = True,
+        include_archived: bool = False
     ) -> Optional[VocabularyList]:
         """Get a vocabulary list by ID"""
-        query = select(VocabularyList).where(
-            and_(
-                VocabularyList.id == list_id,
-                VocabularyList.deleted_at.is_(None)
-            )
-        )
+        query = select(VocabularyList).where(VocabularyList.id == list_id)
+        
+        # Only filter deleted_at if not including archived
+        if not include_archived:
+            query = query.where(VocabularyList.deleted_at.is_(None))
         
         if include_words:
             query = query.options(
@@ -154,12 +154,18 @@ class VocabularyService:
         update_data: VocabularyListUpdate
     ) -> Optional[VocabularyList]:
         """Update vocabulary list metadata"""
-        vocabulary_list = await VocabularyService.get_vocabulary_list(db, list_id, include_words=False)
+        vocabulary_list = await VocabularyService.get_vocabulary_list(db, list_id, include_words=False, include_archived=True)
         if not vocabulary_list:
             return None
         
         for field, value in update_data.model_dump(exclude_unset=True).items():
             setattr(vocabulary_list, field, value)
+            
+        # If status is being changed from archived to something else, clear deleted_at
+        if ('status' in update_data.model_dump(exclude_unset=True) and 
+            vocabulary_list.status != VocabularyStatus.ARCHIVED and 
+            vocabulary_list.deleted_at is not None):
+            vocabulary_list.deleted_at = None
         
         await db.commit()
         await db.refresh(vocabulary_list)

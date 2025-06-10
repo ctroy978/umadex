@@ -147,7 +147,7 @@ async def update_vocabulary_list(
     db: AsyncSession = Depends(get_db)
 ):
     """Update vocabulary list metadata"""
-    vocabulary_list = await VocabularyService.get_vocabulary_list(db, list_id, include_words=False)
+    vocabulary_list = await VocabularyService.get_vocabulary_list(db, list_id, include_words=False, include_archived=True)
     
     if not vocabulary_list:
         raise HTTPException(
@@ -162,7 +162,24 @@ async def update_vocabulary_list(
         )
     
     updated_list = await VocabularyService.update_vocabulary_list(db, list_id, update_data)
-    return VocabularyListResponse.model_validate(updated_list)
+    
+    # Create response manually to avoid relationship access issues
+    response_data = {
+        'id': updated_list.id,
+        'teacher_id': updated_list.teacher_id,
+        'title': updated_list.title,
+        'context_description': updated_list.context_description,
+        'grade_level': updated_list.grade_level,
+        'subject_area': updated_list.subject_area,
+        'status': updated_list.status,
+        'created_at': updated_list.created_at,
+        'updated_at': updated_list.updated_at,
+        'deleted_at': updated_list.deleted_at,
+        'words': None,
+        'word_count': None
+    }
+    
+    return VocabularyListResponse.model_validate(response_data)
 
 
 @router.delete("/vocabulary/{list_id}", status_code=status.HTTP_204_NO_CONTENT)

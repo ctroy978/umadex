@@ -23,6 +23,7 @@ export interface StudentInClassroom {
 }
 
 export interface AssignmentInClassroom {
+  id: number;  // classroom_assignment.id
   assignment_id: string;
   title: string;
   assignment_type: string;
@@ -105,4 +106,33 @@ export interface AssignmentWithStudents {
 export interface CheckAssignmentRemovalResponse {
   assignments_with_students: AssignmentWithStudents[];
   total_students_affected: number;
+}
+
+// Vocabulary settings types
+export type VocabularyDeliveryMode = "all_at_once" | "in_groups" | "teacher_controlled"
+export type VocabularyReleaseCondition = "immediate" | "after_test"
+
+export interface VocabularySettings {
+  delivery_mode: VocabularyDeliveryMode
+  group_size?: number
+  release_condition?: VocabularyReleaseCondition
+  allow_test_retakes: boolean
+  max_test_attempts: number
+  released_groups: number[]
+}
+
+export interface VocabularySettingsUpdate {
+  delivery_mode?: VocabularyDeliveryMode
+  group_size?: number
+  release_condition?: VocabularyReleaseCondition
+  allow_test_retakes?: boolean
+  max_test_attempts?: number
+}
+
+export interface VocabularySettingsResponse {
+  assignment_id: number
+  vocabulary_list_id: string
+  settings: VocabularySettings
+  total_words: number
+  groups_count?: number
 }
