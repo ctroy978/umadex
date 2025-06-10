@@ -96,6 +96,8 @@ class VocabularyWordResponse(BaseModel):
     definition_source: DefinitionSource
     examples_source: DefinitionSource
     position: int
+    audio_url: Optional[str]
+    phonetic_text: Optional[str]
     created_at: datetime
     updated_at: datetime
     review: Optional[VocabularyWordReviewResponse]

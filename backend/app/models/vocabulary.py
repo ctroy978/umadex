@@ -63,6 +63,8 @@ class VocabularyWord(Base):
     definition_source = Column(SQLEnum(DefinitionSource, name='definitionsource', values_callable=lambda x: [e.value for e in x]), nullable=False, default=DefinitionSource.PENDING)
     examples_source = Column(SQLEnum(DefinitionSource, name='definitionsource', values_callable=lambda x: [e.value for e in x]), nullable=False, default=DefinitionSource.PENDING)
     position = Column(Integer, nullable=False)
+    audio_url = Column(String(500), nullable=True)  # Store pronunciation audio URL
+    phonetic_text = Column(String(200), nullable=True)  # Store phonetic spelling
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     

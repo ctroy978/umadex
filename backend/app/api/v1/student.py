@@ -301,6 +301,128 @@ async def leave_classroom(
     return {"message": "Successfully left the classroom"}
 
 
+@router.get("/vocabulary/{assignment_id}")
+async def get_vocabulary_assignment(
+    assignment_id: UUID,
+    current_user: User = Depends(require_student_or_teacher),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get vocabulary assignment details with words filtered by classroom settings"""
+    # Get the vocabulary list and verify student access
+    vocab_result = await db.execute(
+        select(VocabularyList, ClassroomAssignment, Classroom, User)
+        .join(ClassroomAssignment, ClassroomAssignment.vocabulary_list_id == VocabularyList.id)
+        .join(Classroom, Classroom.id == ClassroomAssignment.classroom_id)
+        .join(User, User.id == Classroom.teacher_id)  # Join teacher
+        .join(ClassroomStudent, 
+              and_(
+                  ClassroomStudent.classroom_id == Classroom.id,
+                  ClassroomStudent.student_id == current_user.id,
+                  ClassroomStudent.removed_at.is_(None)
+              ))
+        .where(
+            and_(
+                VocabularyList.id == assignment_id,
+                VocabularyList.deleted_at.is_(None),
+                VocabularyList.status == "published"
+            )
+        )
+    )
+    
+    result = vocab_result.one_or_none()
+    if not result:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Vocabulary assignment not found or you don't have access"
+        )
+    
+    vocab_list, classroom_assignment, classroom, teacher = result
+    
+    # Check if assignment is active
+    status = calculate_assignment_status(classroom_assignment.start_date, classroom_assignment.end_date)
+    if status != "active":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This assignment is not currently active"
+        )
+    
+    # Get all words for this vocabulary list
+    from sqlalchemy.orm import selectinload
+    words_result = await db.execute(
+        select(VocabularyList)
+        .where(VocabularyList.id == assignment_id)
+        .options(selectinload(VocabularyList.words))
+    )
+    vocab_with_words = words_result.scalar_one()
+    
+    # Apply vocabulary settings to filter available words
+    vocab_settings = classroom_assignment.vocab_settings or {}
+    delivery_mode = vocab_settings.get('delivery_mode', 'all_at_once')
+    group_size = vocab_settings.get('group_size', 5)
+    released_groups = vocab_settings.get('released_groups', [])
+    
+    # Sort words by position
+    all_words = sorted(vocab_with_words.words, key=lambda w: w.position)
+    
+    # Filter words based on settings
+    available_words = []
+    
+    if delivery_mode == 'all_at_once':
+        available_words = all_words
+    elif delivery_mode == 'in_groups':
+        # Show words from all groups (for now - this is Phase 1)
+        # In Phase 2, we would track which groups are unlocked
+        available_words = all_words
+    elif delivery_mode == 'teacher_controlled':
+        # Only show words from released groups
+        if released_groups:
+            for group_num in released_groups:
+                start_idx = (group_num - 1) * group_size
+                end_idx = start_idx + group_size
+                available_words.extend(all_words[start_idx:end_idx])
+        # If no groups released, show no words
+    
+    # Format words for response
+    formatted_words = []
+    for word in available_words:
+        # Use teacher definition/examples first, fall back to AI
+        definition = word.teacher_definition or word.ai_definition
+        example_1 = word.teacher_example_1 or word.ai_example_1
+        example_2 = word.teacher_example_2 or word.ai_example_2
+        
+        formatted_words.append({
+            "id": str(word.id),
+            "word": word.word,
+            "definition": definition,
+            "example_1": example_1,
+            "example_2": example_2,
+            "audio_url": word.audio_url,
+            "phonetic_text": word.phonetic_text,
+            "position": word.position
+        })
+    
+    return {
+        "id": str(vocab_list.id),
+        "title": vocab_list.title,
+        "context_description": vocab_list.context_description,
+        "grade_level": vocab_list.grade_level,
+        "subject_area": vocab_list.subject_area,
+        "classroom_name": classroom.name,
+        "teacher_name": f"{teacher.first_name} {teacher.last_name}",
+        "start_date": classroom_assignment.start_date,
+        "end_date": classroom_assignment.end_date,
+        "total_words": len(all_words),
+        "available_words": len(available_words),
+        "words": formatted_words,
+        "settings": {
+            "delivery_mode": delivery_mode,
+            "group_size": group_size,
+            "groups_count": (len(all_words) + group_size - 1) // group_size if group_size > 0 else 1,
+            "released_groups": released_groups
+        }
+    }
+
+
 @router.get("/classrooms/{classroom_id}", response_model=StudentClassroomDetailResponse)
 async def get_classroom_detail(
     classroom_id: UUID,

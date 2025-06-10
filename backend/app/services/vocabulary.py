@@ -18,6 +18,7 @@ from app.schemas.vocabulary import (
     VocabularyWordManualUpdate, VocabularyAIRequest, VocabularyAIResponse
 )
 from app.config.ai_models import VOCABULARY_DEFINITION_MODEL
+from app.services.pronunciation import PronunciationService
 
 
 class VocabularyDefinitionResult(BaseModel):
@@ -82,6 +83,15 @@ class VocabularyService:
         )
         
         return vocabulary_list
+    
+    @staticmethod
+    async def fetch_pronunciation_data(
+        db: AsyncSession,
+        list_id: UUID
+    ) -> int:
+        """Fetch pronunciation data for all words in a vocabulary list"""
+        from app.services.pronunciation import PronunciationService
+        return await PronunciationService.batch_update_pronunciations(db, str(list_id))
     
     @staticmethod
     async def get_vocabulary_list(
@@ -410,6 +420,14 @@ class VocabularyService:
         
         if unreviewed_count > 0:
             raise ValueError(f"{unreviewed_count} words still need review")
+        
+        # Fetch pronunciation data for all words before publishing
+        try:
+            pronunciation_count = await PronunciationService.batch_update_pronunciations(db, list_id)
+            print(f"Updated pronunciation for {pronunciation_count} words in vocabulary list {list_id}")
+        except Exception as e:
+            print(f"Warning: Could not fetch pronunciation data: {e}")
+            # Continue with publishing even if pronunciation fails
         
         vocabulary_list.status = VocabularyStatus.PUBLISHED
         await db.commit()

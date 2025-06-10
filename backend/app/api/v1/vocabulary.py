@@ -229,9 +229,41 @@ async def generate_ai_definitions(
     
     updated_list = await VocabularyService.generate_ai_definitions(db, list_id)
     
+    # Also fetch pronunciation data for words
+    await VocabularyService.fetch_pronunciation_data(db, list_id)
+    
     # Reload the list with all relationships
     refreshed_list = await VocabularyService.get_vocabulary_list(db, list_id, include_words=True)
     return VocabularyListResponse.model_validate(refreshed_list)
+
+
+@router.post("/vocabulary/{list_id}/fetch-pronunciation")
+async def fetch_pronunciation_data(
+    list_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Fetch pronunciation data for all words in a vocabulary list"""
+    vocabulary_list = await VocabularyService.get_vocabulary_list(db, list_id, include_words=False)
+    
+    if not vocabulary_list:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Vocabulary list not found"
+        )
+    
+    if vocabulary_list.teacher_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have permission to update this list"
+        )
+    
+    updated_count = await VocabularyService.fetch_pronunciation_data(db, list_id)
+    
+    return {
+        "message": f"Pronunciation data fetched for {updated_count} words",
+        "updated_count": updated_count
+    }
 
 
 @router.post("/vocabulary/words/{word_id}/review", response_model=VocabularyWordReviewResponse)

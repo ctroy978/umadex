@@ -108,5 +108,11 @@ export const studentApi = {
   async getAssignmentTestStatus(assignmentId: string): Promise<{ has_test: boolean; test_id?: string }> {
     const response = await api.get(`/v1/student/assignment/reading/${assignmentId}/test-status`)
     return response.data
+  },
+
+  // Get vocabulary assignment details
+  async getVocabularyAssignment(assignmentId: string): Promise<any> {
+    const response = await api.get(`/v1/student/vocabulary/${assignmentId}`)
+    return response.data
   }
 }
