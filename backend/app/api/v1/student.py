@@ -614,14 +614,13 @@ async def get_classroom_detail(
     )
 
 
-@router.get("/assignment/{assignment_type}/{assignment_id}/validate")
-async def validate_assignment_access(
+async def _validate_assignment_access_helper(
     assignment_type: str,
     assignment_id: UUID,
-    current_user: User = Depends(require_student_or_teacher),
-    db: AsyncSession = Depends(get_db)
+    current_user: User,
+    db: AsyncSession
 ):
-    """Validate if a student can access a specific assignment"""
+    """Helper function to validate if a student can access a specific assignment"""
     # Check assignment type
     if assignment_type not in ["reading", "vocabulary"]:
         raise HTTPException(
@@ -731,6 +730,17 @@ async def validate_assignment_access(
         "assignment_type": assignment_type,
         "assignment_id": str(assignment_id)
     }
+
+
+@router.get("/assignment/{assignment_type}/{assignment_id}/validate")
+async def validate_assignment_access(
+    assignment_type: str,
+    assignment_id: UUID,
+    current_user: User = Depends(require_student_or_teacher),
+    db: AsyncSession = Depends(get_db)
+):
+    """Validate if a student can access a specific assignment"""
+    return await _validate_assignment_access_helper(assignment_type, assignment_id, current_user, db)
 
 
 class TestStatusResponse(BaseModel):
@@ -849,7 +859,7 @@ async def get_vocabulary_practice_status(
 ):
     """Get practice activity status for a vocabulary assignment"""
     # Verify student has access to this assignment
-    access_check = await validate_assignment_access(
+    access_check = await _validate_assignment_access_helper(
         assignment_type="vocabulary",
         assignment_id=assignment_id,
         current_user=current_user,
@@ -887,7 +897,7 @@ async def start_vocabulary_challenge(
 ):
     """Start a new vocabulary challenge game"""
     # Verify student has access
-    access_check = await validate_assignment_access(
+    access_check = await _validate_assignment_access_helper(
         assignment_type="vocabulary",
         assignment_id=assignment_id,
         current_user=current_user,
@@ -950,3 +960,371 @@ async def get_next_vocabulary_question(
     
     result = await practice_service.get_next_question(game_attempt_id)
     return result
+
+
+# Story Builder Endpoints
+
+class StartStoryBuilderResponse(BaseModel):
+    story_attempt_id: str
+    total_prompts: int
+    passing_score: int
+    max_possible_score: int
+    current_prompt: int
+    prompt: Optional[Dict[str, Any]]
+
+
+class SubmitStoryRequest(BaseModel):
+    prompt_id: str
+    story_text: str
+    attempt_number: int = Field(..., ge=1, le=2)
+
+
+class SubmitStoryResponse(BaseModel):
+    evaluation: Dict[str, Any]
+    current_score: int
+    prompts_remaining: int
+    is_complete: bool
+    passed: Optional[bool] = None
+    next_prompt: Optional[Dict[str, Any]] = None
+    can_revise: bool
+
+
+# Concept Mapping Models
+
+class StartConceptMappingResponse(BaseModel):
+    concept_attempt_id: str
+    total_words: int
+    passing_score: float
+    max_possible_score: float
+    current_word_index: int
+    word: Optional[Dict[str, Any]]
+    grade_level: str
+
+
+class SubmitConceptMapRequest(BaseModel):
+    word_id: str
+    definition: str = Field(..., min_length=10, max_length=500)
+    synonyms: str = Field(..., min_length=3, max_length=200)
+    antonyms: str = Field(..., min_length=3, max_length=200)
+    context_theme: str = Field(..., min_length=10, max_length=300)
+    connotation: str = Field(..., min_length=3, max_length=100)
+    example_sentence: str = Field(..., min_length=15, max_length=300)
+    time_spent_seconds: int = Field(..., ge=0)
+
+
+class SubmitConceptMapResponse(BaseModel):
+    valid: bool
+    errors: Optional[Dict[str, str]] = None
+    evaluation: Optional[Dict[str, Any]] = None
+    current_score: Optional[float] = None
+    average_score: Optional[float] = None
+    words_remaining: Optional[int] = None
+    is_complete: Optional[bool] = None
+    passed: Optional[bool] = None
+    next_word: Optional[Dict[str, Any]] = None
+    progress_percentage: Optional[float] = None
+
+
+class ConceptMapProgressResponse(BaseModel):
+    concept_attempt_id: str
+    status: str
+    total_words: int
+    words_completed: int
+    current_word_index: int
+    current_score: float
+    average_score: float
+    passing_score: float
+    max_possible_score: float
+    progress_percentage: float
+    current_word: Optional[Dict[str, Any]]
+    completed_words: List[Dict[str, Any]]
+
+
+class FinishEarlyResponse(BaseModel):
+    success: bool
+    message: Optional[str] = None
+    status: Optional[str] = None
+    final_score: Optional[float] = None
+    average_score: Optional[float] = None
+    words_completed: Optional[int] = None
+    total_words: Optional[int] = None
+    passed: Optional[bool] = None
+
+
+@router.post("/vocabulary/{assignment_id}/practice/start-story-builder", response_model=StartStoryBuilderResponse)
+async def start_story_builder(
+    assignment_id: UUID,
+    current_user: User = Depends(require_student_or_teacher),
+    db: AsyncSession = Depends(get_db)
+):
+    """Start a new story builder challenge"""
+    # Verify student has access
+    access_check = await _validate_assignment_access_helper(
+        assignment_type="vocabulary",
+        assignment_id=assignment_id,
+        current_user=current_user,
+        db=db
+    )
+    
+    # Get classroom assignment ID
+    ca_result = await db.execute(
+        select(ClassroomAssignment.id)
+        .where(
+            and_(
+                ClassroomAssignment.vocabulary_list_id == assignment_id,
+                ClassroomAssignment.classroom_id == UUID(access_check['classroom_id'])
+            )
+        )
+    )
+    classroom_assignment_id = ca_result.scalar_one()
+    
+    # Start the challenge
+    practice_service = VocabularyPracticeService(db)
+    story_data = await practice_service.start_story_builder(
+        student_id=current_user.id,
+        vocabulary_list_id=assignment_id,
+        classroom_assignment_id=classroom_assignment_id
+    )
+    
+    return StartStoryBuilderResponse(**story_data)
+
+
+@router.post("/vocabulary/practice/submit-story/{story_attempt_id}", response_model=SubmitStoryResponse)
+async def submit_story(
+    story_attempt_id: UUID,
+    request: SubmitStoryRequest,
+    current_user: User = Depends(require_student_or_teacher),
+    db: AsyncSession = Depends(get_db)
+):
+    """Submit a story for evaluation"""
+    practice_service = VocabularyPracticeService(db)
+    
+    # Submit the story
+    result = await practice_service.submit_story(
+        story_attempt_id=story_attempt_id,
+        prompt_id=UUID(request.prompt_id),
+        story_text=request.story_text,
+        attempt_number=request.attempt_number
+    )
+    
+    return SubmitStoryResponse(**result)
+
+
+@router.get("/vocabulary/practice/next-story-prompt/{story_attempt_id}")
+async def get_next_story_prompt(
+    story_attempt_id: UUID,
+    current_user: User = Depends(require_student_or_teacher),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get the next story prompt in the challenge"""
+    practice_service = VocabularyPracticeService(db)
+    
+    result = await practice_service.get_next_story_prompt(story_attempt_id)
+    return result
+
+
+# Concept Mapping Endpoints
+
+@router.post("/vocabulary/{assignment_id}/practice/start-concept-mapping", response_model=StartConceptMappingResponse)
+async def start_concept_mapping(
+    assignment_id: UUID,
+    current_user: User = Depends(require_student_or_teacher),
+    db: AsyncSession = Depends(get_db)
+):
+    """Start a new concept mapping activity"""
+    # Verify student has access
+    access_check = await _validate_assignment_access_helper(
+        assignment_type="vocabulary",
+        assignment_id=assignment_id,
+        current_user=current_user,
+        db=db
+    )
+    
+    # Get classroom assignment ID
+    ca_result = await db.execute(
+        select(ClassroomAssignment.id)
+        .where(
+            and_(
+                ClassroomAssignment.classroom_id == access_check['classroom_id'],
+                ClassroomAssignment.vocabulary_list_id == assignment_id,
+                ClassroomAssignment.assignment_type == "vocabulary"
+            )
+        )
+    )
+    classroom_assignment_id = ca_result.scalar()
+    
+    practice_service = VocabularyPracticeService(db)
+    concept_data = await practice_service.start_concept_mapping(
+        student_id=current_user.id,
+        vocabulary_list_id=assignment_id,
+        classroom_assignment_id=classroom_assignment_id
+    )
+    
+    return StartConceptMappingResponse(**concept_data)
+
+
+@router.post("/vocabulary/practice/submit-concept-map/{concept_attempt_id}", response_model=SubmitConceptMapResponse)
+async def submit_concept_map(
+    concept_attempt_id: UUID,
+    request: SubmitConceptMapRequest,
+    current_user: User = Depends(require_student_or_teacher),
+    db: AsyncSession = Depends(get_db)
+):
+    """Submit a concept map for evaluation"""
+    practice_service = VocabularyPracticeService(db)
+    
+    result = await practice_service.submit_concept_map(
+        concept_attempt_id=concept_attempt_id,
+        word_id=UUID(request.word_id),
+        definition=request.definition,
+        synonyms=request.synonyms,
+        antonyms=request.antonyms,
+        context_theme=request.context_theme,
+        connotation=request.connotation,
+        example_sentence=request.example_sentence,
+        time_spent_seconds=request.time_spent_seconds
+    )
+    
+    return SubmitConceptMapResponse(**result)
+
+
+@router.get("/vocabulary/practice/concept-map-progress/{concept_attempt_id}", response_model=ConceptMapProgressResponse)
+async def get_concept_map_progress(
+    concept_attempt_id: UUID,
+    current_user: User = Depends(require_student_or_teacher),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get current progress in concept mapping"""
+    practice_service = VocabularyPracticeService(db)
+    
+    result = await practice_service.get_concept_map_progress(concept_attempt_id)
+    return ConceptMapProgressResponse(**result)
+
+
+@router.post("/vocabulary/practice/finish-concept-mapping-early/{concept_attempt_id}", response_model=FinishEarlyResponse)
+async def finish_concept_mapping_early(
+    concept_attempt_id: UUID,
+    current_user: User = Depends(require_student_or_teacher),
+    db: AsyncSession = Depends(get_db)
+):
+    """Finish concept mapping early with partial completion"""
+    practice_service = VocabularyPracticeService(db)
+    
+    result = await practice_service.finish_concept_mapping_early(concept_attempt_id)
+    return FinishEarlyResponse(**result)
+
+
+# Puzzle Path Models
+
+class StartPuzzlePathResponse(BaseModel):
+    puzzle_attempt_id: str
+    total_puzzles: int
+    passing_score: int
+    max_possible_score: int
+    current_puzzle_index: int
+    puzzle: Optional[Dict[str, Any]]
+
+
+class SubmitPuzzleAnswerRequest(BaseModel):
+    puzzle_id: str
+    student_answer: str = Field(..., min_length=1, max_length=200)
+    time_spent_seconds: int = Field(..., ge=0)
+
+
+class SubmitPuzzleAnswerResponse(BaseModel):
+    valid: bool
+    errors: Optional[Dict[str, str]] = None
+    evaluation: Optional[Dict[str, Any]] = None
+    current_score: Optional[int] = None
+    puzzles_remaining: Optional[int] = None
+    is_complete: Optional[bool] = None
+    passed: Optional[bool] = None
+    next_puzzle: Optional[Dict[str, Any]] = None
+    progress_percentage: Optional[float] = None
+
+
+class PuzzlePathProgressResponse(BaseModel):
+    puzzle_attempt_id: str
+    status: str
+    total_puzzles: int
+    puzzles_completed: int
+    current_puzzle_index: int
+    current_score: int
+    passing_score: int
+    max_possible_score: int
+    progress_percentage: float
+    current_puzzle: Optional[Dict[str, Any]]
+    completed_puzzles: List[Dict[str, Any]]
+
+
+# Puzzle Path Endpoints
+
+@router.post("/vocabulary/{assignment_id}/practice/start-puzzle-path", response_model=StartPuzzlePathResponse)
+async def start_puzzle_path(
+    assignment_id: UUID,
+    current_user: User = Depends(require_student_or_teacher),
+    db: AsyncSession = Depends(get_db)
+):
+    """Start a new puzzle path activity"""
+    # Verify student has access
+    access_check = await _validate_assignment_access_helper(
+        assignment_type="vocabulary",
+        assignment_id=assignment_id,
+        current_user=current_user,
+        db=db
+    )
+    
+    # Get classroom assignment ID
+    ca_result = await db.execute(
+        select(ClassroomAssignment.id)
+        .where(
+            and_(
+                ClassroomAssignment.classroom_id == access_check['classroom_id'],
+                ClassroomAssignment.vocabulary_list_id == assignment_id,
+                ClassroomAssignment.assignment_type == "vocabulary"
+            )
+        )
+    )
+    classroom_assignment_id = ca_result.scalar()
+    
+    practice_service = VocabularyPracticeService(db)
+    puzzle_data = await practice_service.start_puzzle_path(
+        student_id=current_user.id,
+        vocabulary_list_id=assignment_id,
+        classroom_assignment_id=classroom_assignment_id
+    )
+    
+    return StartPuzzlePathResponse(**puzzle_data)
+
+
+@router.post("/vocabulary/practice/submit-puzzle-answer/{puzzle_attempt_id}", response_model=SubmitPuzzleAnswerResponse)
+async def submit_puzzle_answer(
+    puzzle_attempt_id: UUID,
+    request: SubmitPuzzleAnswerRequest,
+    current_user: User = Depends(require_student_or_teacher),
+    db: AsyncSession = Depends(get_db)
+):
+    """Submit a puzzle answer for evaluation"""
+    practice_service = VocabularyPracticeService(db)
+    
+    result = await practice_service.submit_puzzle_answer(
+        puzzle_attempt_id=puzzle_attempt_id,
+        puzzle_id=UUID(request.puzzle_id),
+        student_answer=request.student_answer,
+        time_spent_seconds=request.time_spent_seconds
+    )
+    
+    return SubmitPuzzleAnswerResponse(**result)
+
+
+@router.get("/vocabulary/practice/puzzle-path-progress/{puzzle_attempt_id}", response_model=PuzzlePathProgressResponse)
+async def get_puzzle_path_progress(
+    puzzle_attempt_id: UUID,
+    current_user: User = Depends(require_student_or_teacher),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get current progress in puzzle path"""
+    practice_service = VocabularyPracticeService(db)
+    
+    result = await practice_service.get_puzzle_path_progress(puzzle_attempt_id)
+    return PuzzlePathProgressResponse(**result)

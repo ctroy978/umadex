@@ -71,6 +71,26 @@ class VocabularyWord(Base):
     # Relationships
     vocabulary_list = relationship("VocabularyList", back_populates="words")
     review = relationship("VocabularyWordReview", back_populates="word", uselist=False, cascade="all, delete-orphan")
+    
+    @property
+    def definition(self) -> str:
+        """Get the appropriate definition based on source preference"""
+        if self.definition_source == DefinitionSource.TEACHER and self.teacher_definition:
+            return self.teacher_definition
+        elif self.definition_source == DefinitionSource.AI and self.ai_definition:
+            return self.ai_definition
+        elif self.teacher_definition:
+            return self.teacher_definition
+        elif self.ai_definition:
+            return self.ai_definition
+        else:
+            return f"Definition for '{self.word}'"
+    
+    @property
+    def part_of_speech(self) -> str:
+        """Get part of speech - for now return a default since it's not stored in DB"""
+        # TODO: Add part_of_speech column to database in future migration
+        return "word"
 
 
 class VocabularyWordReview(Base):

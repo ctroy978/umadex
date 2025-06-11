@@ -65,12 +65,12 @@ export default function VocabularyPracticePage() {
     switch (type) {
       case 'vocabulary_challenge':
         return '🎯'
-      case 'definition_match':
-        return '🔗'
-      case 'context_clues':
-        return '📖'
-      case 'word_builder':
-        return '🔤'
+      case 'story_builder':
+        return '📝'
+      case 'concept_mapping':
+        return '🗺️'
+      case 'puzzle_path':
+        return '🧩'
       default:
         return '📝'
     }
@@ -117,8 +117,13 @@ export default function VocabularyPracticePage() {
     
     if (assignment.type === 'vocabulary_challenge' && assignment.can_start) {
       router.push(`/student/vocabulary/${vocabularyId}/practice/challenge`)
+    } else if (assignment.type === 'story_builder' && assignment.can_start) {
+      router.push(`/student/vocabulary/${vocabularyId}/practice/story-builder`)
+    } else if (assignment.type === 'concept_mapping' && assignment.can_start) {
+      router.push(`/student/vocabulary/${vocabularyId}/practice/concept-mapping`)
+    } else if (assignment.type === 'puzzle_path' && assignment.can_start) {
+      router.push(`/student/vocabulary/${vocabularyId}/practice/puzzle-path`)
     }
-    // Other assignment types will be added in Phase 2B
   }
 
   if (loading) {
@@ -254,12 +259,12 @@ export default function VocabularyPracticePage() {
                 <p className="text-gray-600 mb-4">
                   {assignment.type === 'vocabulary_challenge' && 
                     'Test your vocabulary knowledge through riddles, poems, and word puzzles.'}
-                  {assignment.type === 'definition_match' && 
-                    'Match vocabulary words with their correct definitions.'}
-                  {assignment.type === 'context_clues' && 
-                    'Use context clues to identify the correct vocabulary words.'}
-                  {assignment.type === 'word_builder' && 
-                    'Build and spell vocabulary words correctly.'}
+                  {assignment.type === 'story_builder' && 
+                    'Write creative stories using your vocabulary words in different settings and tones.'}
+                  {assignment.type === 'concept_mapping' && 
+                    'Create comprehensive concept maps showing deep understanding of vocabulary words.'}
+                  {assignment.type === 'puzzle_path' && 
+                    'Navigate through word puzzles including scrambled words, crossword clues, and more.'}
                 </p>
 
                 <button

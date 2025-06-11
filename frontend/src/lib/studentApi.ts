@@ -140,5 +140,75 @@ export const studentApi = {
   async getNextVocabularyQuestion(gameAttemptId: string): Promise<any> {
     const response = await api.get(`/v1/student/vocabulary/practice/next-question/${gameAttemptId}`)
     return response.data
+  },
+
+  // Story Builder Activities
+  async startStoryBuilder(assignmentId: string): Promise<any> {
+    const response = await api.post(`/v1/student/vocabulary/${assignmentId}/practice/start-story-builder`)
+    return response.data
+  },
+
+  async submitStory(storyAttemptId: string, data: {
+    prompt_id: string
+    story_text: string
+    attempt_number: number
+  }): Promise<any> {
+    const response = await api.post(`/v1/student/vocabulary/practice/submit-story/${storyAttemptId}`, data)
+    return response.data
+  },
+
+  async getNextStoryPrompt(storyAttemptId: string): Promise<any> {
+    const response = await api.get(`/v1/student/vocabulary/practice/next-story-prompt/${storyAttemptId}`)
+    return response.data
+  },
+
+  // Concept Mapping API methods
+  async startConceptMapping(assignmentId: string): Promise<any> {
+    const response = await api.post(`/v1/student/vocabulary/${assignmentId}/practice/start-concept-mapping`)
+    return response.data
+  },
+
+  async submitConceptMap(conceptAttemptId: string, data: {
+    word_id: string
+    definition: string
+    synonyms: string
+    antonyms: string
+    context_theme: string
+    connotation: string
+    example_sentence: string
+    time_spent_seconds: number
+  }): Promise<any> {
+    const response = await api.post(`/v1/student/vocabulary/practice/submit-concept-map/${conceptAttemptId}`, data)
+    return response.data
+  },
+
+  async getConceptMapProgress(conceptAttemptId: string): Promise<any> {
+    const response = await api.get(`/v1/student/vocabulary/practice/concept-map-progress/${conceptAttemptId}`)
+    return response.data
+  },
+
+  async finishConceptMappingEarly(conceptAttemptId: string): Promise<any> {
+    const response = await api.post(`/v1/student/vocabulary/practice/finish-concept-mapping-early/${conceptAttemptId}`)
+    return response.data
+  },
+
+  // Puzzle Path APIs
+  async startPuzzlePath(assignmentId: string): Promise<any> {
+    const response = await api.post(`/v1/student/vocabulary/${assignmentId}/practice/start-puzzle-path`)
+    return response.data
+  },
+
+  async submitPuzzleAnswer(puzzleAttemptId: string, data: {
+    puzzle_id: string
+    student_answer: string
+    time_spent_seconds: number
+  }): Promise<any> {
+    const response = await api.post(`/v1/student/vocabulary/practice/submit-puzzle-answer/${puzzleAttemptId}`, data)
+    return response.data
+  },
+
+  async getPuzzlePathProgress(puzzleAttemptId: string): Promise<any> {
+    const response = await api.get(`/v1/student/vocabulary/practice/puzzle-path-progress/${puzzleAttemptId}`)
+    return response.data
   }
 }
