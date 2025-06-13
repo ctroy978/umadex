@@ -112,13 +112,13 @@ async def list_users(
         query = query.where(and_(*filters))
     
     # Get total count
-    total_count = db.scalar(select(func.count()).select_from(query.subquery()))
+    total_count = await db.scalar(select(func.count()).select_from(query.subquery()))
     
     # Apply pagination
     query = query.order_by(User.created_at.desc())
     query = query.offset((page - 1) * per_page).limit(per_page)
     
-    users = db.scalars(query).all()
+    users = (await db.scalars(query)).all()
     
     # Get additional stats for each user
     user_responses = []
@@ -126,7 +126,7 @@ async def list_users(
         # Get classroom count for teachers
         classroom_count = 0
         if user.role == "teacher":
-            classroom_count = db.scalar(
+            classroom_count = await db.scalar(
                 select(func.count(Classroom.id))
                 .where(Classroom.teacher_id == user.id)
             )
@@ -134,7 +134,7 @@ async def list_users(
         # Get enrolled classrooms for students
         enrolled_classrooms = 0
         if user.role == "student":
-            enrolled_classrooms = db.scalar(
+            enrolled_classrooms = await db.scalar(
                 select(func.count(ClassroomStudent.classroom_id))
                 .where(ClassroomStudent.student_id == user.id)
             )
@@ -169,7 +169,7 @@ async def analyze_user_deletion_impact(
     db: AsyncSession = Depends(get_db)
 ):
     """Analyze the impact of deleting a user."""
-    user = db.get(User, user_id)
+    user = await db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     
@@ -182,19 +182,19 @@ async def analyze_user_deletion_impact(
     
     if user.role == "teacher":
         # Count affected classrooms
-        impact.affected_classrooms = db.scalar(
+        impact.affected_classrooms = await db.scalar(
             select(func.count(Classroom.id))
             .where(Classroom.teacher_id == user.id)
         )
         
         # Count affected assignments
-        impact.affected_assignments = db.scalar(
+        impact.affected_assignments = await db.scalar(
             select(func.count(ReadingAssignment.id))
             .where(ReadingAssignment.teacher_id == user.id)
         )
         
         # Count affected students
-        impact.affected_students = db.scalar(
+        impact.affected_students = await db.scalar(
             select(func.count(func.distinct(ClassroomStudent.student_id)))
             .select_from(ClassroomStudent)
             .join(Classroom)
@@ -202,29 +202,29 @@ async def analyze_user_deletion_impact(
         )
         
         # Get sample of affected classrooms
-        sample_classrooms = db.scalars(
+        sample_classrooms = (await db.scalars(
             select(Classroom)
             .where(Classroom.teacher_id == user.id)
             .limit(5)
-        ).all()
+        )).all()
         
         impact.classroom_names = [c.name for c in sample_classrooms]
         
     elif user.role == "student":
         # Count enrolled classrooms
-        impact.enrolled_classrooms = db.scalar(
+        impact.enrolled_classrooms = await db.scalar(
             select(func.count(ClassroomStudent.classroom_id))
             .where(ClassroomStudent.student_id == user.id)
         )
         
         # Count assignments
-        impact.total_assignments = db.scalar(
+        impact.total_assignments = await db.scalar(
             select(func.count(StudentAssignment.id))
             .where(StudentAssignment.student_id == user.id)
         )
         
         # Count test attempts
-        impact.test_attempts = db.scalar(
+        impact.test_attempts = await db.scalar(
             select(func.count(StudentTestAttempt.id))
             .where(StudentTestAttempt.student_id == user.id)
         )
@@ -239,7 +239,10 @@ async def promote_user(
     db: AsyncSession = Depends(get_db)
 ):
     """Promote a user's role (student to teacher, or grant admin access)."""
-    user = db.get(User, user_id)
+    logger.info(f"Promotion request received for user_id: {user_id}")
+    logger.info(f"Request payload: {request.model_dump()}")
+    
+    user = await db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     
@@ -250,13 +253,19 @@ async def promote_user(
     old_role = user.role
     old_is_admin = user.is_admin
     
+    logger.info(f"Promoting user {user.email} from {old_role} to {request.new_role}")
+    logger.info(f"Request data: {request}")
+    
     # Apply promotion
     if request.new_role:
+        logger.info(f"Setting user role to: {request.new_role}")
         user.role = request.new_role
     if request.make_admin is not None:
+        logger.info(f"Setting admin status to: {request.make_admin}")
         user.is_admin = request.make_admin
     
     user.updated_at = datetime.utcnow()
+    logger.info(f"User after update: role={user.role}, is_admin={user.is_admin}")
     
     # TODO: Log the action
     # log_admin_action(
@@ -274,7 +283,7 @@ async def promote_user(
         }
     )
     
-    db.commit()
+    await db.commit()
     
     return {"message": "User promoted successfully", "user_id": user.id}
 
@@ -289,7 +298,7 @@ async def soft_delete_user(
     if current_admin.id == user_id:
         raise HTTPException(status_code=400, detail="Cannot delete yourself")
     
-    user = db.get(User, user_id)
+    user = await db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     
@@ -314,7 +323,7 @@ async def soft_delete_user(
         }
     )
     
-    db.commit()
+    await db.commit()
     
     return {"message": "User soft deleted successfully", "user_id": user.id}
 
@@ -325,7 +334,7 @@ async def restore_user(
     db: AsyncSession = Depends(get_db)
 ):
     """Restore a soft-deleted user."""
-    user = db.get(User, user_id)
+    user = await db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     
@@ -347,7 +356,7 @@ async def restore_user(
         action_data={}
     )
     
-    db.commit()
+    await db.commit()
     
     return {"message": "User restored successfully", "user_id": user.id}
 
@@ -371,7 +380,7 @@ async def hard_delete_user(
             detail="Confirmation phrase required for hard delete"
         )
     
-    user = db.get(User, user_id)
+    user = await db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     
@@ -404,8 +413,8 @@ async def hard_delete_user(
     )
     
     # Delete in correct order (handled by CASCADE in most cases)
-    db.delete(user)
-    db.commit()
+    await db.delete(user)
+    await db.commit()
     
     return {"message": "User permanently deleted", "user_id": user_id}
 

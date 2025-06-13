@@ -520,6 +520,18 @@ class VocabularyPracticeService:
         progress = game_attempt.practice_progress
         practice_status = progress.practice_status.copy()
         
+        # Ensure assignments dict and vocabulary_challenge entry exist
+        if 'assignments' not in practice_status:
+            practice_status['assignments'] = {}
+        if 'vocabulary_challenge' not in practice_status['assignments']:
+            practice_status['assignments']['vocabulary_challenge'] = {
+                "status": "not_started",
+                "attempts": 0,
+                "best_score": 0,
+                "last_attempt_at": None,
+                "completed_at": None
+            }
+        
         # Update vocabulary challenge status
         vocab_challenge = practice_status['assignments']['vocabulary_challenge']
         
@@ -533,7 +545,8 @@ class VocabularyPracticeService:
         else:
             vocab_challenge['status'] = 'failed'
         
-        # Update best score
+        # Update attempt count and best score
+        vocab_challenge['attempts'] = game_attempt.attempt_number
         if game_attempt.current_score > vocab_challenge.get('best_score', 0):
             vocab_challenge['best_score'] = game_attempt.current_score
         
@@ -1033,6 +1046,20 @@ class VocabularyPracticeService:
         progress = concept_attempt.practice_progress
         practice_status = progress.practice_status.copy()
         
+        # Ensure assignments dict and concept_mapping entry exist
+        if 'assignments' not in practice_status:
+            practice_status['assignments'] = {}
+        if 'concept_mapping' not in practice_status['assignments']:
+            practice_status['assignments']['concept_mapping'] = {
+                "status": "not_started",
+                "attempts": 0,
+                "best_score": 0,
+                "average_score": 0,
+                "last_attempt_at": None,
+                "completed_at": None,
+                "words_completed": 0
+            }
+        
         # Update concept mapping status
         concept_mapping = practice_status['assignments']['concept_mapping']
         
@@ -1046,7 +1073,8 @@ class VocabularyPracticeService:
         else:
             concept_mapping['status'] = 'failed'
         
-        # Update scores
+        # Update attempt count and scores
+        concept_mapping['attempts'] = concept_attempt.attempt_number
         percentage_score = (float(concept_attempt.total_score) / float(concept_attempt.max_possible_score)) * 100
         if percentage_score > concept_mapping.get('best_score', 0):
             concept_mapping['best_score'] = percentage_score
@@ -1488,6 +1516,19 @@ class VocabularyPracticeService:
         progress = puzzle_attempt.practice_progress
         practice_status = progress.practice_status.copy()
         
+        # Ensure assignments dict and puzzle_path entry exist
+        if 'assignments' not in practice_status:
+            practice_status['assignments'] = {}
+        if 'puzzle_path' not in practice_status['assignments']:
+            practice_status['assignments']['puzzle_path'] = {
+                "status": "not_started",
+                "attempts": 0,
+                "best_score": 0,
+                "last_attempt_at": None,
+                "completed_at": None,
+                "puzzles_completed": 0
+            }
+        
         # Update puzzle path status
         puzzle_path = practice_status['assignments']['puzzle_path']
         
@@ -1501,7 +1542,8 @@ class VocabularyPracticeService:
         else:
             puzzle_path['status'] = 'failed'
         
-        # Update scores
+        # Update attempt count and scores
+        puzzle_path['attempts'] = puzzle_attempt.attempt_number
         percentage_score = (puzzle_attempt.total_score / puzzle_attempt.max_possible_score) * 100
         if percentage_score > puzzle_path.get('best_score', 0):
             puzzle_path['best_score'] = percentage_score
@@ -1878,6 +1920,18 @@ class VocabularyPracticeService:
         progress = story_attempt.practice_progress
         practice_status = progress.practice_status.copy()
         
+        # Ensure assignments dict and story_builder entry exist
+        if 'assignments' not in practice_status:
+            practice_status['assignments'] = {}
+        if 'story_builder' not in practice_status['assignments']:
+            practice_status['assignments']['story_builder'] = {
+                "status": "not_started",
+                "attempts": 0,
+                "best_score": 0,
+                "last_attempt_at": None,
+                "completed_at": None
+            }
+        
         # Update story builder status
         story_builder = practice_status['assignments']['story_builder']
         
@@ -1891,7 +1945,8 @@ class VocabularyPracticeService:
         else:
             story_builder['status'] = 'failed'
         
-        # Update best score
+        # Update attempt count and best score
+        story_builder['attempts'] = story_attempt.attempt_number
         if story_attempt.current_score > story_builder.get('best_score', 0):
             story_builder['best_score'] = story_attempt.current_score
         

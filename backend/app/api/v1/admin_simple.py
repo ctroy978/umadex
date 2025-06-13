@@ -370,6 +370,7 @@ async def hard_delete_user(
 @router.post("/users/{user_id}/promote")
 async def promote_user(
     user_id: str,
+    request: Dict[str, Any],
     current_admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db)
 ) -> Dict[str, Any]:
@@ -387,10 +388,29 @@ async def promote_user(
     if user.deleted_at:
         raise HTTPException(status_code=400, detail="Cannot promote deleted user")
     
-    # For now, simplified promotion - would handle request data in full implementation
-    # This is a basic endpoint to prevent 404 errors
+    # Apply promotion changes
+    old_role = user.role
+    old_is_admin = user.is_admin
     
-    return {"message": "User promoted successfully", "user_id": user_id}
+    if "new_role" in request and request["new_role"]:
+        user.role = request["new_role"]
+    
+    if "make_admin" in request and request["make_admin"] is not None:
+        user.is_admin = request["make_admin"]
+    
+    user.updated_at = datetime.utcnow()
+    
+    # Commit changes
+    await db.commit()
+    
+    return {
+        "message": "User promoted successfully", 
+        "user_id": user_id,
+        "old_role": old_role,
+        "new_role": user.role,
+        "old_admin": old_is_admin,
+        "new_admin": user.is_admin
+    }
 
 @router.get("/audit-log")
 async def get_audit_log(
