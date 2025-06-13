@@ -557,27 +557,14 @@ async def get_classroom_detail(
             test_attempt_id=str(test_attempt_id) if test_attempt_id else None
         ))
     
-    # Get vocabulary assignments with completion status
+    # Get vocabulary assignments and check completion by counting subtypes
     vocab_query = await db.execute(
-        select(
-            VocabularyList, 
-            ClassroomAssignment,
-            StudentAssignment.completed_at
-        )
+        select(VocabularyList, ClassroomAssignment)
         .join(ClassroomAssignment,
               and_(
                   ClassroomAssignment.vocabulary_list_id == VocabularyList.id,
                   ClassroomAssignment.assignment_type == "vocabulary"
               ))
-        .outerjoin(
-            StudentAssignment,
-            and_(
-                StudentAssignment.student_id == current_user.id,
-                StudentAssignment.assignment_id == VocabularyList.id,
-                StudentAssignment.classroom_assignment_id == ClassroomAssignment.id,
-                StudentAssignment.assignment_type == "vocabulary"
-            )
-        )
         .where(
             and_(
                 ClassroomAssignment.classroom_id == classroom_id,
@@ -587,7 +574,24 @@ async def get_classroom_detail(
         .order_by(ClassroomAssignment.start_date, ClassroomAssignment.display_order, ClassroomAssignment.assigned_at)
     )
     
-    for vocab_list, ca, completed_at in vocab_query:
+    for vocab_list, ca in vocab_query:
+        # Count completed vocabulary practice activities (need 3 out of 4)
+        completed_subtypes_query = await db.execute(
+            select(func.count(StudentAssignment.id))
+            .where(
+                and_(
+                    StudentAssignment.student_id == current_user.id,
+                    StudentAssignment.assignment_id == vocab_list.id,
+                    StudentAssignment.classroom_assignment_id == ca.id,
+                    StudentAssignment.assignment_type == "vocabulary",
+                    StudentAssignment.completed_at.is_not(None)
+                )
+            )
+        )
+        completed_count = completed_subtypes_query.scalar() or 0
+        
+        # Vocabulary assignment is complete when 3+ practice activities are done
+        is_vocabulary_complete = completed_count >= 3
         status = calculate_assignment_status(ca.start_date, ca.end_date)
         assignments.append(StudentAssignmentResponse(
             id=str(vocab_list.id),
@@ -602,7 +606,7 @@ async def get_classroom_detail(
             end_date=ca.end_date,
             display_order=ca.display_order,
             status=status,
-            is_completed=completed_at is not None,  # Check actual completion from StudentAssignment
+            is_completed=is_vocabulary_complete,  # Complete when 3+ practice activities done
             has_test=False,  # Vocabulary assignments don't have tests
             test_completed=False,
             test_attempt_id=None
