@@ -1777,8 +1777,26 @@ class VocabularyPracticeService:
         )
         story_attempt = result.scalar_one_or_none()
         
-        if not story_attempt or story_attempt.status != 'in_progress':
-            raise ValueError("Invalid or completed story attempt")
+        if not story_attempt:
+            raise ValueError("Story attempt not found")
+        
+        if story_attempt.status not in ['in_progress', 'pending_confirmation']:
+            raise ValueError("Story attempt is already completed or invalid")
+        
+        # If already pending confirmation, return the completion status
+        if story_attempt.status == 'pending_confirmation':
+            percentage_score = (story_attempt.current_score / story_attempt.max_possible_score) * 100
+            return {
+                'evaluation': {'total_score': story_attempt.current_score},
+                'current_score': story_attempt.current_score,
+                'prompts_remaining': 0,
+                'is_complete': True,
+                'passed': story_attempt.status == 'pending_confirmation',
+                'percentage_score': percentage_score,
+                'needs_confirmation': True,
+                'next_prompt': None,
+                'can_revise': False
+            }
         
         # Get the prompt
         prompt_result = await self.db.execute(

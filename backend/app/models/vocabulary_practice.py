@@ -239,7 +239,7 @@ class VocabularyStoryAttempt(Base):
     
     __table_args__ = (
         CheckConstraint(
-            "status IN ('in_progress', 'completed', 'passed', 'failed', 'abandoned')",
+            "status IN ('in_progress', 'completed', 'passed', 'failed', 'abandoned', 'pending_confirmation', 'declined')",
             name='check_story_attempt_status'
         ),
     )
