@@ -25,7 +25,7 @@ from app.models.vocabulary_practice import (
     VocabularyPuzzleResponse,
     VocabularyPuzzleAttempt
 )
-from app.models.classroom import ClassroomAssignment
+from app.models.classroom import ClassroomAssignment, StudentAssignment
 from app.models.user import User
 from app.services.vocabulary_game_generator import VocabularyGameGenerator
 from app.services.vocabulary_story_generator import VocabularyStoryGenerator
@@ -449,17 +449,37 @@ class VocabularyPracticeService:
             student_id, vocabulary_list_id, progress.practice_status
         )
         
-        # Count completed assignments
-        completed_count = len(progress.practice_status.get('completed_assignments', []))
+        # Check StudentAssignment for completion status (new authoritative source)
+        assignment_completions = {}
+        for assignment_type in ['vocabulary_challenge', 'story_builder', 'concept_mapping', 'puzzle_path']:
+            # Map assignment types to specific vocabulary subtypes
+            student_assignment_type = f"vocabulary_{assignment_type}" if assignment_type != 'story_builder' else "vocabulary_story_builder"
+            
+            result = await self.db.execute(
+                select(StudentAssignment.completed_at)
+                .where(
+                    and_(
+                        StudentAssignment.student_id == student_id,
+                        StudentAssignment.assignment_id == vocabulary_list_id,
+                        StudentAssignment.classroom_assignment_id == classroom_assignment_id,
+                        StudentAssignment.assignment_type == "vocabulary",
+                        StudentAssignment.progress_metadata['subtype'].astext == assignment_type
+                    )
+                )
+            )
+            completion_date = result.scalar_one_or_none()
+            assignment_completions[assignment_type] = completion_date
+        
+        # Count completed assignments based on StudentAssignment records
+        completed_count = sum(1 for completion in assignment_completions.values() if completion is not None)
         test_unlocked = completed_count >= self.ASSIGNMENTS_TO_COMPLETE
         
         # Format assignment statuses
         assignments = []
-        completed_assignments = progress.practice_status.get('completed_assignments', [])
         
         for assignment_type in ['vocabulary_challenge', 'story_builder', 'concept_mapping', 'puzzle_path']:
             assignment_data = progress.practice_status.get('assignments', {}).get(assignment_type, {})
-            is_completed = assignment_type in completed_assignments
+            is_completed = assignment_completions[assignment_type] is not None
             
             # Check if there's an active session for this assignment type
             has_active_session = False
@@ -482,10 +502,10 @@ class VocabularyPracticeService:
             assignments.append({
                 'type': assignment_type,
                 'display_name': self._get_assignment_display_name(assignment_type),
-                'status': assignment_data.get('status', 'not_started'),
+                'status': 'completed' if is_completed else assignment_data.get('status', 'not_started'),
                 'attempts': assignment_data.get('attempts', 0),
                 'best_score': assignment_data.get('best_score', 0),
-                'completed_at': assignment_data.get('completed_at'),
+                'completed_at': assignment_completions[assignment_type].isoformat() if assignment_completions[assignment_type] else None,
                 'available': is_available,
                 'can_start': is_available and not is_completed,  # Can't retake completed activities
                 'is_completed': is_completed,
@@ -1812,7 +1832,9 @@ class VocabularyPracticeService:
         is_complete = story_attempt.prompts_completed >= story_attempt.total_prompts
         
         if is_complete:
-            story_attempt.status = 'passed' if story_attempt.current_score >= story_attempt.passing_score else 'failed'
+            # Calculate percentage score
+            percentage_score = (story_attempt.current_score / story_attempt.max_possible_score) * 100
+            story_attempt.status = 'pending_confirmation' if percentage_score >= 70 else 'failed'
             story_attempt.completed_at = datetime.now(timezone.utc)
             
             # Calculate total time spent
@@ -1820,8 +1842,7 @@ class VocabularyPracticeService:
                 time_diff = story_attempt.completed_at - story_attempt.started_at
                 story_attempt.time_spent_seconds = int(time_diff.total_seconds())
             
-            # Update practice progress
-            await self._update_story_practice_progress(story_attempt)
+            # DO NOT update practice progress here - wait for explicit confirmation
         
         await self.db.commit()
         
@@ -1852,12 +1873,19 @@ class VocabularyPracticeService:
             if len(story_responses) < len(all_prompts):
                 next_prompt = all_prompts[len(story_responses)]
         
+        # Calculate percentage for return
+        percentage_score = None
+        if is_complete:
+            percentage_score = (story_attempt.current_score / story_attempt.max_possible_score) * 100
+        
         return {
             'evaluation': evaluation,
             'current_score': story_attempt.current_score,
             'prompts_remaining': story_attempt.total_prompts - story_attempt.prompts_completed,
             'is_complete': is_complete,
-            'passed': story_attempt.status == 'passed' if is_complete else None,
+            'passed': story_attempt.status == 'pending_confirmation' if is_complete else None,
+            'percentage_score': percentage_score,
+            'needs_confirmation': is_complete,
             'next_prompt': self._format_story_prompt(next_prompt) if next_prompt else None,
             'can_revise': attempt_number < 2  # Allow one revision
         }
@@ -1962,3 +1990,153 @@ class VocabularyPracticeService:
         # Clear Redis session data
         await self.session_manager.clear_session(story_attempt.student_id, story_attempt.vocabulary_list_id)
         await self.session_manager.clear_attempt(story_attempt.student_id, story_attempt.vocabulary_list_id, 'story_builder')
+    
+    async def confirm_story_completion(
+        self,
+        story_attempt_id: UUID,
+        student_id: UUID
+    ) -> Dict[str, Any]:
+        """Confirm story builder completion and create StudentAssignment record"""
+        
+        # Get story attempt with related data
+        result = await self.db.execute(
+            select(VocabularyStoryAttempt)
+            .where(
+                and_(
+                    VocabularyStoryAttempt.id == story_attempt_id,
+                    VocabularyStoryAttempt.student_id == student_id
+                )
+            )
+            .options(selectinload(VocabularyStoryAttempt.practice_progress))
+        )
+        story_attempt = result.scalar_one_or_none()
+        
+        if not story_attempt:
+            raise ValueError("Story attempt not found")
+        
+        if story_attempt.status != 'pending_confirmation':
+            raise ValueError("Story attempt is not pending confirmation")
+        
+        # Calculate percentage score
+        percentage_score = (story_attempt.current_score / story_attempt.max_possible_score) * 100
+        
+        if percentage_score < 70:
+            raise ValueError("Cannot confirm completion with score below 70%")
+        
+        # Update story attempt status
+        story_attempt.status = 'passed'
+        
+        # Update practice progress
+        await self._update_story_practice_progress(story_attempt)
+        
+        # Create or update StudentAssignment record
+        student_assignment = await self._create_or_update_student_assignment(
+            student_id=student_id,
+            assignment_id=story_attempt.vocabulary_list_id,
+            classroom_assignment_id=story_attempt.practice_progress.classroom_assignment_id,
+            assignment_type="vocabulary",
+            subtype="story_builder"
+        )
+        
+        await self.db.commit()
+        
+        # Clear all Redis data for this assignment
+        await self.session_manager.clear_all_session_data(student_id, story_attempt.vocabulary_list_id)
+        
+        return {
+            'success': True,
+            'message': 'Story builder assignment completed successfully',
+            'final_score': story_attempt.current_score,
+            'percentage_score': percentage_score
+        }
+    
+    async def decline_story_completion(
+        self,
+        story_attempt_id: UUID,
+        student_id: UUID
+    ) -> Dict[str, Any]:
+        """Decline story completion and prepare for retake"""
+        
+        # Get story attempt
+        result = await self.db.execute(
+            select(VocabularyStoryAttempt)
+            .where(
+                and_(
+                    VocabularyStoryAttempt.id == story_attempt_id,
+                    VocabularyStoryAttempt.student_id == student_id
+                )
+            )
+            .options(selectinload(VocabularyStoryAttempt.practice_progress))
+        )
+        story_attempt = result.scalar_one_or_none()
+        
+        if not story_attempt:
+            raise ValueError("Story attempt not found")
+        
+        # Calculate percentage score
+        percentage_score = (story_attempt.current_score / story_attempt.max_possible_score) * 100
+        
+        # Update story attempt status
+        story_attempt.status = 'declined'
+        
+        # Clear Redis session data
+        await self.session_manager.clear_all_session_data(student_id, story_attempt.vocabulary_list_id)
+        
+        await self.db.commit()
+        
+        return {
+            'success': True,
+            'message': 'Assignment declined. You can retake it later.',
+            'final_score': story_attempt.current_score,
+            'percentage_score': percentage_score
+        }
+    
+    async def _create_or_update_student_assignment(
+        self,
+        student_id: UUID,
+        assignment_id: UUID,
+        classroom_assignment_id: int,
+        assignment_type: str,
+        subtype: str = None
+    ) -> StudentAssignment:
+        """Create or update StudentAssignment record"""
+        
+        # Check if record exists (include subtype in search)
+        search_conditions = [
+            StudentAssignment.student_id == student_id,
+            StudentAssignment.assignment_id == assignment_id,
+            StudentAssignment.classroom_assignment_id == classroom_assignment_id,
+            StudentAssignment.assignment_type == assignment_type
+        ]
+        
+        if subtype:
+            search_conditions.append(StudentAssignment.progress_metadata['subtype'].astext == subtype)
+        
+        result = await self.db.execute(
+            select(StudentAssignment)
+            .where(and_(*search_conditions))
+        )
+        student_assignment = result.scalar_one_or_none()
+        
+        if not student_assignment:
+            # Create new record
+            progress_metadata = {'subtype': subtype} if subtype else {}
+            student_assignment = StudentAssignment(
+                student_id=student_id,
+                assignment_id=assignment_id,
+                classroom_assignment_id=classroom_assignment_id,
+                assignment_type=assignment_type,
+                status="completed",
+                started_at=datetime.now(timezone.utc),
+                completed_at=datetime.now(timezone.utc),
+                progress_metadata=progress_metadata
+            )
+            self.db.add(student_assignment)
+        else:
+            # Update existing record
+            student_assignment.status = "completed"
+            student_assignment.completed_at = datetime.now(timezone.utc)
+            if subtype and 'subtype' not in student_assignment.progress_metadata:
+                student_assignment.progress_metadata = {**student_assignment.progress_metadata, 'subtype': subtype}
+        
+        return student_assignment

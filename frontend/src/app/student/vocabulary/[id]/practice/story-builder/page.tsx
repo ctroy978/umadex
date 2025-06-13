@@ -81,9 +81,13 @@ export default function StoryBuilderPage() {
     prompts_remaining: number
     is_complete: boolean
     passed?: boolean
+    percentage_score?: number
+    needs_confirmation: boolean
     next_prompt?: StoryPrompt
     can_revise: boolean
   } | null>(null)
+  const [showCompletionDialog, setShowCompletionDialog] = useState(false)
+  const [confirmingCompletion, setConfirmingCompletion] = useState(false)
   const [timeSpent, setTimeSpent] = useState(0)
   const startTimeRef = useRef<number>(Date.now())
   const [wordCount, setWordCount] = useState(0)
@@ -98,6 +102,24 @@ export default function StoryBuilderPage() {
       startTimeRef.current = Date.now()
     }
   }, [showEvaluation])
+
+  // Navigation protection
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      // Only show warning if there's an active session and not showing completion dialog
+      if (storySession && !showCompletionDialog && !evaluation?.is_complete) {
+        const message = 'You have an assignment in progress. If you leave now, your progress will be lost.'
+        e.preventDefault()
+        e.returnValue = message
+        return message
+      }
+    }
+
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+    }
+  }, [storySession, showCompletionDialog, evaluation?.is_complete])
 
   useEffect(() => {
     // Update word count
@@ -144,6 +166,11 @@ export default function StoryBuilderPage() {
       setEvaluation(result)
       setShowEvaluation(true)
       setCurrentScore(result.current_score)
+      
+      // Show completion dialog if assignment is complete
+      if (result.is_complete && result.needs_confirmation) {
+        setShowCompletionDialog(true)
+      }
 
     } catch (err: any) {
       console.error('Failed to submit story:', err)
@@ -195,6 +222,38 @@ export default function StoryBuilderPage() {
     setShowEvaluation(false)
     setAttemptNumber(2)
     // Keep current story for revision
+  }
+
+  const handleConfirmCompletion = async () => {
+    if (!storySession) return
+    
+    setConfirmingCompletion(true)
+    try {
+      const result = await studentApi.confirmStoryCompletion(storySession.story_attempt_id)
+      // Redirect to practice page with success message
+      router.push(`/student/vocabulary/${vocabularyId}/practice?completed=story-builder`)
+    } catch (err: any) {
+      console.error('Failed to confirm completion:', err)
+      alert('Failed to complete assignment. Please try again.')
+    } finally {
+      setConfirmingCompletion(false)
+    }
+  }
+
+  const handleDeclineCompletion = async () => {
+    if (!storySession) return
+    
+    setConfirmingCompletion(true)
+    try {
+      const result = await studentApi.declineStoryCompletion(storySession.story_attempt_id)
+      // Redirect to practice page
+      router.push(`/student/vocabulary/${vocabularyId}/practice`)
+    } catch (err: any) {
+      console.error('Failed to decline completion:', err)
+      alert('Failed to process request. Please try again.')
+    } finally {
+      setConfirmingCompletion(false)
+    }
   }
 
   const checkWordUsage = (word: string) => {
@@ -434,18 +493,15 @@ export default function StoryBuilderPage() {
                   <button
                     onClick={() => {
                       if (evaluation?.is_complete) {
-                        if (evaluation.passed) {
-                          router.push(`/student/vocabulary/${vocabularyId}/practice?completed=story-builder`)
-                        } else {
-                          router.push(`/student/vocabulary/${vocabularyId}/practice?failed=story-builder`)
-                        }
+                        // Don't automatically redirect - let the dialog handle it
+                        setShowCompletionDialog(true)
                       } else {
                         handleNextPrompt()
                       }
                     }}
                     className="flex-1 px-6 py-3 bg-gray-600 text-white rounded-lg font-medium hover:bg-gray-700 flex items-center justify-center"
                   >
-                    {evaluation?.is_complete ? 'Continue to Practice Activities' : 'Skip to Next Story'}
+                    {evaluation?.is_complete ? 'View Results' : 'Skip to Next Story'}
                     <ArrowRightIcon className="h-5 w-5 ml-2" />
                   </button>
                 </div>
@@ -453,11 +509,8 @@ export default function StoryBuilderPage() {
                 <button
                   onClick={() => {
                     if (evaluation?.is_complete) {
-                      if (evaluation.passed) {
-                        router.push(`/student/vocabulary/${vocabularyId}/practice?completed=story-builder`)
-                      } else {
-                        router.push(`/student/vocabulary/${vocabularyId}/practice?failed=story-builder`)
-                      }
+                      // Don't automatically redirect - let the dialog handle it
+                      setShowCompletionDialog(true)
                     } else {
                       handleNextPrompt()
                     }
@@ -465,7 +518,7 @@ export default function StoryBuilderPage() {
                   className="w-full px-6 py-3 bg-primary-600 text-white rounded-lg font-medium hover:bg-primary-700 flex items-center justify-center"
                 >
                   {evaluation?.is_complete ? (
-                    evaluation.passed ? 'Continue to Practice Activities' : 'Return to Practice Activities'
+                    'View Results'
                   ) : (
                     <>
                       Next Story
@@ -555,6 +608,62 @@ export default function StoryBuilderPage() {
           </div>
         )}
       </main>
+
+      {/* Completion Confirmation Dialog */}
+      {showCompletionDialog && evaluation && (
+        <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-8 max-w-md w-full shadow-xl">
+            <div className="text-center mb-6">
+              <div className={`inline-flex items-center justify-center w-16 h-16 rounded-full mb-4 ${
+                evaluation.percentage_score >= 70 ? 'bg-green-100' : 'bg-amber-100'
+              }`}>
+                {evaluation.percentage_score >= 70 ? (
+                  <CheckCircleIcon className="h-8 w-8 text-green-600" />
+                ) : (
+                  <ExclamationCircleIcon className="h-8 w-8 text-amber-600" />
+                )}
+              </div>
+              <h3 className="text-2xl font-bold text-gray-900 mb-2">
+                Story Builder Complete!
+              </h3>
+              <p className="text-lg text-gray-700 mb-4">
+                You scored <span className="font-bold text-primary-600">{Math.round(evaluation.percentage_score)}%</span>
+              </p>
+              {evaluation.percentage_score >= 70 ? (
+                <p className="text-green-700">
+                  Congratulations! You scored 70% or higher.
+                  <br />
+                  <span className="font-semibold">Assignment completed successfully!</span>
+                </p>
+              ) : (
+                <p className="text-amber-700">
+                  You scored below 70%.
+                  <br />
+                  <span className="font-semibold">You need 70% or higher to complete this assignment.</span>
+                </p>
+              )}
+            </div>
+
+            {evaluation.percentage_score >= 70 ? (
+              <button
+                onClick={handleConfirmCompletion}
+                disabled={confirmingCompletion}
+                className="w-full px-6 py-3 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+              >
+                {confirmingCompletion ? 'Completing...' : 'Complete Assignment'}
+              </button>
+            ) : (
+              <button
+                onClick={handleDeclineCompletion}
+                disabled={confirmingCompletion}
+                className="w-full px-6 py-3 bg-amber-600 text-white rounded-lg font-medium hover:bg-amber-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+              >
+                {confirmingCompletion ? 'Processing...' : 'Retake Assignment Later'}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

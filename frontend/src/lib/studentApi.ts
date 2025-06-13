@@ -162,6 +162,16 @@ export const studentApi = {
     return response.data
   },
 
+  async confirmStoryCompletion(storyAttemptId: string): Promise<any> {
+    const response = await api.post(`/v1/student/vocabulary/practice/confirm-story-completion/${storyAttemptId}`)
+    return response.data
+  },
+
+  async declineStoryCompletion(storyAttemptId: string): Promise<any> {
+    const response = await api.post(`/v1/student/vocabulary/practice/decline-story-completion/${storyAttemptId}`)
+    return response.data
+  },
+
   // Concept Mapping API methods
   async startConceptMapping(assignmentId: string): Promise<any> {
     const response = await api.post(`/v1/student/vocabulary/${assignmentId}/practice/start-concept-mapping`)

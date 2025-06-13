@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 from app.core.database import get_db
 from app.models.user import User, UserRole
-from app.models.classroom import Classroom, ClassroomStudent, ClassroomAssignment
+from app.models.classroom import Classroom, ClassroomStudent, ClassroomAssignment, StudentAssignment
 from app.models.reading import ReadingAssignment
 from app.models.vocabulary import VocabularyList
 from app.models.umaread import UmareadAssignmentProgress
@@ -557,14 +557,27 @@ async def get_classroom_detail(
             test_attempt_id=str(test_attempt_id) if test_attempt_id else None
         ))
     
-    # Get vocabulary assignments
+    # Get vocabulary assignments with completion status
     vocab_query = await db.execute(
-        select(VocabularyList, ClassroomAssignment)
+        select(
+            VocabularyList, 
+            ClassroomAssignment,
+            StudentAssignment.completed_at
+        )
         .join(ClassroomAssignment,
               and_(
                   ClassroomAssignment.vocabulary_list_id == VocabularyList.id,
                   ClassroomAssignment.assignment_type == "vocabulary"
               ))
+        .outerjoin(
+            StudentAssignment,
+            and_(
+                StudentAssignment.student_id == current_user.id,
+                StudentAssignment.assignment_id == VocabularyList.id,
+                StudentAssignment.classroom_assignment_id == ClassroomAssignment.id,
+                StudentAssignment.assignment_type == "vocabulary"
+            )
+        )
         .where(
             and_(
                 ClassroomAssignment.classroom_id == classroom_id,
@@ -574,7 +587,7 @@ async def get_classroom_detail(
         .order_by(ClassroomAssignment.start_date, ClassroomAssignment.display_order, ClassroomAssignment.assigned_at)
     )
     
-    for vocab_list, ca in vocab_query:
+    for vocab_list, ca, completed_at in vocab_query:
         status = calculate_assignment_status(ca.start_date, ca.end_date)
         assignments.append(StudentAssignmentResponse(
             id=str(vocab_list.id),
@@ -589,7 +602,7 @@ async def get_classroom_detail(
             end_date=ca.end_date,
             display_order=ca.display_order,
             status=status,
-            is_completed=False,  # Vocabulary assignments don't have completion tracking yet
+            is_completed=completed_at is not None,  # Check actual completion from StudentAssignment
             has_test=False,  # Vocabulary assignments don't have tests
             test_completed=False,
             test_attempt_id=None
@@ -985,6 +998,8 @@ class SubmitStoryResponse(BaseModel):
     prompts_remaining: int
     is_complete: bool
     passed: Optional[bool] = None
+    percentage_score: Optional[float] = None
+    needs_confirmation: bool = False
     next_prompt: Optional[Dict[str, Any]] = None
     can_revise: bool
 
@@ -1121,6 +1136,47 @@ async def get_next_story_prompt(
     
     result = await practice_service.get_next_story_prompt(story_attempt_id)
     return result
+
+
+class StoryCompletionResponse(BaseModel):
+    success: bool
+    message: str
+    final_score: int
+    percentage_score: float
+
+
+@router.post("/vocabulary/practice/confirm-story-completion/{story_attempt_id}", response_model=StoryCompletionResponse)
+async def confirm_story_completion(
+    story_attempt_id: UUID,
+    current_user: User = Depends(require_student_or_teacher),
+    db: AsyncSession = Depends(get_db)
+):
+    """Confirm story builder completion and mark assignment as complete"""
+    practice_service = VocabularyPracticeService(db)
+    
+    result = await practice_service.confirm_story_completion(
+        story_attempt_id=story_attempt_id,
+        student_id=current_user.id
+    )
+    
+    return StoryCompletionResponse(**result)
+
+
+@router.post("/vocabulary/practice/decline-story-completion/{story_attempt_id}", response_model=StoryCompletionResponse)
+async def decline_story_completion(
+    story_attempt_id: UUID,
+    current_user: User = Depends(require_student_or_teacher),
+    db: AsyncSession = Depends(get_db)
+):
+    """Decline story completion and prepare for retake"""
+    practice_service = VocabularyPracticeService(db)
+    
+    result = await practice_service.decline_story_completion(
+        story_attempt_id=story_attempt_id,
+        student_id=current_user.id
+    )
+    
+    return StoryCompletionResponse(**result)
 
 
 # Concept Mapping Endpoints
