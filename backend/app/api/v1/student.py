@@ -1679,7 +1679,7 @@ async def confirm_puzzle_completion(
         # Update practice progress if it exists
         if puzzle_attempt.practice_progress:
             puzzle_attempt.practice_progress.practice_status['puzzle_path'] = 'completed'
-            puzzle_attempt.practice_progress.progress_percentage = puzzle_attempt.practice_progress.calculate_progress_percentage()
+            puzzle_attempt.practice_progress.current_game_session = None
         
         await db.commit()
         

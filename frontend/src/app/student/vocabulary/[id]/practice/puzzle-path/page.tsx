@@ -171,29 +171,31 @@ export default function PuzzlePathPage() {
 
       setLastResult(result)
       
-      // Debug log
-      console.log('Puzzle submission result:', {
-        is_complete: result.is_complete,
-        needs_confirmation: result.needs_confirmation,
-        percentage_score: result.percentage_score,
-        passed: result.passed,
-        current_score: result.current_score
-      })
 
       if (result.is_complete && result.needs_confirmation) {
         setShowCompletionDialog(true)
       } else if (result.is_complete) {
         // Puzzle path complete - show final result
-      } else if (result.next_puzzle) {
-        // Move to next puzzle
-        setSession(prev => prev ? {
-          ...prev,
-          puzzle: result.next_puzzle,
-          current_puzzle_index: prev.current_puzzle_index + 1
-        } : null)
-        setCurrentAnswer('')
-        setSelectedOption(null)
-        setStartTime(new Date())
+      } else {
+        // Not complete, fetch updated session to get next puzzle
+        try {
+          const updatedSession = await studentApi.getPuzzlePathProgress(session.puzzle_attempt_id)
+          
+          // Map the progress response to match the session structure
+          const mappedSession = {
+            ...updatedSession,
+            puzzle: updatedSession.current_puzzle
+          }
+          
+          setSession(mappedSession)
+          setCurrentAnswer('')
+          setSelectedOption(null)
+          setStartTime(new Date())
+        } catch (progressErr) {
+          console.error('Failed to get puzzle progress:', progressErr)
+          // Fallback: reload the entire session
+          await initializeSession()
+        }
       }
     } catch (err: any) {
       console.error('Failed to submit answer:', err)
@@ -390,7 +392,10 @@ export default function PuzzlePathPage() {
       router.push(`/student/vocabulary/${vocabularyId}/practice?completed=puzzle-path`)
     } catch (err: any) {
       console.error('Failed to confirm completion:', err)
-      alert('Failed to complete assignment. Please try again.')
+      
+      // Show more specific error message
+      const errorMessage = err.response?.data?.message || err.message || 'Unknown error occurred'
+      alert(`Failed to complete assignment: ${errorMessage}. Please try again or contact support.`)
     } finally {
       setConfirmingCompletion(false)
     }
