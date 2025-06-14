@@ -1042,6 +1042,8 @@ class SubmitConceptMapResponse(BaseModel):
     words_remaining: Optional[int] = None
     is_complete: Optional[bool] = None
     passed: Optional[bool] = None
+    percentage_score: Optional[float] = None
+    needs_confirmation: bool = False
     next_word: Optional[Dict[str, Any]] = None
     progress_percentage: Optional[float] = None
 
@@ -1276,6 +1278,47 @@ async def finish_concept_mapping_early(
     return FinishEarlyResponse(**result)
 
 
+class ConceptMappingCompletionResponse(BaseModel):
+    success: bool
+    message: str
+    final_score: float
+    percentage_score: float
+
+
+@router.post("/vocabulary/practice/confirm-concept-completion/{concept_attempt_id}", response_model=ConceptMappingCompletionResponse)
+async def confirm_concept_completion(
+    concept_attempt_id: UUID,
+    current_user: User = Depends(require_student_or_teacher),
+    db: AsyncSession = Depends(get_db)
+):
+    """Confirm concept mapping completion and mark assignment as complete"""
+    practice_service = VocabularyPracticeService(db)
+    
+    result = await practice_service.confirm_concept_completion(
+        concept_attempt_id=concept_attempt_id,
+        student_id=current_user.id
+    )
+    
+    return ConceptMappingCompletionResponse(**result)
+
+
+@router.post("/vocabulary/practice/decline-concept-completion/{concept_attempt_id}", response_model=ConceptMappingCompletionResponse)
+async def decline_concept_completion(
+    concept_attempt_id: UUID,
+    current_user: User = Depends(require_student_or_teacher),
+    db: AsyncSession = Depends(get_db)
+):
+    """Decline concept mapping completion and prepare for retake"""
+    practice_service = VocabularyPracticeService(db)
+    
+    result = await practice_service.decline_concept_completion(
+        concept_attempt_id=concept_attempt_id,
+        student_id=current_user.id
+    )
+    
+    return ConceptMappingCompletionResponse(**result)
+
+
 # Puzzle Path Models
 
 class StartPuzzlePathResponse(BaseModel):
@@ -1285,6 +1328,10 @@ class StartPuzzlePathResponse(BaseModel):
     max_possible_score: int
     current_puzzle_index: int
     puzzle: Optional[Dict[str, Any]]
+    is_complete: Optional[bool] = False
+    needs_confirmation: Optional[bool] = False
+    current_score: Optional[int] = None
+    percentage_score: Optional[float] = None
 
 
 class SubmitPuzzleAnswerRequest(BaseModel):
@@ -1495,6 +1542,7 @@ async def confirm_puzzle_completion(
         result = await db.execute(
             select(VocabularyPuzzleAttempt)
             .where(VocabularyPuzzleAttempt.id == puzzle_attempt_id)
+            .options(selectinload(VocabularyPuzzleAttempt.practice_progress))
         )
         puzzle_attempt = result.scalar_one_or_none()
         
@@ -1508,6 +1556,13 @@ async def confirm_puzzle_completion(
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Not authorized to confirm this attempt"
+            )
+        
+        # Verify the attempt is in pending_confirmation status
+        if puzzle_attempt.status != 'pending_confirmation':
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot confirm completion - puzzle attempt is not in pending confirmation status"
             )
         
         # Get classroom assignment to create StudentAssignment record
@@ -1561,11 +1616,32 @@ async def confirm_puzzle_completion(
                 completed_at=datetime.now(timezone.utc)
             )
             db.add(student_assignment)
+        else:
+            # Update existing record
+            existing.completed_at = datetime.now(timezone.utc)
+            existing.progress_metadata = {
+                "subtype": "puzzle_path",
+                "final_score": puzzle_attempt.total_score,
+                "max_possible_score": puzzle_attempt.max_possible_score,
+                "percentage_score": (puzzle_attempt.total_score / puzzle_attempt.max_possible_score) * 100 if puzzle_attempt.max_possible_score > 0 else 0,
+                "puzzles_completed": puzzle_attempt.puzzles_completed,
+                "total_puzzles": puzzle_attempt.total_puzzles
+            }
         
         # Update puzzle attempt status
-        puzzle_attempt.status = 'completed'
+        puzzle_attempt.status = 'passed'
+        
+        # Update practice progress if it exists
+        if puzzle_attempt.practice_progress:
+            puzzle_attempt.practice_progress.practice_status['puzzle_path'] = 'completed'
+            puzzle_attempt.practice_progress.progress_percentage = puzzle_attempt.practice_progress.calculate_progress_percentage()
         
         await db.commit()
+        
+        # Clear Redis session data after confirming completion
+        from app.services.vocabulary_session import VocabularySessionManager
+        session_manager = VocabularySessionManager()
+        await session_manager.clear_all_session_data(current_user.id, puzzle_attempt.vocabulary_list_id)
         
         percentage_score = (puzzle_attempt.total_score / puzzle_attempt.max_possible_score) * 100 if puzzle_attempt.max_possible_score > 0 else 0
         
@@ -1605,10 +1681,15 @@ async def decline_puzzle_completion(
         )
         puzzle_attempt = result.scalar_one_or_none()
         
-        if puzzle_attempt:
+        if puzzle_attempt and puzzle_attempt.student_id == current_user.id:
             # Mark as declined and reset for retake
             puzzle_attempt.status = 'declined'
             await db.commit()
+            
+            # Clear Redis session data to ensure clean slate for retake
+            from app.services.vocabulary_session import VocabularySessionManager
+            session_manager = VocabularySessionManager()
+            await session_manager.clear_all_session_data(current_user.id, puzzle_attempt.vocabulary_list_id)
         
         return PuzzleCompletionResponse(
             success=True,
@@ -1619,6 +1700,8 @@ async def decline_puzzle_completion(
         
     except Exception as e:
         logger.error(f"Error declining puzzle completion: {e}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
         return PuzzleCompletionResponse(
             success=True,
             message="Declined successfully.",

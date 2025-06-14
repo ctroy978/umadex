@@ -579,6 +579,16 @@ class VocabularyPracticeService:
         progress.practice_status = practice_status
         progress.current_game_session = None  # Clear current session
         
+        # Create StudentAssignment record if passed
+        if game_attempt.status == 'passed':
+            await self._create_or_update_student_assignment(
+                student_id=game_attempt.student_id,
+                assignment_id=game_attempt.vocabulary_list_id,
+                classroom_assignment_id=progress.classroom_assignment_id,
+                assignment_type="vocabulary",
+                subtype="vocabulary_challenge"
+            )
+        
         # Clear Redis session data
         await self.session_manager.clear_session(game_attempt.student_id, game_attempt.vocabulary_list_id)
         await self.session_manager.clear_attempt(game_attempt.student_id, game_attempt.vocabulary_list_id, 'vocabulary_challenge')
@@ -883,7 +893,15 @@ class VocabularyPracticeService:
         is_complete = concept_attempt.words_completed >= concept_attempt.total_words
         
         if is_complete:
-            concept_attempt.status = 'passed' if float(concept_attempt.total_score) >= float(concept_attempt.passing_score) else 'failed'
+            # Calculate percentage score for determination
+            percentage_score = (float(concept_attempt.average_score) / 4.0) * 100
+            
+            # Set status based on score with pending confirmation pattern
+            if percentage_score >= 70:
+                concept_attempt.status = 'pending_confirmation'
+            else:
+                concept_attempt.status = 'failed'
+            
             concept_attempt.completed_at = datetime.now(timezone.utc)
             
             # Calculate total time spent
@@ -891,8 +909,10 @@ class VocabularyPracticeService:
                 time_diff = concept_attempt.completed_at - concept_attempt.started_at
                 concept_attempt.time_spent_seconds = int(time_diff.total_seconds())
             
-            # Update practice progress
-            await self._update_concept_mapping_progress(concept_attempt)
+            # Only update practice progress for failed attempts
+            # Passed attempts will update progress after confirmation
+            if concept_attempt.status == 'failed':
+                await self._update_concept_mapping_progress(concept_attempt)
         
         await self.db.commit()
         
@@ -931,6 +951,8 @@ class VocabularyPracticeService:
             'words_remaining': concept_attempt.total_words - concept_attempt.words_completed,
             'is_complete': is_complete,
             'passed': concept_attempt.status == 'passed' if is_complete else None,
+            'percentage_score': (float(concept_attempt.average_score) / 4.0) * 100 if is_complete and concept_attempt.average_score else None,
+            'needs_confirmation': concept_attempt.status == 'pending_confirmation' if is_complete else False,
             'next_word': self._format_vocabulary_word(next_word) if next_word else None,
             'progress_percentage': (concept_attempt.words_completed / concept_attempt.total_words) * 100
         }
@@ -1048,6 +1070,106 @@ class VocabularyPracticeService:
             'passed': concept_attempt.status == 'passed'
         }
     
+    async def confirm_concept_completion(
+        self,
+        concept_attempt_id: UUID,
+        student_id: UUID
+    ) -> Dict[str, Any]:
+        """Confirm concept mapping completion and create StudentAssignment record"""
+        
+        # Get concept attempt with related data
+        result = await self.db.execute(
+            select(VocabularyConceptMapAttempt)
+            .where(
+                and_(
+                    VocabularyConceptMapAttempt.id == concept_attempt_id,
+                    VocabularyConceptMapAttempt.student_id == student_id
+                )
+            )
+            .options(selectinload(VocabularyConceptMapAttempt.practice_progress))
+        )
+        concept_attempt = result.scalar_one_or_none()
+        
+        if not concept_attempt:
+            raise ValueError("Concept mapping attempt not found")
+        
+        if concept_attempt.status != 'pending_confirmation':
+            raise ValueError("Concept mapping attempt is not pending confirmation")
+        
+        # Calculate percentage score
+        percentage_score = (float(concept_attempt.average_score) / 4.0) * 100
+        
+        if percentage_score < 70:
+            raise ValueError("Cannot confirm completion with score below 70%")
+        
+        # Update concept attempt status
+        concept_attempt.status = 'passed'
+        
+        # Update practice progress
+        await self._update_concept_mapping_progress(concept_attempt)
+        
+        # Create or update StudentAssignment record
+        student_assignment = await self._create_or_update_student_assignment(
+            student_id=student_id,
+            assignment_id=concept_attempt.vocabulary_list_id,
+            classroom_assignment_id=concept_attempt.practice_progress.classroom_assignment_id,
+            assignment_type="vocabulary",
+            subtype="concept_mapping"
+        )
+        
+        await self.db.commit()
+        
+        # Clear all Redis data for this assignment
+        await self.session_manager.clear_all_session_data(student_id, concept_attempt.vocabulary_list_id)
+        
+        return {
+            'success': True,
+            'message': 'Concept mapping assignment completed successfully',
+            'final_score': float(concept_attempt.average_score),
+            'percentage_score': percentage_score
+        }
+    
+    async def decline_concept_completion(
+        self,
+        concept_attempt_id: UUID,
+        student_id: UUID
+    ) -> Dict[str, Any]:
+        """Decline concept mapping completion and prepare for retake"""
+        
+        # Get concept attempt
+        result = await self.db.execute(
+            select(VocabularyConceptMapAttempt)
+            .where(
+                and_(
+                    VocabularyConceptMapAttempt.id == concept_attempt_id,
+                    VocabularyConceptMapAttempt.student_id == student_id
+                )
+            )
+            .options(selectinload(VocabularyConceptMapAttempt.practice_progress))
+        )
+        concept_attempt = result.scalar_one_or_none()
+        
+        if not concept_attempt:
+            raise ValueError("Concept mapping attempt not found")
+        
+        # Calculate percentage score
+        percentage_score = (float(concept_attempt.average_score) / 4.0) * 100
+        
+        # Update concept attempt status
+        concept_attempt.status = 'declined'
+        
+        # Clear Redis session data
+        await self.session_manager.clear_all_session_data(student_id, concept_attempt.vocabulary_list_id)
+        
+        await self.db.commit()
+        
+        return {
+            'success': True,
+            'message': 'Assignment declined. You can retake it later.',
+            'final_score': float(concept_attempt.average_score),
+            'percentage_score': percentage_score
+        }
+    
     def _format_vocabulary_word(self, word: VocabularyWord) -> Dict[str, Any]:
         """Format a vocabulary word for the frontend"""
         if not word:
@@ -1111,6 +1233,16 @@ class VocabularyPracticeService:
         progress.practice_status = practice_status
         progress.current_game_session = None  # Clear current session
         
+        # Create StudentAssignment record if passed
+        if concept_attempt.status == 'passed':
+            await self._create_or_update_student_assignment(
+                student_id=concept_attempt.student_id,
+                assignment_id=concept_attempt.vocabulary_list_id,
+                classroom_assignment_id=progress.classroom_assignment_id,
+                assignment_type="vocabulary",
+                subtype="concept_mapping"
+            )
+        
         # Clear Redis session data
         await self.session_manager.clear_session(concept_attempt.student_id, concept_attempt.vocabulary_list_id)
         await self.session_manager.clear_attempt(concept_attempt.student_id, concept_attempt.vocabulary_list_id, 'concept_mapping')
@@ -1140,6 +1272,34 @@ class VocabularyPracticeService:
         completed_assignments = progress.practice_status.get('completed_assignments', [])
         if 'puzzle_path' in completed_assignments:
             raise ValueError("Puzzle path has already been completed. Cannot retake completed activities.")
+        
+        # Check for existing pending confirmation attempt
+        existing_attempt_result = await self.db.execute(
+            select(VocabularyPuzzleAttempt)
+            .where(
+                and_(
+                    VocabularyPuzzleAttempt.student_id == student_id,
+                    VocabularyPuzzleAttempt.vocabulary_list_id == vocabulary_list_id,
+                    VocabularyPuzzleAttempt.status == 'pending_confirmation'
+                )
+            )
+        )
+        existing_attempt = existing_attempt_result.scalar_one_or_none()
+        
+        if existing_attempt:
+            # Return the existing attempt data with a flag to show confirmation dialog
+            return {
+                'puzzle_attempt_id': str(existing_attempt.id),
+                'total_puzzles': existing_attempt.total_puzzles,
+                'passing_score': existing_attempt.passing_score,
+                'max_possible_score': existing_attempt.max_possible_score,
+                'current_puzzle_index': existing_attempt.total_puzzles,  # All puzzles completed
+                'puzzle': None,  # No current puzzle
+                'is_complete': True,
+                'needs_confirmation': True,
+                'current_score': existing_attempt.total_score,
+                'percentage_score': (existing_attempt.total_score / existing_attempt.max_possible_score) * 100 if existing_attempt.max_possible_score > 0 else 0
+            }
         
         # Check if puzzles exist, generate if not
         puzzles_result = await self.db.execute(

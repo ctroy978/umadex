@@ -49,6 +49,10 @@ interface PuzzleSession {
   max_possible_score: number
   current_puzzle_index: number
   puzzle: Puzzle | null
+  is_complete?: boolean
+  needs_confirmation?: boolean
+  current_score?: number
+  percentage_score?: number
 }
 
 interface PuzzleEvaluation {
@@ -115,7 +119,23 @@ export default function PuzzlePathPage() {
       setError(null)
       const sessionData = await studentApi.startPuzzlePath(vocabularyId)
       setSession(sessionData)
-      setStartTime(new Date())
+      
+      // Check if this is a pending confirmation attempt
+      if (sessionData.is_complete && sessionData.needs_confirmation) {
+        setLastResult({
+          valid: true,
+          current_score: sessionData.current_score,
+          puzzles_remaining: 0,
+          is_complete: true,
+          passed: sessionData.percentage_score >= 70,
+          percentage_score: sessionData.percentage_score,
+          needs_confirmation: true,
+          progress_percentage: 100
+        })
+        setShowCompletionDialog(true)
+      } else {
+        setStartTime(new Date())
+      }
     } catch (err: any) {
       console.error('Failed to start puzzle path:', err)
       setError('Failed to start puzzle path. Please try again.')
@@ -150,6 +170,15 @@ export default function PuzzlePathPage() {
       })
 
       setLastResult(result)
+      
+      // Debug log
+      console.log('Puzzle submission result:', {
+        is_complete: result.is_complete,
+        needs_confirmation: result.needs_confirmation,
+        percentage_score: result.percentage_score,
+        passed: result.passed,
+        current_score: result.current_score
+      })
 
       if (result.is_complete && result.needs_confirmation) {
         setShowCompletionDialog(true)
@@ -541,7 +570,7 @@ export default function PuzzlePathPage() {
       </main>
 
       {/* Completion Confirmation Dialog */}
-      {showCompletionDialog && lastResult && (
+      {showCompletionDialog && lastResult && lastResult.percentage_score !== undefined && (
         <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-8 max-w-md w-full shadow-xl">
             <div className="text-center mb-6">
@@ -558,7 +587,7 @@ export default function PuzzlePathPage() {
                 Puzzle Path Complete!
               </h3>
               <p className="text-lg text-gray-700 mb-4">
-                You scored <span className="font-bold text-primary-600">{Math.round(lastResult.percentage_score)}%</span>
+                You scored <span className="font-bold text-primary-600">{Math.round(lastResult.percentage_score || 0)}%</span>
               </p>
               {lastResult.percentage_score >= 70 ? (
                 <p className="text-green-700">

@@ -70,6 +70,8 @@ interface SubmissionResult {
   words_remaining?: number
   is_complete?: boolean
   passed?: boolean
+  percentage_score?: number
+  needs_confirmation?: boolean
   next_word?: VocabularyWord
   progress_percentage?: number
 }
@@ -99,6 +101,12 @@ export default function ConceptMappingPage() {
   const [passed, setPassed] = useState<boolean | null>(null)
   const [startTime, setStartTime] = useState<Date>(new Date())
   const [wordStartTime, setWordStartTime] = useState<Date>(new Date())
+  const [showCompletionDialog, setShowCompletionDialog] = useState(false)
+  const [confirmingCompletion, setConfirmingCompletion] = useState(false)
+  const [completionResult, setCompletionResult] = useState<{
+    percentage_score: number
+    needs_confirmation: boolean
+  } | null>(null)
 
   // Auto-save refs
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout>()
@@ -106,6 +114,24 @@ export default function ConceptMappingPage() {
   useEffect(() => {
     initializeSession()
   }, [vocabularyId])
+
+  // Navigation protection
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      // Only show warning if there's an active session and not showing completion dialog
+      if (session && !showCompletionDialog && !isComplete) {
+        const message = 'You have an assignment in progress. If you leave now, your progress will be lost.'
+        e.preventDefault()
+        e.returnValue = message
+        return message
+      }
+    }
+
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+    }
+  }, [session, showCompletionDialog, isComplete])
 
   const initializeSession = async () => {
     try {
@@ -227,6 +253,15 @@ export default function ConceptMappingPage() {
         setPassed(result.passed || null)
         setShowEvaluation(true)
 
+        // Handle completion dialog if needed
+        if (result.is_complete && result.needs_confirmation) {
+          setCompletionResult({
+            percentage_score: result.percentage_score || 0,
+            needs_confirmation: result.needs_confirmation
+          })
+          setShowCompletionDialog(true)
+        }
+
         // Update session for next word if not complete
         if (!result.is_complete && result.next_word) {
           setSession(prev => prev ? {
@@ -246,8 +281,13 @@ export default function ConceptMappingPage() {
 
   const handleContinue = () => {
     if (isComplete) {
-      // Show results page or return to practice menu
-      router.push(`/student/vocabulary/${vocabularyId}/practice`)
+      // If needs confirmation, show dialog instead of redirecting
+      if (completionResult?.needs_confirmation) {
+        setShowCompletionDialog(true)
+      } else {
+        // Otherwise go to practice menu
+        router.push(`/student/vocabulary/${vocabularyId}/practice`)
+      }
     } else {
       // Continue to next word
       setShowEvaluation(false)
@@ -293,6 +333,38 @@ export default function ConceptMappingPage() {
     } catch (err: any) {
       console.error('Failed to finish early:', err)
       alert('Failed to finish early. Please try again.')
+    }
+  }
+
+  const handleConfirmCompletion = async () => {
+    if (!session) return
+    
+    setConfirmingCompletion(true)
+    try {
+      const result = await studentApi.confirmConceptCompletion(session.concept_attempt_id)
+      // Redirect to practice page with success message
+      router.push(`/student/vocabulary/${vocabularyId}/practice?completed=concept-mapping`)
+    } catch (err: any) {
+      console.error('Failed to confirm completion:', err)
+      alert('Failed to complete assignment. Please try again.')
+    } finally {
+      setConfirmingCompletion(false)
+    }
+  }
+
+  const handleDeclineCompletion = async () => {
+    if (!session) return
+    
+    setConfirmingCompletion(true)
+    try {
+      const result = await studentApi.declineConceptCompletion(session.concept_attempt_id)
+      // Redirect to practice page
+      router.push(`/student/vocabulary/${vocabularyId}/practice`)
+    } catch (err: any) {
+      console.error('Failed to decline completion:', err)
+      alert('Failed to process request. Please try again.')
+    } finally {
+      setConfirmingCompletion(false)
     }
   }
 
@@ -707,6 +779,62 @@ export default function ConceptMappingPage() {
           </div>
         )}
       </main>
+
+      {/* Completion Confirmation Dialog */}
+      {showCompletionDialog && completionResult && (
+        <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-8 max-w-md w-full shadow-xl">
+            <div className="text-center mb-6">
+              <div className={`inline-flex items-center justify-center w-16 h-16 rounded-full mb-4 ${
+                completionResult.percentage_score >= 70 ? 'bg-green-100' : 'bg-amber-100'
+              }`}>
+                {completionResult.percentage_score >= 70 ? (
+                  <CheckCircleIcon className="h-8 w-8 text-green-600" />
+                ) : (
+                  <ExclamationCircleIcon className="h-8 w-8 text-amber-600" />
+                )}
+              </div>
+              <h3 className="text-2xl font-bold text-gray-900 mb-2">
+                Concept Mapping Complete!
+              </h3>
+              <p className="text-lg text-gray-700 mb-4">
+                You scored <span className="font-bold text-primary-600">{Math.round(completionResult.percentage_score)}%</span>
+              </p>
+              {completionResult.percentage_score >= 70 ? (
+                <p className="text-green-700">
+                  Congratulations! You scored 70% or higher.
+                  <br />
+                  <span className="font-semibold">Assignment completed successfully!</span>
+                </p>
+              ) : (
+                <p className="text-amber-700">
+                  You scored below 70%.
+                  <br />
+                  <span className="font-semibold">You need 70% or higher to complete this assignment.</span>
+                </p>
+              )}
+            </div>
+
+            {completionResult.percentage_score >= 70 ? (
+              <button
+                onClick={handleConfirmCompletion}
+                disabled={confirmingCompletion}
+                className="w-full px-6 py-3 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+              >
+                {confirmingCompletion ? 'Completing...' : 'Complete Assignment'}
+              </button>
+            ) : (
+              <button
+                onClick={handleDeclineCompletion}
+                disabled={confirmingCompletion}
+                className="w-full px-6 py-3 bg-amber-600 text-white rounded-lg font-medium hover:bg-amber-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+              >
+                {confirmingCompletion ? 'Processing...' : 'Retake Assignment Later'}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
