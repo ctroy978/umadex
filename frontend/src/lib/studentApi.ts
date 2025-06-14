@@ -220,5 +220,15 @@ export const studentApi = {
   async getPuzzlePathProgress(puzzleAttemptId: string): Promise<any> {
     const response = await api.get(`/v1/student/vocabulary/practice/puzzle-path-progress/${puzzleAttemptId}`)
     return response.data
+  },
+
+  async confirmPuzzleCompletion(puzzleAttemptId: string): Promise<any> {
+    const response = await api.post(`/v1/student/vocabulary/practice/confirm-puzzle-completion/${puzzleAttemptId}`)
+    return response.data
+  },
+
+  async declinePuzzleCompletion(puzzleAttemptId: string): Promise<any> {
+    const response = await api.post(`/v1/student/vocabulary/practice/decline-puzzle-completion/${puzzleAttemptId}`)
+    return response.data
   }
 }

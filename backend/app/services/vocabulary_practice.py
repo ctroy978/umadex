@@ -1356,36 +1356,89 @@ class VocabularyPracticeService:
             select(VocabularyList)
             .where(VocabularyList.id == puzzle.vocabulary_list_id)
         )
-        vocab_list = vocab_list_result.scalar_one()
+        vocab_list = vocab_list_result.scalar_one_or_none()
+        
+        if not vocab_list:
+            raise ValueError("Vocabulary list not found")
         
         # Evaluate the puzzle response
-        evaluation = await evaluator.evaluate_puzzle_response(
-            puzzle_type=puzzle.puzzle_type,
-            puzzle_data=puzzle.puzzle_data,
-            correct_answer=puzzle.correct_answer,
-            student_answer=student_answer,
-            word=puzzle.word.word,
-            grade_level=vocab_list.grade_level
+        try:
+            evaluation = await evaluator.evaluate_puzzle_response(
+                puzzle_type=puzzle.puzzle_type,
+                puzzle_data=puzzle.puzzle_data,
+                correct_answer=puzzle.correct_answer,
+                student_answer=student_answer,
+                word=puzzle.word.word,
+                grade_level=vocab_list.grade_level
+            )
+            # Validate evaluation format
+            if not isinstance(evaluation, dict) or 'score' not in evaluation:
+                raise ValueError("Invalid evaluation response format")
+            if not isinstance(evaluation['score'], int) or not (1 <= evaluation['score'] <= 4):
+                raise ValueError(f"Invalid score value: {evaluation['score']}")
+        except Exception as e:
+            logger.error(f"AI evaluation failed: {e}")
+            # Fallback evaluation
+            evaluation = {
+                'score': 1,
+                'accuracy': 'system_error', 
+                'feedback': 'Unable to evaluate response due to system error',
+                'areas_checked': ['system_fallback']
+            }
+        
+        # Check if puzzle response already exists (avoid duplicates)
+        existing_response_result = await self.db.execute(
+            select(VocabularyPuzzleResponse)
+            .where(
+                and_(
+                    VocabularyPuzzleResponse.practice_progress_id == puzzle_attempt.practice_progress_id,
+                    VocabularyPuzzleResponse.puzzle_id == puzzle_id,
+                    VocabularyPuzzleResponse.attempt_number == puzzle_attempt.attempt_number
+                )
+            )
         )
+        existing_response = existing_response_result.scalar_one_or_none()
+        
+        if existing_response:
+            logger.warning(f"Puzzle response already exists for puzzle {puzzle_id}, attempt {puzzle_attempt.attempt_number}")
+            # Return existing response data instead of creating duplicate
+            return {
+                'valid': True,
+                'evaluation': existing_response.ai_evaluation,
+                'current_score': puzzle_attempt.total_score,
+                'puzzles_remaining': puzzle_attempt.total_puzzles - puzzle_attempt.puzzles_completed,
+                'is_complete': puzzle_attempt.puzzles_completed >= puzzle_attempt.total_puzzles,
+                'passed': puzzle_attempt.status == 'pending_confirmation',
+                'percentage_score': (puzzle_attempt.total_score / puzzle_attempt.max_possible_score) * 100 if puzzle_attempt.max_possible_score > 0 else 0,
+                'needs_confirmation': puzzle_attempt.status == 'pending_confirmation',
+                'next_puzzle': None,
+                'progress_percentage': (puzzle_attempt.puzzles_completed / puzzle_attempt.total_puzzles) * 100 if puzzle_attempt.total_puzzles > 0 else 0
+            }
         
         # Save puzzle response
-        puzzle_response = VocabularyPuzzleResponse(
-            student_id=puzzle_attempt.student_id,
-            vocabulary_list_id=puzzle_attempt.vocabulary_list_id,
-            practice_progress_id=puzzle_attempt.practice_progress_id,
-            puzzle_id=puzzle_id,
-            student_answer=student_answer,
-            ai_evaluation=evaluation,
-            puzzle_score=evaluation['score'],
-            attempt_number=puzzle_attempt.attempt_number,
-            time_spent_seconds=time_spent_seconds
-        )
-        self.db.add(puzzle_response)
+        try:
+            puzzle_response = VocabularyPuzzleResponse(
+                student_id=puzzle_attempt.student_id,
+                vocabulary_list_id=puzzle_attempt.vocabulary_list_id,
+                practice_progress_id=puzzle_attempt.practice_progress_id,
+                puzzle_id=puzzle_id,
+                student_answer=student_answer,
+                ai_evaluation=evaluation,
+                puzzle_score=evaluation['score'],
+                attempt_number=puzzle_attempt.attempt_number,
+                time_spent_seconds=time_spent_seconds
+            )
+            self.db.add(puzzle_response)
+        except Exception as e:
+            logger.error(f"Failed to create puzzle response: {e}")
+            raise ValueError(f"Database constraint violation: {str(e)}")
         
         # Update puzzle attempt
+        logger.info(f"Updating puzzle attempt {puzzle_attempt.id}: current_score={puzzle_attempt.total_score}, adding={evaluation['score']}")
         puzzle_attempt.puzzles_completed += 1
         puzzle_attempt.current_puzzle_index += 1
         puzzle_attempt.total_score += evaluation['score']
+        logger.info(f"After update: puzzles_completed={puzzle_attempt.puzzles_completed}/{puzzle_attempt.total_puzzles}, total_score={puzzle_attempt.total_score}")
         
         # Update puzzle scores tracking
         puzzle_scores = puzzle_attempt.puzzle_scores.copy() if puzzle_attempt.puzzle_scores else {}
@@ -1401,7 +1454,13 @@ class VocabularyPracticeService:
         is_complete = puzzle_attempt.puzzles_completed >= puzzle_attempt.total_puzzles
         
         if is_complete:
-            puzzle_attempt.status = 'passed' if puzzle_attempt.total_score >= puzzle_attempt.passing_score else 'failed'
+            # Calculate percentage score
+            if puzzle_attempt.max_possible_score > 0:
+                percentage_score = (puzzle_attempt.total_score / puzzle_attempt.max_possible_score) * 100
+            else:
+                percentage_score = 0
+                logger.warning(f"Max possible score is 0 for puzzle attempt {puzzle_attempt.id}")
+            puzzle_attempt.status = 'pending_confirmation' if percentage_score >= 70 else 'failed'
             puzzle_attempt.completed_at = datetime.now(timezone.utc)
             
             # Calculate total time spent
@@ -1409,24 +1468,32 @@ class VocabularyPracticeService:
                 time_diff = puzzle_attempt.completed_at - puzzle_attempt.started_at
                 puzzle_attempt.time_spent_seconds = int(time_diff.total_seconds())
             
-            # Update practice progress
-            await self._update_puzzle_path_progress(puzzle_attempt)
+            # DO NOT update practice progress here - wait for explicit confirmation
         
-        await self.db.commit()
+        try:
+            await self.db.commit()
+        except Exception as e:
+            await self.db.rollback()
+            logger.error(f"Database commit failed: {e}")
+            raise
         
         # Update Redis session if not complete
         if not is_complete:
-            session_data = {
-                'puzzle_attempt_id': str(puzzle_attempt.id),
-                'current_puzzle_index': puzzle_attempt.current_puzzle_index,
-                'puzzles_remaining': puzzle_attempt.total_puzzles - puzzle_attempt.puzzles_completed
-            }
-            await self.session_manager.set_current_session(
-                puzzle_attempt.student_id, puzzle_attempt.vocabulary_list_id, session_data
-            )
-            await self.session_manager.update_activity(
-                puzzle_attempt.student_id, puzzle_attempt.vocabulary_list_id
-            )
+            try:
+                session_data = {
+                    'puzzle_attempt_id': str(puzzle_attempt.id),
+                    'current_puzzle_index': puzzle_attempt.current_puzzle_index,
+                    'puzzles_remaining': puzzle_attempt.total_puzzles - puzzle_attempt.puzzles_completed
+                }
+                await self.session_manager.set_current_session(
+                    puzzle_attempt.student_id, puzzle_attempt.vocabulary_list_id, session_data
+                )
+                await self.session_manager.update_activity(
+                    puzzle_attempt.student_id, puzzle_attempt.vocabulary_list_id
+                )
+            except Exception as e:
+                logger.warning(f"Redis session update failed: {e}")
+                # Continue execution - Redis failures shouldn't break the main flow
         
         # Get next puzzle if not complete
         next_puzzle = None
@@ -1442,15 +1509,25 @@ class VocabularyPracticeService:
             if puzzle_attempt.current_puzzle_index < len(all_puzzles):
                 next_puzzle = all_puzzles[puzzle_attempt.current_puzzle_index]
         
+        # Calculate percentage for return
+        percentage_score = None
+        if is_complete:
+            if puzzle_attempt.max_possible_score > 0:
+                percentage_score = (puzzle_attempt.total_score / puzzle_attempt.max_possible_score) * 100
+            else:
+                percentage_score = 0
+        
         return {
             'valid': True,
             'evaluation': evaluation,
             'current_score': puzzle_attempt.total_score,
             'puzzles_remaining': puzzle_attempt.total_puzzles - puzzle_attempt.puzzles_completed,
             'is_complete': is_complete,
-            'passed': puzzle_attempt.status == 'passed' if is_complete else None,
+            'passed': puzzle_attempt.status == 'pending_confirmation' if is_complete else None,
+            'percentage_score': percentage_score,
+            'needs_confirmation': puzzle_attempt.status == 'pending_confirmation' if is_complete else False,
             'next_puzzle': self._format_puzzle(next_puzzle) if next_puzzle else None,
-            'progress_percentage': (puzzle_attempt.puzzles_completed / puzzle_attempt.total_puzzles) * 100
+            'progress_percentage': (puzzle_attempt.puzzles_completed / puzzle_attempt.total_puzzles) * 100 if puzzle_attempt.total_puzzles > 0 else 0
         }
     
     async def get_puzzle_path_progress(
@@ -1582,6 +1659,106 @@ class VocabularyPracticeService:
         # Clear Redis session data
         await self.session_manager.clear_session(puzzle_attempt.student_id, puzzle_attempt.vocabulary_list_id)
         await self.session_manager.clear_attempt(puzzle_attempt.student_id, puzzle_attempt.vocabulary_list_id, 'puzzle_path')
+    
+    async def confirm_puzzle_completion(
+        self,
+        puzzle_attempt_id: UUID,
+        student_id: UUID
+    ) -> Dict[str, Any]:
+        """Confirm puzzle path completion and create StudentAssignment record"""
+        
+        # Get puzzle attempt with related data
+        result = await self.db.execute(
+            select(VocabularyPuzzleAttempt)
+            .where(
+                and_(
+                    VocabularyPuzzleAttempt.id == puzzle_attempt_id,
+                    VocabularyPuzzleAttempt.student_id == student_id
+                )
+            )
+            .options(selectinload(VocabularyPuzzleAttempt.practice_progress))
+        )
+        puzzle_attempt = result.scalar_one_or_none()
+        
+        if not puzzle_attempt:
+            raise ValueError("Puzzle attempt not found")
+        
+        if puzzle_attempt.status != 'pending_confirmation':
+            raise ValueError("Puzzle attempt is not pending confirmation")
+        
+        # Calculate percentage score
+        percentage_score = (puzzle_attempt.total_score / puzzle_attempt.max_possible_score) * 100
+        
+        if percentage_score < 70:
+            raise ValueError("Cannot confirm completion with score below 70%")
+        
+        # Update puzzle attempt status
+        puzzle_attempt.status = 'passed'
+        
+        # Update practice progress
+        await self._update_puzzle_path_progress(puzzle_attempt)
+        
+        # Create or update StudentAssignment record
+        student_assignment = await self._create_or_update_student_assignment(
+            student_id=student_id,
+            assignment_id=puzzle_attempt.vocabulary_list_id,
+            classroom_assignment_id=puzzle_attempt.practice_progress.classroom_assignment_id,
+            assignment_type="vocabulary",
+            subtype="puzzle_path"
+        )
+        
+        await self.db.commit()
+        
+        # Clear all Redis data for this assignment
+        await self.session_manager.clear_all_session_data(student_id, puzzle_attempt.vocabulary_list_id)
+        
+        return {
+            'success': True,
+            'message': 'Puzzle path assignment completed successfully',
+            'final_score': puzzle_attempt.total_score,
+            'percentage_score': percentage_score
+        }
+    
+    async def decline_puzzle_completion(
+        self,
+        puzzle_attempt_id: UUID,
+        student_id: UUID
+    ) -> Dict[str, Any]:
+        """Decline puzzle completion and prepare for retake"""
+        
+        # Get puzzle attempt
+        result = await self.db.execute(
+            select(VocabularyPuzzleAttempt)
+            .where(
+                and_(
+                    VocabularyPuzzleAttempt.id == puzzle_attempt_id,
+                    VocabularyPuzzleAttempt.student_id == student_id
+                )
+            )
+            .options(selectinload(VocabularyPuzzleAttempt.practice_progress))
+        )
+        puzzle_attempt = result.scalar_one_or_none()
+        
+        if not puzzle_attempt:
+            raise ValueError("Puzzle attempt not found")
+        
+        # Calculate percentage score
+        percentage_score = (puzzle_attempt.total_score / puzzle_attempt.max_possible_score) * 100
+        
+        # Update puzzle attempt status
+        puzzle_attempt.status = 'declined'
+        
+        # Clear Redis session data
+        await self.session_manager.clear_all_session_data(student_id, puzzle_attempt.vocabulary_list_id)
+        
+        await self.db.commit()
+        
+        return {
+            'success': True,
+            'message': 'Assignment declined. You can retake it later.',
+            'final_score': puzzle_attempt.total_score,
+            'percentage_score': percentage_score
+        }
     
     # Story Builder Methods
     

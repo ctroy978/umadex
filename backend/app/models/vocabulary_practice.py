@@ -430,7 +430,7 @@ class VocabularyPuzzleAttempt(Base):
     
     __table_args__ = (
         CheckConstraint(
-            "status IN ('in_progress', 'completed', 'passed', 'failed', 'abandoned')",
+            "status IN ('in_progress', 'completed', 'passed', 'failed', 'abandoned', 'pending_confirmation', 'declined')",
             name='check_puzzle_attempt_status'
         ),
     )
