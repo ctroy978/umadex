@@ -49,7 +49,15 @@ export default function VocabularyChallengePage() {
     explanation: string
     correct_answer?: string
     can_retry: boolean
+    is_complete?: boolean
+    passed?: boolean
+    percentage_score?: number
+    needs_confirmation?: boolean
+    next_question?: Question
   } | null>(null)
+  const [showConfirmationDialog, setShowConfirmationDialog] = useState(false)
+  const [confirmingCompletion, setConfirmingCompletion] = useState(false)
+  const [isResuming, setIsResuming] = useState(false)
   const [timeSpent, setTimeSpent] = useState(0)
   const startTimeRef = useRef<number>(Date.now())
 
@@ -64,12 +72,34 @@ export default function VocabularyChallengePage() {
     }
   }, [showFeedback])
 
+  useEffect(() => {
+    // Add navigation warning when game is in progress
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (gameSession && !feedback?.is_complete) {
+        e.preventDefault()
+        e.returnValue = 'You have an assignment in progress. If you leave now, your progress will be lost.'
+        return 'You have an assignment in progress. If you leave now, your progress will be lost.'
+      }
+    }
+
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [gameSession, feedback])
+
   const startNewGame = async () => {
     try {
       setLoading(true)
       const session = await studentApi.startVocabularyChallenge(vocabularyId)
       setGameSession(session)
-      setCurrentScore(0)
+      
+      // Handle session resumption
+      if (session.is_resuming) {
+        setIsResuming(true)
+        setCurrentScore(session.current_score || 0)
+        setTimeout(() => setIsResuming(false), 3000) // Hide message after 3 seconds
+      } else {
+        setCurrentScore(session.current_score || 0)
+      }
     } catch (err: any) {
       console.error('Failed to start game:', err)
       
@@ -105,6 +135,11 @@ export default function VocabularyChallengePage() {
       setFeedback(result)
       setShowFeedback(true)
       setCurrentScore(result.current_score)
+
+      // Check if completion confirmation is needed
+      if (result.needs_confirmation) {
+        setShowConfirmationDialog(true)
+      }
 
       // If incorrect and can retry, increment attempt number
       if (!result.correct && result.can_retry) {
@@ -154,6 +189,39 @@ export default function VocabularyChallengePage() {
       } catch (err) {
         console.error('Failed to get next question:', err)
       }
+    }
+  }
+
+  const handleConfirmCompletion = async () => {
+    if (!gameSession) return
+    
+    setConfirmingCompletion(true)
+    try {
+      await studentApi.confirmChallengeCompletion(gameSession.game_attempt_id)
+      // Redirect to practice hub after successful confirmation
+      router.push(`/student/vocabulary/${vocabularyId}/practice`)
+    } catch (err: any) {
+      console.error('Failed to confirm completion:', err)
+      alert('Failed to confirm completion. Please try again.')
+    } finally {
+      setConfirmingCompletion(false)
+    }
+  }
+
+  const handleDeclineCompletion = async () => {
+    if (!gameSession) return
+    
+    setConfirmingCompletion(true)
+    try {
+      await studentApi.declineChallengeCompletion(gameSession.game_attempt_id)
+      setShowConfirmationDialog(false)
+      // Redirect to practice hub to start over
+      router.push(`/student/vocabulary/${vocabularyId}/practice`)
+    } catch (err: any) {
+      console.error('Failed to decline completion:', err)
+      alert('Failed to decline completion. Please try again.')
+    } finally {
+      setConfirmingCompletion(false)
     }
   }
 
@@ -258,6 +326,20 @@ export default function VocabularyChallengePage() {
           </div>
         </div>
       </div>
+
+      {/* Resuming Session Indicator */}
+      {isResuming && (
+        <div className="bg-blue-50 border-b border-blue-200">
+          <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
+            <div className="flex items-center">
+              <ClockIcon className="h-5 w-5 text-blue-600 mr-2" />
+              <p className="text-blue-800 text-sm font-medium">
+                Continuing previous session...
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Main Content */}
       <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -400,8 +482,8 @@ export default function VocabularyChallengePage() {
           )}
         </div>
 
-        {/* Score Summary (if game complete) */}
-        {feedback?.is_complete && (
+        {/* Score Summary (if game complete and not needs confirmation) */}
+        {feedback?.is_complete && !feedback?.needs_confirmation && (
           <div className="bg-white rounded-lg shadow-lg border-2 border-primary-200 p-8">
             <div className="text-center mb-6">
               <div className={`inline-flex items-center justify-center w-16 h-16 rounded-full mb-4 ${
@@ -474,6 +556,69 @@ export default function VocabularyChallengePage() {
                 </p>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Confirmation Dialog */}
+        {showConfirmationDialog && feedback && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+              <div className="text-center mb-6">
+                <div className={`inline-flex items-center justify-center w-16 h-16 rounded-full mb-4 ${
+                  feedback.passed ? 'bg-green-100' : 'bg-red-100'
+                }`}>
+                  {feedback.passed ? (
+                    <CheckCircleIcon className="h-8 w-8 text-green-600" />
+                  ) : (
+                    <XCircleIcon className="h-8 w-8 text-red-600" />
+                  )}
+                </div>
+                <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                  Challenge Complete!
+                </h2>
+                <p className="text-lg text-gray-600 mb-4">
+                  You scored {feedback.percentage_score ? Math.round(feedback.percentage_score) : 0}%
+                </p>
+              </div>
+
+              {feedback.passed ? (
+                <div className="space-y-4">
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                    <p className="text-green-800 text-center">
+                      <strong>Congratulations!</strong> You scored {feedback.percentage_score ? Math.round(feedback.percentage_score) : 0}%. 
+                      Assignment completed successfully!
+                    </p>
+                  </div>
+                  <div className="flex space-x-3">
+                    <button
+                      onClick={handleConfirmCompletion}
+                      disabled={confirmingCompletion}
+                      className="flex-1 bg-green-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-green-700 disabled:opacity-50"
+                    >
+                      {confirmingCompletion ? 'Confirming...' : 'Complete Assignment'}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                    <p className="text-red-800 text-center">
+                      You scored {feedback.percentage_score ? Math.round(feedback.percentage_score) : 0}%. 
+                      You need 70% or higher to complete this assignment.
+                    </p>
+                  </div>
+                  <div className="flex space-x-3">
+                    <button
+                      onClick={handleDeclineCompletion}
+                      disabled={confirmingCompletion}
+                      className="flex-1 bg-amber-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-amber-700 disabled:opacity-50"
+                    >
+                      {confirmingCompletion ? 'Processing...' : 'Retake Assignment Later'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </main>

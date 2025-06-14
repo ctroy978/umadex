@@ -866,6 +866,8 @@ class SubmitAnswerResponse(BaseModel):
     questions_remaining: int
     is_complete: bool
     passed: Optional[bool] = None
+    percentage_score: Optional[float] = None
+    needs_confirmation: bool = False
     next_question: Optional[Dict[str, Any]] = None
     can_retry: bool
 
@@ -1185,6 +1187,49 @@ async def decline_story_completion(
     )
     
     return StoryCompletionResponse(**result)
+
+
+# Vocabulary Challenge Completion Endpoints
+
+class VocabularyCompletionResponse(BaseModel):
+    success: bool
+    message: str
+    final_score: int
+    percentage_score: float
+
+
+@router.post("/vocabulary/practice/confirm-challenge-completion/{game_attempt_id}", response_model=VocabularyCompletionResponse)
+async def confirm_vocabulary_challenge_completion(
+    game_attempt_id: UUID,
+    current_user: User = Depends(require_student_or_teacher),
+    db: AsyncSession = Depends(get_db)
+):
+    """Confirm vocabulary challenge completion and mark assignment as complete"""
+    practice_service = VocabularyPracticeService(db)
+    
+    result = await practice_service.confirm_vocabulary_challenge_completion(
+        game_attempt_id=game_attempt_id,
+        student_id=current_user.id
+    )
+    
+    return VocabularyCompletionResponse(**result)
+
+
+@router.post("/vocabulary/practice/decline-challenge-completion/{game_attempt_id}", response_model=VocabularyCompletionResponse)
+async def decline_vocabulary_challenge_completion(
+    game_attempt_id: UUID,
+    current_user: User = Depends(require_student_or_teacher),
+    db: AsyncSession = Depends(get_db)
+):
+    """Decline vocabulary challenge completion and prepare for retake"""
+    practice_service = VocabularyPracticeService(db)
+    
+    result = await practice_service.decline_vocabulary_challenge_completion(
+        game_attempt_id=game_attempt_id,
+        student_id=current_user.id
+    )
+    
+    return VocabularyCompletionResponse(**result)
 
 
 # Concept Mapping Endpoints

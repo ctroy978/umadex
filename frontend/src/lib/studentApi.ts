@@ -142,6 +142,16 @@ export const studentApi = {
     return response.data
   },
 
+  async confirmChallengeCompletion(gameAttemptId: string): Promise<any> {
+    const response = await api.post(`/v1/student/vocabulary/practice/confirm-challenge-completion/${gameAttemptId}`)
+    return response.data
+  },
+
+  async declineChallengeCompletion(gameAttemptId: string): Promise<any> {
+    const response = await api.post(`/v1/student/vocabulary/practice/decline-challenge-completion/${gameAttemptId}`)
+    return response.data
+  },
+
   // Story Builder Activities
   async startStoryBuilder(assignmentId: string): Promise<any> {
     const response = await api.post(`/v1/student/vocabulary/${assignmentId}/practice/start-story-builder`)
