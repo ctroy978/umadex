@@ -841,35 +841,6 @@ class VocabularyPracticeStatusResponse(BaseModel):
     test_unlock_date: Optional[str] = None
 
 
-class StartVocabularyChallengeResponse(BaseModel):
-    game_attempt_id: str
-    total_questions: int
-    passing_score: int
-    max_possible_score: int
-    current_question: int
-    question: Optional[Dict[str, Any]]
-
-
-class SubmitAnswerRequest(BaseModel):
-    question_id: str
-    student_answer: str
-    attempt_number: int = Field(..., ge=1, le=2)
-    time_spent_seconds: int = Field(..., ge=0)
-
-
-class SubmitAnswerResponse(BaseModel):
-    correct: bool
-    points_earned: int
-    explanation: str
-    correct_answer: Optional[str] = None
-    current_score: int
-    questions_remaining: int
-    is_complete: bool
-    passed: Optional[bool] = None
-    percentage_score: Optional[float] = None
-    needs_confirmation: bool = False
-    next_question: Optional[Dict[str, Any]] = None
-    can_retry: bool
 
 
 @router.get("/vocabulary/{assignment_id}/practice/status", response_model=VocabularyPracticeStatusResponse)
@@ -910,77 +881,6 @@ async def get_vocabulary_practice_status(
     return VocabularyPracticeStatusResponse(**status)
 
 
-@router.post("/vocabulary/{assignment_id}/practice/start-challenge", response_model=StartVocabularyChallengeResponse)
-async def start_vocabulary_challenge(
-    assignment_id: UUID,
-    current_user: User = Depends(require_student_or_teacher),
-    db: AsyncSession = Depends(get_db)
-):
-    """Start a new vocabulary challenge game"""
-    # Verify student has access
-    access_check = await _validate_assignment_access_helper(
-        assignment_type="vocabulary",
-        assignment_id=assignment_id,
-        current_user=current_user,
-        db=db
-    )
-    
-    # Get classroom assignment ID
-    ca_result = await db.execute(
-        select(ClassroomAssignment.id)
-        .where(
-            and_(
-                ClassroomAssignment.vocabulary_list_id == assignment_id,
-                ClassroomAssignment.classroom_id == UUID(access_check['classroom_id'])
-            )
-        )
-    )
-    classroom_assignment_id = ca_result.scalar_one()
-    
-    # Start the game
-    practice_service = VocabularyPracticeService(db)
-    game_data = await practice_service.start_vocabulary_challenge(
-        student_id=current_user.id,
-        vocabulary_list_id=assignment_id,
-        classroom_assignment_id=classroom_assignment_id
-    )
-    
-    return StartVocabularyChallengeResponse(**game_data)
-
-
-@router.post("/vocabulary/practice/submit-answer/{game_attempt_id}", response_model=SubmitAnswerResponse)
-async def submit_vocabulary_answer(
-    game_attempt_id: UUID,
-    request: SubmitAnswerRequest,
-    current_user: User = Depends(require_student_or_teacher),
-    db: AsyncSession = Depends(get_db)
-):
-    """Submit an answer for a vocabulary challenge question"""
-    practice_service = VocabularyPracticeService(db)
-    
-    # Submit the answer
-    result = await practice_service.submit_answer(
-        game_attempt_id=game_attempt_id,
-        question_id=UUID(request.question_id),
-        student_answer=request.student_answer,
-        attempt_number=request.attempt_number,
-        time_spent_seconds=request.time_spent_seconds
-    )
-    
-    return SubmitAnswerResponse(**result)
-
-
-@router.get("/vocabulary/practice/next-question/{game_attempt_id}")
-async def get_next_vocabulary_question(
-    game_attempt_id: UUID,
-    current_user: User = Depends(require_student_or_teacher),
-    db: AsyncSession = Depends(get_db)
-):
-    """Get the next question in a vocabulary challenge game"""
-    practice_service = VocabularyPracticeService(db)
-    
-    result = await practice_service.get_next_question(game_attempt_id)
-    return result
 
 
 # Story Builder Endpoints
@@ -1189,47 +1089,6 @@ async def decline_story_completion(
     return StoryCompletionResponse(**result)
 
 
-# Vocabulary Challenge Completion Endpoints
-
-class VocabularyCompletionResponse(BaseModel):
-    success: bool
-    message: str
-    final_score: int
-    percentage_score: float
-
-
-@router.post("/vocabulary/practice/confirm-challenge-completion/{game_attempt_id}", response_model=VocabularyCompletionResponse)
-async def confirm_vocabulary_challenge_completion(
-    game_attempt_id: UUID,
-    current_user: User = Depends(require_student_or_teacher),
-    db: AsyncSession = Depends(get_db)
-):
-    """Confirm vocabulary challenge completion and mark assignment as complete"""
-    practice_service = VocabularyPracticeService(db)
-    
-    result = await practice_service.confirm_vocabulary_challenge_completion(
-        game_attempt_id=game_attempt_id,
-        student_id=current_user.id
-    )
-    
-    return VocabularyCompletionResponse(**result)
-
-
-@router.post("/vocabulary/practice/decline-challenge-completion/{game_attempt_id}", response_model=VocabularyCompletionResponse)
-async def decline_vocabulary_challenge_completion(
-    game_attempt_id: UUID,
-    current_user: User = Depends(require_student_or_teacher),
-    db: AsyncSession = Depends(get_db)
-):
-    """Decline vocabulary challenge completion and prepare for retake"""
-    practice_service = VocabularyPracticeService(db)
-    
-    result = await practice_service.decline_vocabulary_challenge_completion(
-        game_attempt_id=game_attempt_id,
-        student_id=current_user.id
-    )
-    
-    return VocabularyCompletionResponse(**result)
 
 
 # Concept Mapping Endpoints

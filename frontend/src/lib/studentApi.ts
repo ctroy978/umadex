@@ -122,35 +122,6 @@ export const studentApi = {
     return response.data
   },
 
-  async startVocabularyChallenge(assignmentId: string): Promise<any> {
-    const response = await api.post(`/v1/student/vocabulary/${assignmentId}/practice/start-challenge`)
-    return response.data
-  },
-
-  async submitVocabularyAnswer(gameAttemptId: string, data: {
-    question_id: string
-    student_answer: string
-    attempt_number: number
-    time_spent_seconds: number
-  }): Promise<any> {
-    const response = await api.post(`/v1/student/vocabulary/practice/submit-answer/${gameAttemptId}`, data)
-    return response.data
-  },
-
-  async getNextVocabularyQuestion(gameAttemptId: string): Promise<any> {
-    const response = await api.get(`/v1/student/vocabulary/practice/next-question/${gameAttemptId}`)
-    return response.data
-  },
-
-  async confirmChallengeCompletion(gameAttemptId: string): Promise<any> {
-    const response = await api.post(`/v1/student/vocabulary/practice/confirm-challenge-completion/${gameAttemptId}`)
-    return response.data
-  },
-
-  async declineChallengeCompletion(gameAttemptId: string): Promise<any> {
-    const response = await api.post(`/v1/student/vocabulary/practice/decline-challenge-completion/${gameAttemptId}`)
-    return response.data
-  },
 
   // Story Builder Activities
   async startStoryBuilder(assignmentId: string): Promise<any> {

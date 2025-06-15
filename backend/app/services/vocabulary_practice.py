@@ -15,9 +15,7 @@ import asyncio
 
 from app.models.vocabulary import VocabularyList, VocabularyWord
 from app.models.vocabulary_practice import (
-    VocabularyGameQuestion, 
     VocabularyPracticeProgress,
-    VocabularyGameAttempt,
     VocabularyStoryPrompt,
     VocabularyStoryResponse,
     VocabularyStoryAttempt,
@@ -29,7 +27,6 @@ from app.models.vocabulary_practice import (
 )
 from app.models.classroom import ClassroomAssignment, StudentAssignment
 from app.models.user import User
-from app.services.vocabulary_game_generator import VocabularyGameGenerator
 from app.services.vocabulary_story_generator import VocabularyStoryGenerator
 from app.services.vocabulary_story_evaluator import VocabularyStoryEvaluator
 from app.services.vocabulary_concept_map_evaluator import VocabularyConceptMapEvaluator
@@ -125,401 +122,6 @@ class VocabularyPracticeService:
         
         return progress
     
-    async def start_vocabulary_challenge(
-        self,
-        student_id: UUID,
-        vocabulary_list_id: UUID,
-        classroom_assignment_id: int
-    ) -> Dict[str, Any]:
-        """Start a new vocabulary challenge game with session management"""
-        
-        logger.info(f"Starting vocabulary challenge for student {student_id}, vocabulary {vocabulary_list_id}")
-        
-        try:
-            # Check for existing active session first
-            existing_session = await self.session_manager.get_current_session(student_id, vocabulary_list_id)
-            if existing_session and 'game_attempt_id' in existing_session:
-                logger.info(f"Resuming existing session for student {student_id}")
-                # Resume existing game attempt
-                return await self._resume_vocabulary_challenge(student_id, vocabulary_list_id, existing_session)
-            
-            # Get or create progress
-            progress = await self.get_or_create_practice_progress(
-                student_id, vocabulary_list_id, classroom_assignment_id
-            )
-            
-            # Check if vocabulary challenge is already completed using PostgreSQL StudentAssignment
-            existing_completion = await self.db.execute(
-                select(StudentAssignment.completed_at)
-                .where(
-                    and_(
-                        StudentAssignment.student_id == student_id,
-                        StudentAssignment.assignment_id == vocabulary_list_id,
-                        StudentAssignment.classroom_assignment_id == classroom_assignment_id,
-                        StudentAssignment.assignment_type == "vocabulary",
-                        StudentAssignment.progress_metadata['subtype'].astext == 'vocabulary_challenge',
-                        StudentAssignment.completed_at.is_not(None)
-                    )
-                )
-            )
-            if existing_completion.scalar_one_or_none():
-                raise ValueError("Fill in the Blank activity has already been completed. Cannot retake completed activities.")
-            
-            # Check if questions exist, generate if not
-            questions_result = await self.db.execute(
-                select(VocabularyGameQuestion)
-                .where(VocabularyGameQuestion.vocabulary_list_id == vocabulary_list_id)
-                .order_by(VocabularyGameQuestion.question_order)
-            )
-            questions = questions_result.scalars().all()
-            
-            if not questions:
-                # Generate questions with timeout protection
-                logger.info(f"No questions found for vocabulary list {vocabulary_list_id}, generating now...")
-                try:
-                    generator = VocabularyGameGenerator(self.db)
-                    question_data = await asyncio.wait_for(
-                        generator.generate_game_questions(vocabulary_list_id),
-                        timeout=60.0  # 60 second timeout for question generation
-                    )
-                    
-                    if not question_data:
-                        raise ValueError("Question generation failed - no questions were created")
-                    
-                    # Save questions to database
-                    for q_data in question_data:
-                        question = VocabularyGameQuestion(**q_data)
-                        self.db.add(question)
-                    
-                    await self.db.commit()
-                    logger.info(f"Successfully generated and saved {len(question_data)} questions")
-                    
-                    # Reload questions
-                    questions_result = await self.db.execute(
-                        select(VocabularyGameQuestion)
-                        .where(VocabularyGameQuestion.vocabulary_list_id == vocabulary_list_id)
-                        .order_by(VocabularyGameQuestion.question_order)
-                    )
-                    questions = questions_result.scalars().all()
-                    
-                except asyncio.TimeoutError:
-                    logger.error(f"Question generation timed out for vocabulary list {vocabulary_list_id}")
-                    raise ValueError("Question generation is taking too long. Please try again later or contact your teacher.")
-                except Exception as e:
-                    logger.error(f"Question generation failed for vocabulary list {vocabulary_list_id}: {str(e)}")
-                    raise ValueError("Unable to generate questions for this vocabulary list. Please contact your teacher.")
-            
-            if not questions:
-                raise ValueError("No questions available for this vocabulary assignment. Please contact your teacher.")
-            
-            # Calculate scoring - each question worth 1 point, 70% threshold
-            total_questions = len(questions)
-            max_possible_score = total_questions  # 1 point per question
-            passing_score = int(total_questions * 0.7)  # 70% threshold
-            
-            # Shuffle questions for this attempt
-            question_ids = [str(q.id) for q in questions]
-            random.shuffle(question_ids)
-            
-            # Get current attempt number
-            vocab_challenge_status = progress.practice_status.get('assignments', {}).get('vocabulary_challenge', {})
-            attempt_number = vocab_challenge_status.get('attempts', 0) + 1
-            
-            # Create new game attempt
-            game_attempt = VocabularyGameAttempt(
-                student_id=student_id,
-                vocabulary_list_id=vocabulary_list_id,
-                practice_progress_id=progress.id,
-                game_type='vocabulary_challenge',
-                attempt_number=attempt_number,
-                total_questions=total_questions,
-                max_possible_score=max_possible_score,
-                passing_score=passing_score,
-                shuffled_question_order=question_ids
-            )
-            self.db.add(game_attempt)
-            await self.db.commit()
-            await self.db.refresh(game_attempt)
-            
-            # Update progress to mark as in progress
-            practice_status = progress.practice_status.copy()
-            
-            # Ensure vocabulary_challenge status exists and update it
-            vocab_challenge = self._ensure_assignment_status(practice_status, 'vocabulary_challenge')
-            vocab_challenge['status'] = 'in_progress'
-            vocab_challenge['attempts'] = attempt_number
-            vocab_challenge['last_attempt_at'] = datetime.now(timezone.utc).isoformat()
-            
-            progress.practice_status = practice_status
-            session_data = {
-                'game_attempt_id': str(game_attempt.id),
-                'current_question': 0,
-                'questions_remaining': total_questions
-            }
-            progress.current_game_session = session_data
-            
-            await self.db.commit()
-            
-            # Store session in Redis for fast access
-            await self.session_manager.set_current_session(student_id, vocabulary_list_id, session_data)
-            await self.session_manager.set_current_attempt(
-                student_id, vocabulary_list_id, 'vocabulary_challenge',
-                {
-                    'attempt_id': str(game_attempt.id),
-                    'attempt_number': attempt_number,
-                    'started_at': datetime.now(timezone.utc).isoformat()
-                }
-            )
-            
-            # Return first question using shuffled order
-            first_question = None
-            if question_ids:
-                # Get the first question from shuffled order
-                first_question_id = question_ids[0]
-                first_question_result = await self.db.execute(
-                    select(VocabularyGameQuestion)
-                    .where(VocabularyGameQuestion.id == first_question_id)
-                )
-                first_question = first_question_result.scalar_one_or_none()
-            
-            return {
-                'game_attempt_id': str(game_attempt.id),
-                'total_questions': total_questions,
-                'passing_score': passing_score,
-                'max_possible_score': max_possible_score,
-                'current_question': 1,
-                'question': self._format_question(first_question) if first_question else None
-            }
-            
-        except Exception as e:
-            logger.error(f"Error in start_vocabulary_challenge for student {student_id}: {str(e)}", exc_info=True)
-            raise
-    
-    async def _resume_vocabulary_challenge(
-        self,
-        student_id: UUID,
-        vocabulary_list_id: UUID,
-        session_data: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Resume an existing vocabulary challenge session"""
-        
-        game_attempt_id = UUID(session_data['game_attempt_id'])
-        
-        # Get the game attempt
-        result = await self.db.execute(
-            select(VocabularyGameAttempt)
-            .where(VocabularyGameAttempt.id == game_attempt_id)
-            .options(selectinload(VocabularyGameAttempt.practice_progress))
-        )
-        game_attempt = result.scalar_one_or_none()
-        
-        if not game_attempt or game_attempt.status != 'in_progress':
-            # Session is stale, clear it and start fresh
-            await self.session_manager.clear_session(student_id, vocabulary_list_id)
-            raise ValueError("Game session is no longer valid")
-        
-        # Get all questions to determine current position
-        questions_result = await self.db.execute(
-            select(VocabularyGameQuestion)
-            .where(VocabularyGameQuestion.vocabulary_list_id == vocabulary_list_id)
-            .order_by(VocabularyGameQuestion.question_order)
-        )
-        questions = questions_result.scalars().all()
-        
-        # Determine current question based on answered count
-        current_question_index = game_attempt.questions_answered
-        current_question = questions[current_question_index] if current_question_index < len(questions) else None
-        
-        # Update session with current state
-        session_data = {
-            'game_attempt_id': str(game_attempt.id),
-            'current_question': current_question_index,
-            'questions_remaining': game_attempt.total_questions - game_attempt.questions_answered
-        }
-        
-        await self.session_manager.set_current_session(student_id, vocabulary_list_id, session_data)
-        await self.session_manager.update_activity(student_id, vocabulary_list_id)
-        
-        return {
-            'game_attempt_id': str(game_attempt.id),
-            'total_questions': game_attempt.total_questions,
-            'passing_score': game_attempt.passing_score,
-            'max_possible_score': game_attempt.max_possible_score,
-            'current_question': current_question_index + 1,
-            'question': self._format_question(current_question) if current_question else None,
-            'current_score': game_attempt.current_score,
-            'questions_answered': game_attempt.questions_answered,
-            'is_resuming': True
-        }
-    
-    async def submit_answer(
-        self,
-        game_attempt_id: UUID,
-        question_id: UUID,
-        student_answer: str,
-        attempt_number: int,
-        time_spent_seconds: int
-    ) -> Dict[str, Any]:
-        """Submit an answer for a vocabulary challenge question"""
-        
-        # Get game attempt
-        result = await self.db.execute(
-            select(VocabularyGameAttempt)
-            .where(VocabularyGameAttempt.id == game_attempt_id)
-            .options(selectinload(VocabularyGameAttempt.practice_progress))
-        )
-        game_attempt = result.scalar_one_or_none()
-        
-        if not game_attempt or game_attempt.status != 'in_progress':
-            raise ValueError("Invalid or completed game attempt")
-        
-        # Get the question
-        question_result = await self.db.execute(
-            select(VocabularyGameQuestion)
-            .where(VocabularyGameQuestion.id == question_id)
-        )
-        question = question_result.scalar_one_or_none()
-        
-        if not question:
-            raise ValueError("Question not found")
-        
-        # Check answer (case-insensitive, trimmed)
-        is_correct = student_answer.strip().lower() == question.correct_answer.strip().lower()
-        
-        # Calculate points - 1 point per correct answer, no retries
-        points_earned = 1 if is_correct else 0
-        
-        # Update game attempt
-        question_responses = game_attempt.question_responses.copy()
-        question_responses.append({
-            'question_id': str(question_id),
-            'question_order': len(question_responses) + 1,
-            'attempts': 1,  # Only one attempt per question
-            'correct': is_correct,
-            'points_earned': points_earned,
-            'student_answer': student_answer,
-            'time_spent_seconds': time_spent_seconds
-        })
-        
-        game_attempt.question_responses = question_responses
-        game_attempt.questions_answered = len(question_responses)
-        game_attempt.current_score += points_earned
-        
-        # Check if game is complete
-        is_complete = game_attempt.questions_answered >= game_attempt.total_questions
-        
-        if is_complete:
-            # Calculate percentage score
-            percentage_score = (game_attempt.current_score / game_attempt.max_possible_score) * 100 if game_attempt.max_possible_score > 0 else 0
-            
-            # Set status based on 70% threshold
-            if game_attempt.current_score >= game_attempt.passing_score:
-                game_attempt.status = 'pending_confirmation'  # Requires student confirmation
-            else:
-                game_attempt.status = 'failed'
-            
-            game_attempt.completed_at = datetime.now(timezone.utc)
-            
-            # Calculate total time spent
-            if game_attempt.started_at:
-                time_diff = game_attempt.completed_at - game_attempt.started_at
-                game_attempt.time_spent_seconds = int(time_diff.total_seconds())
-            
-            # Update practice progress for both passed and failed attempts
-            await self._update_practice_progress(game_attempt)
-        
-        await self.db.commit()
-        
-        # Update Redis session if not complete
-        if not is_complete:
-            session_data = {
-                'game_attempt_id': str(game_attempt.id),
-                'current_question': game_attempt.questions_answered,
-                'questions_remaining': game_attempt.total_questions - game_attempt.questions_answered
-            }
-            await self.session_manager.set_current_session(
-                game_attempt.student_id, game_attempt.vocabulary_list_id, session_data
-            )
-            await self.session_manager.update_activity(
-                game_attempt.student_id, game_attempt.vocabulary_list_id
-            )
-        
-        # Get next question if not complete
-        next_question = None
-        if not is_complete:
-            questions_result = await self.db.execute(
-                select(VocabularyGameQuestion)
-                .where(VocabularyGameQuestion.vocabulary_list_id == game_attempt.vocabulary_list_id)
-                .order_by(VocabularyGameQuestion.question_order)
-            )
-            all_questions = questions_result.scalars().all()
-            
-            if len(question_responses) < len(all_questions):
-                next_question = all_questions[len(question_responses)]
-        
-        # Calculate percentage score if complete
-        percentage_score = None
-        if is_complete:
-            percentage_score = (game_attempt.current_score / game_attempt.max_possible_score) * 100 if game_attempt.max_possible_score > 0 else 0
-        
-        return {
-            'correct': is_correct,
-            'points_earned': points_earned,
-            'explanation': '',  # No explanation per requirements
-            'correct_answer': question.correct_answer if not is_correct else None,
-            'current_score': game_attempt.current_score,
-            'questions_remaining': game_attempt.total_questions - game_attempt.questions_answered,
-            'is_complete': is_complete,
-            'passed': game_attempt.status == 'passed' if is_complete else None,
-            'percentage_score': percentage_score,
-            'needs_confirmation': is_complete and game_attempt.status == 'pending_confirmation',
-            'next_question': self._format_question(next_question) if next_question else None,
-            'can_retry': False  # No retries allowed per question
-        }
-    
-    async def get_next_question(
-        self,
-        game_attempt_id: UUID
-    ) -> Dict[str, Any]:
-        """Get the next question in the game"""
-        
-        # Get game attempt
-        result = await self.db.execute(
-            select(VocabularyGameAttempt)
-            .where(VocabularyGameAttempt.id == game_attempt_id)
-        )
-        game_attempt = result.scalar_one_or_none()
-        
-        if not game_attempt or game_attempt.status != 'in_progress':
-            raise ValueError("Invalid or completed game attempt")
-        
-        # Get shuffled question order
-        shuffled_order = game_attempt.shuffled_question_order or []
-        
-        # Get next unanswered question
-        answered_count = game_attempt.questions_answered
-        if answered_count < len(shuffled_order):
-            # Get the question ID from shuffled order
-            next_question_id = shuffled_order[answered_count]
-            
-            # Retrieve the specific question
-            question_result = await self.db.execute(
-                select(VocabularyGameQuestion)
-                .where(VocabularyGameQuestion.id == next_question_id)
-            )
-            next_question = question_result.scalar_one_or_none()
-            
-            if not next_question:
-                raise ValueError(f"Question not found: {next_question_id}")
-            return {
-                'question': self._format_question(next_question),
-                'current_question': answered_count + 1,
-                'total_questions': game_attempt.total_questions,
-                'current_score': game_attempt.current_score
-            }
-        
-        return {'question': None, 'is_complete': True}
-    
     async def get_practice_status(
         self,
         student_id: UUID,
@@ -549,7 +151,7 @@ class VocabularyPracticeService:
         
         # Check StudentAssignment for completion status (new authoritative source)
         assignment_completions = {}
-        for assignment_type in ['vocabulary_challenge', 'story_builder', 'concept_mapping', 'puzzle_path']:
+        for assignment_type in ['story_builder', 'concept_mapping', 'puzzle_path']:
             # Map assignment types to specific vocabulary subtypes
             student_assignment_type = f"vocabulary_{assignment_type}" if assignment_type != 'story_builder' else "vocabulary_story_builder"
             
@@ -575,7 +177,7 @@ class VocabularyPracticeService:
         # Format assignment statuses
         assignments = []
         
-        for assignment_type in ['vocabulary_challenge', 'story_builder', 'concept_mapping', 'puzzle_path']:
+        for assignment_type in ['story_builder', 'concept_mapping', 'puzzle_path']:
             assignment_data = progress.practice_status.get('assignments', {}).get(assignment_type, {})
             is_completed = assignment_completions[assignment_type] is not None
             
@@ -583,9 +185,7 @@ class VocabularyPracticeService:
             has_active_session = False
             if current_session:
                 session_type = None
-                if 'game_attempt_id' in current_session:
-                    session_type = 'vocabulary_challenge'
-                elif 'story_attempt_id' in current_session:
+                if 'story_attempt_id' in current_session:
                     session_type = 'story_builder'
                 elif 'concept_attempt_id' in current_session:
                     session_type = 'concept_mapping'
@@ -595,7 +195,7 @@ class VocabularyPracticeService:
                 has_active_session = (session_type == assignment_type)
             
             # Available assignments (All 4 assignments are now available)
-            is_available = assignment_type in ['vocabulary_challenge', 'story_builder', 'concept_mapping', 'puzzle_path']
+            is_available = assignment_type in ['story_builder', 'concept_mapping', 'puzzle_path']
             
             assignments.append({
                 'type': assignment_type,
@@ -619,102 +219,9 @@ class VocabularyPracticeService:
             'current_session': current_session
         }
     
-    def _format_question(self, question: VocabularyGameQuestion) -> Dict[str, Any]:
-        """Format a question for the frontend"""
-        if not question:
-            return None
-        
-        return {
-            'id': str(question.id),
-            'question_type': question.question_type,
-            'difficulty_level': question.difficulty_level,
-            'question_text': question.question_text,
-            'question_number': question.question_order
-        }
-    
-    async def _update_practice_progress(self, game_attempt: VocabularyGameAttempt):
-        """Update practice progress after game completion"""
-        
-        progress = game_attempt.practice_progress
-        practice_status = progress.practice_status.copy()
-        
-        # Ensure assignments dict and vocabulary_challenge entry exist
-        if 'assignments' not in practice_status:
-            practice_status['assignments'] = {}
-        if 'vocabulary_challenge' not in practice_status['assignments']:
-            practice_status['assignments']['vocabulary_challenge'] = {
-                "status": "not_started",
-                "attempts": 0,
-                "best_score": 0,
-                "last_attempt_at": None,
-                "completed_at": None
-            }
-        
-        # Update vocabulary challenge status
-        vocab_challenge = practice_status['assignments']['vocabulary_challenge']
-        
-        if game_attempt.status == 'passed':
-            vocab_challenge['status'] = 'completed'
-            vocab_challenge['completed_at'] = datetime.now(timezone.utc).isoformat()
-            
-            # Create StudentAssignment record for completion tracking
-            student_assignment = StudentAssignment(
-                student_id=game_attempt.student_id,
-                assignment_id=game_attempt.vocabulary_list_id,
-                classroom_assignment_id=progress.classroom_assignment_id,
-                assignment_type="vocabulary",
-                progress_metadata={
-                    "subtype": "vocabulary_challenge",
-                    "score": game_attempt.current_score,
-                    "max_score": game_attempt.max_possible_score,
-                    "percentage": round((game_attempt.current_score / game_attempt.max_possible_score) * 100, 1),
-                    "attempt_number": game_attempt.attempt_number
-                },
-                completed_at=datetime.now(timezone.utc)
-            )
-            self.db.add(student_assignment)
-        elif game_attempt.status == 'pending_confirmation':
-            vocab_challenge['status'] = 'pending_confirmation'
-        else:
-            vocab_challenge['status'] = 'failed'
-        
-        # Update attempt count and best score
-        vocab_challenge['attempts'] = game_attempt.attempt_number
-        if game_attempt.current_score > vocab_challenge.get('best_score', 0):
-            vocab_challenge['best_score'] = game_attempt.current_score
-        
-        # Check if test should be unlocked using PostgreSQL StudentAssignment records
-        completed_count_query = await self.db.execute(
-            select(func.count(StudentAssignment.id))
-            .where(
-                and_(
-                    StudentAssignment.student_id == game_attempt.student_id,
-                    StudentAssignment.assignment_id == game_attempt.vocabulary_list_id,
-                    StudentAssignment.classroom_assignment_id == progress.classroom_assignment_id,
-                    StudentAssignment.assignment_type == "vocabulary",
-                    StudentAssignment.completed_at.is_not(None)
-                )
-            )
-        )
-        completed_count = completed_count_query.scalar() or 0
-        if completed_count >= self.ASSIGNMENTS_TO_COMPLETE and not practice_status.get('test_unlocked'):
-            practice_status['test_unlocked'] = True
-            practice_status['test_unlock_date'] = datetime.now(timezone.utc).isoformat()
-        
-        progress.practice_status = practice_status
-        progress.current_game_session = None  # Clear current session
-        
-        # StudentAssignment record creation is now handled in the confirmation flow
-        # This method is only called for failed attempts or during confirmation
-        
-        # Clear Redis session data
-        await self.session_manager.clear_session(game_attempt.student_id, game_attempt.vocabulary_list_id)
-        await self.session_manager.clear_attempt(game_attempt.student_id, game_attempt.vocabulary_list_id, 'vocabulary_challenge')
-    
     def _get_assignment_display_name(self, assignment_type: str) -> str:
         """Get display name for assignment type"""
         names = {
-            'vocabulary_challenge': 'Fill in the Blank',
             'story_builder': 'Story Builder',
             'concept_mapping': 'Concept Mapping',
             'puzzle_path': 'Word Puzzle Path'
@@ -2539,106 +2046,6 @@ class VocabularyPracticeService:
             'success': True,
             'message': 'Assignment declined. You can retake it later.',
             'final_score': story_attempt.current_score,
-            'percentage_score': percentage_score
-        }
-    
-    async def confirm_vocabulary_challenge_completion(
-        self,
-        game_attempt_id: UUID,
-        student_id: UUID
-    ) -> Dict[str, Any]:
-        """Confirm vocabulary challenge completion and create StudentAssignment record"""
-        
-        # Get game attempt with related data
-        result = await self.db.execute(
-            select(VocabularyGameAttempt)
-            .where(
-                and_(
-                    VocabularyGameAttempt.id == game_attempt_id,
-                    VocabularyGameAttempt.student_id == student_id
-                )
-            )
-            .options(selectinload(VocabularyGameAttempt.practice_progress))
-        )
-        game_attempt = result.scalar_one_or_none()
-        
-        if not game_attempt:
-            raise ValueError("Game attempt not found")
-        
-        if game_attempt.status != 'pending_confirmation':
-            raise ValueError("Game attempt is not pending confirmation")
-        
-        # Calculate percentage score
-        percentage_score = (game_attempt.current_score / game_attempt.max_possible_score) * 100
-        
-        if percentage_score < 70:
-            raise ValueError("Cannot confirm completion with score below 70%")
-        
-        # Update game attempt status
-        game_attempt.status = 'passed'
-        
-        # Update practice progress
-        await self._update_practice_progress(game_attempt)
-        
-        # Create or update StudentAssignment record
-        student_assignment = await self._create_or_update_student_assignment(
-            student_id=student_id,
-            assignment_id=game_attempt.vocabulary_list_id,
-            classroom_assignment_id=game_attempt.practice_progress.classroom_assignment_id,
-            assignment_type="vocabulary",
-            subtype="vocabulary_challenge"
-        )
-        
-        await self.db.commit()
-        
-        # Clear all Redis data for this assignment
-        await self.session_manager.clear_all_session_data(student_id, game_attempt.vocabulary_list_id)
-        
-        return {
-            'success': True,
-            'message': 'Fill in the Blank activity completed successfully',
-            'final_score': game_attempt.current_score,
-            'percentage_score': percentage_score
-        }
-    
-    async def decline_vocabulary_challenge_completion(
-        self,
-        game_attempt_id: UUID,
-        student_id: UUID
-    ) -> Dict[str, Any]:
-        """Decline vocabulary challenge completion and prepare for retake"""
-        
-        # Get game attempt
-        result = await self.db.execute(
-            select(VocabularyGameAttempt)
-            .where(
-                and_(
-                    VocabularyGameAttempt.id == game_attempt_id,
-                    VocabularyGameAttempt.student_id == student_id
-                )
-            )
-            .options(selectinload(VocabularyGameAttempt.practice_progress))
-        )
-        game_attempt = result.scalar_one_or_none()
-        
-        if not game_attempt:
-            raise ValueError("Game attempt not found")
-        
-        # Calculate percentage score
-        percentage_score = (game_attempt.current_score / game_attempt.max_possible_score) * 100
-        
-        # Update game attempt status
-        game_attempt.status = 'declined'
-        
-        # Clear Redis session data
-        await self.session_manager.clear_all_session_data(student_id, game_attempt.vocabulary_list_id)
-        
-        await self.db.commit()
-        
-        return {
-            'success': True,
-            'message': 'Assignment declined. You can retake it later.',
-            'final_score': game_attempt.current_score,
             'percentage_score': percentage_score
         }
     

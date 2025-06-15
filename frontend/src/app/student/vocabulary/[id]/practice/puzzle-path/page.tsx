@@ -36,7 +36,7 @@ interface PuzzleData {
 
 interface Puzzle {
   id: string
-  puzzle_type: 'scrambled' | 'crossword_clue' | 'fill_blank' | 'word_match'
+  puzzle_type: 'scrambled' | 'crossword_clue' | 'word_match'
   puzzle_data: PuzzleData
   puzzle_order: number
   word?: string

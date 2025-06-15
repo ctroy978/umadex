@@ -63,8 +63,6 @@ export default function VocabularyPracticePage() {
 
   const getAssignmentIcon = (type: string) => {
     switch (type) {
-      case 'vocabulary_challenge':
-        return '🎯'
       case 'story_builder':
         return '📝'
       case 'concept_mapping':
@@ -115,9 +113,7 @@ export default function VocabularyPracticePage() {
       return
     }
     
-    if (assignment.type === 'vocabulary_challenge' && assignment.can_start) {
-      router.push(`/student/vocabulary/${vocabularyId}/practice/challenge`)
-    } else if (assignment.type === 'story_builder' && assignment.can_start) {
+    if (assignment.type === 'story_builder' && assignment.can_start) {
       router.push(`/student/vocabulary/${vocabularyId}/practice/story-builder`)
     } else if (assignment.type === 'concept_mapping' && assignment.can_start) {
       router.push(`/student/vocabulary/${vocabularyId}/practice/concept-mapping`)
@@ -257,8 +253,6 @@ export default function VocabularyPracticePage() {
                 </div>
 
                 <p className="text-gray-600 mb-4">
-                  {assignment.type === 'vocabulary_challenge' && 
-                    'Fill in the blanks with the correct vocabulary words in context-rich sentences.'}
                   {assignment.type === 'story_builder' && 
                     'Write creative stories using your vocabulary words in different settings and tones.'}
                   {assignment.type === 'concept_mapping' && 
@@ -293,6 +287,39 @@ export default function VocabularyPracticePage() {
               </div>
             </div>
           ))}
+          
+          {/* Coming Soon Placeholder */}
+          <div className="bg-white rounded-lg shadow opacity-60">
+            <div className="p-6">
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex items-center">
+                  <div className="text-4xl mr-4">🚧</div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900">
+                      Assignment Coming Soon
+                    </h3>
+                    <p className="text-sm text-gray-600 mt-1">
+                      New assignment type in development
+                    </p>
+                  </div>
+                </div>
+                <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                  Coming Soon
+                </span>
+              </div>
+
+              <p className="text-gray-600 mb-4">
+                This assignment type is currently under development and will be available in a future update.
+              </p>
+
+              <button
+                disabled
+                className="w-full px-4 py-2 rounded-lg text-sm font-medium bg-gray-100 text-gray-400 cursor-not-allowed transition-colors"
+              >
+                Coming Soon
+              </button>
+            </div>
+          </div>
         </div>
 
         {/* Final Test Card */}

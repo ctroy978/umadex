@@ -1,6 +1,7 @@
 from typing import List, Optional
 from uuid import UUID
 from datetime import datetime
+import asyncio
 from fastapi import APIRouter, Depends, HTTPException, status, Query, BackgroundTasks
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,7 +19,6 @@ from app.schemas.vocabulary import (
     VocabularyWordReviewResponse, VocabularyExportFormat
 )
 from app.services.vocabulary import VocabularyService
-from app.services.vocabulary_game_generator import VocabularyGameGenerator
 from app.services.vocabulary_story_generator import VocabularyStoryGenerator
 from app.services.vocabulary_puzzle_generator import VocabularyPuzzleGenerator
 import logging
@@ -36,13 +36,6 @@ async def pre_generate_vocabulary_assignments(list_id: UUID):
         async with AsyncSessionLocal() as db:
             logger.info(f"Starting pre-generation of vocabulary assignments for list {list_id}")
             
-            # Generate fill-in-the-blank questions
-            try:
-                game_generator = VocabularyGameGenerator(db)
-                await game_generator.generate_game_questions(list_id)
-                logger.info(f"Successfully pre-generated fill-in-the-blank questions for list {list_id}")
-            except Exception as e:
-                logger.error(f"Failed to pre-generate fill-in-the-blank questions for list {list_id}: {e}")
             
             # Generate story prompts
             try:

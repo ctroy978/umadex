@@ -36,10 +36,6 @@ class VocabularyPuzzleEvaluator:
             return await self._evaluate_crossword_response(
                 puzzle_data, correct_answer, student_answer, word, grade_level
             )
-        elif puzzle_type == 'fill_blank':
-            return await self._evaluate_fill_blank_response(
-                puzzle_data, correct_answer, student_answer, word, grade_level
-            )
         elif puzzle_type == 'word_match':
             return await self._evaluate_word_match_response(
                 puzzle_data, correct_answer, student_answer, word, grade_level
@@ -139,51 +135,6 @@ class VocabularyPuzzleEvaluator:
             'accuracy': 'incorrect',
             'feedback': f"Not quite. The clue points to '{correct}'. Try thinking about the definition.",
             'areas_checked': ['clue_comprehension']
-        }
-    
-    async def _evaluate_fill_blank_response(
-        self, 
-        puzzle_data: Dict[str, Any], 
-        correct_answer: str, 
-        student_answer: str, 
-        word: str, 
-        grade_level: str
-    ) -> Dict[str, Any]:
-        """Evaluate fill-in-the-blank puzzle response"""
-        
-        correct = correct_answer.lower().strip()
-        student = student_answer.lower().strip()
-        
-        if student == correct:
-            return {
-                'score': 4,
-                'accuracy': 'perfect',
-                'feedback': f"Excellent! '{word}' fits perfectly in that sentence!",
-                'areas_checked': ['context_understanding', 'grammar', 'spelling']
-            }
-        
-        if self._is_close_spelling(student, correct):
-            return {
-                'score': 3,
-                'accuracy': 'minor_error',
-                'feedback': f"Good context understanding! '{student}' is very close - the correct spelling is '{correct}'.",
-                'areas_checked': ['context_understanding', 'spelling']
-            }
-        
-        # For fill-in-blank, also check if the answer makes grammatical sense
-        if await self._fits_context(student, puzzle_data['sentence'], grade_level):
-            return {
-                'score': 2,
-                'accuracy': 'contextually_appropriate',
-                'feedback': f"'{student}' could fit here, but the target word is '{correct}'.",
-                'areas_checked': ['context_understanding', 'grammar']
-            }
-        
-        return {
-            'score': 1,
-            'accuracy': 'incorrect',
-            'feedback': f"'{correct}' is the word that best fits this sentence context.",
-            'areas_checked': ['context_understanding']
         }
     
     async def _evaluate_word_match_response(
