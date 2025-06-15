@@ -361,7 +361,7 @@ class VocabularyPracticeService:
             
             # Set status based on 70% threshold
             if game_attempt.current_score >= game_attempt.passing_score:
-                game_attempt.status = 'passed'  # Direct pass, no confirmation needed
+                game_attempt.status = 'pending_confirmation'  # Requires student confirmation
             else:
                 game_attempt.status = 'failed'
             
@@ -419,7 +419,7 @@ class VocabularyPracticeService:
             'is_complete': is_complete,
             'passed': game_attempt.status == 'passed' if is_complete else None,
             'percentage_score': percentage_score,
-            'needs_confirmation': False,  # No confirmation dialog needed
+            'needs_confirmation': is_complete and game_attempt.status == 'pending_confirmation',
             'next_question': self._format_question(next_question) if next_question else None,
             'can_retry': False  # No retries allowed per question
         }
@@ -620,6 +620,8 @@ class VocabularyPracticeService:
                 completed_at=datetime.now(timezone.utc)
             )
             self.db.add(student_assignment)
+        elif game_attempt.status == 'pending_confirmation':
+            vocab_challenge['status'] = 'pending_confirmation'
         else:
             vocab_challenge['status'] = 'failed'
         

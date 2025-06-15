@@ -54,6 +54,8 @@ export default function VocabularyChallengePage() {
   const [isResuming, setIsResuming] = useState(false)
   const [timeSpent, setTimeSpent] = useState(0)
   const startTimeRef = useRef<number>(Date.now())
+  const [showCompletionDialog, setShowCompletionDialog] = useState(false)
+  const [confirmingCompletion, setConfirmingCompletion] = useState(false)
 
   useEffect(() => {
     startNewGame()
@@ -69,7 +71,7 @@ export default function VocabularyChallengePage() {
   useEffect(() => {
     // Add navigation warning when game is in progress
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (gameSession && !feedback?.is_complete) {
+      if (gameSession && !showCompletionDialog && !feedback?.is_complete) {
         e.preventDefault()
         e.returnValue = 'You have an assignment in progress. If you leave now, your progress will be lost.'
         return 'You have an assignment in progress. If you leave now, your progress will be lost.'
@@ -78,7 +80,7 @@ export default function VocabularyChallengePage() {
 
     window.addEventListener('beforeunload', handleBeforeUnload)
     return () => window.removeEventListener('beforeunload', handleBeforeUnload)
-  }, [gameSession, feedback])
+  }, [gameSession, showCompletionDialog, feedback?.is_complete])
 
   const startNewGame = async () => {
     try {
@@ -129,6 +131,11 @@ export default function VocabularyChallengePage() {
       setFeedback(result)
       setShowFeedback(true)
       setCurrentScore(result.current_score)
+      
+      // Show completion dialog if needs confirmation
+      if (result.is_complete && result.needs_confirmation) {
+        setShowCompletionDialog(true)
+      }
     } catch (err: any) {
       console.error('Failed to submit answer:', err)
       alert('Failed to submit answer. Please try again.')
@@ -175,6 +182,33 @@ export default function VocabularyChallengePage() {
     }
   }
 
+  const handleConfirmCompletion = async () => {
+    if (!gameSession) return
+    
+    setConfirmingCompletion(true)
+    try {
+      await studentApi.confirmChallengeCompletion(gameSession.game_attempt_id)
+      router.push(`/student/vocabulary/${vocabularyId}/practice?completed=challenge`)
+    } catch (err: any) {
+      console.error('Failed to confirm completion:', err)
+      alert('Failed to complete assignment. Please try again.')
+      setConfirmingCompletion(false)
+    }
+  }
+
+  const handleDeclineCompletion = async () => {
+    if (!gameSession) return
+    
+    setConfirmingCompletion(true)
+    try {
+      await studentApi.declineChallengeCompletion(gameSession.game_attempt_id)
+      router.push(`/student/vocabulary/${vocabularyId}/practice?retake=challenge`)
+    } catch (err: any) {
+      console.error('Failed to decline completion:', err)
+      alert('Failed to process request. Please try again.')
+      setConfirmingCompletion(false)
+    }
+  }
 
   const getQuestionTypeIcon = (type: string) => {
     switch (type) {
@@ -375,12 +409,8 @@ export default function VocabularyChallengePage() {
               <button
                 onClick={() => {
                   if (feedback?.is_complete) {
-                    // Handle completion redirect
-                    if (feedback.passed) {
-                      router.push(`/student/vocabulary/${vocabularyId}/practice?completed=challenge`)
-                    } else {
-                      router.push(`/student/vocabulary/${vocabularyId}/practice?failed=challenge`)
-                    }
+                    // Show completion dialog instead of redirecting
+                    setShowCompletionDialog(true)
                   } else {
                     handleNextQuestion()
                   }
@@ -400,8 +430,8 @@ export default function VocabularyChallengePage() {
           )}
         </div>
 
-        {/* Score Summary (if game complete and not needs confirmation) */}
-        {feedback?.is_complete && !feedback?.needs_confirmation && (
+        {/* Score Summary (shown only when dialog is not shown) */}
+        {feedback?.is_complete && !showCompletionDialog && (
           <div className="bg-white rounded-lg shadow-lg border-2 border-primary-200 p-8">
             <div className="text-center mb-6">
               <div className={`inline-flex items-center justify-center w-16 h-16 rounded-full mb-4 ${
@@ -478,6 +508,62 @@ export default function VocabularyChallengePage() {
         )}
 
       </main>
+
+      {/* Completion Confirmation Dialog */}
+      {showCompletionDialog && feedback && (
+        <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-8 max-w-md w-full shadow-xl">
+            <div className="text-center mb-6">
+              <div className={`inline-flex items-center justify-center w-16 h-16 rounded-full mb-4 ${
+                feedback.percentage_score >= 70 ? 'bg-green-100' : 'bg-amber-100'
+              }`}>
+                {feedback.percentage_score >= 70 ? (
+                  <CheckCircleIcon className="h-8 w-8 text-green-600" />
+                ) : (
+                  <ExclamationCircleIcon className="h-8 w-8 text-amber-600" />
+                )}
+              </div>
+              <h3 className="text-2xl font-bold text-gray-900 mb-2">
+                Fill in the Blank Complete!
+              </h3>
+              <p className="text-lg text-gray-700 mb-4">
+                You scored <span className="font-bold text-primary-600">{Math.round(feedback.percentage_score)}%</span>
+              </p>
+              {feedback.percentage_score >= 70 ? (
+                <p className="text-green-700">
+                  Congratulations! You scored 70% or higher.
+                  <br />
+                  <span className="font-semibold">Assignment completed successfully!</span>
+                </p>
+              ) : (
+                <p className="text-amber-700">
+                  You scored below 70%.
+                  <br />
+                  <span className="font-semibold">You need 70% or higher to complete this assignment.</span>
+                </p>
+              )}
+            </div>
+
+            {feedback.percentage_score >= 70 ? (
+              <button
+                onClick={handleConfirmCompletion}
+                disabled={confirmingCompletion}
+                className="w-full px-6 py-3 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+              >
+                {confirmingCompletion ? 'Completing...' : 'Complete Assignment'}
+              </button>
+            ) : (
+              <button
+                onClick={handleDeclineCompletion}
+                disabled={confirmingCompletion}
+                className="w-full px-6 py-3 bg-amber-600 text-white rounded-lg font-medium hover:bg-amber-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+              >
+                {confirmingCompletion ? 'Processing...' : 'Retake Assignment Later'}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
