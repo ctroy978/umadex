@@ -221,5 +221,35 @@ export const studentApi = {
   async declineConceptCompletion(conceptAttemptId: string): Promise<any> {
     const response = await api.post(`/v1/student/vocabulary/practice/decline-concept-completion/${conceptAttemptId}`)
     return response.data
+  },
+
+  // Fill-in-the-Blank APIs
+  async startFillInBlank(assignmentId: string): Promise<any> {
+    const response = await api.post(`/v1/student/vocabulary/${assignmentId}/practice/start-fill-in-blank`)
+    return response.data
+  },
+
+  async submitFillInBlankAnswer(fillInBlankAttemptId: string, data: {
+    sentence_id: string
+    student_answer: string
+    time_spent_seconds: number
+  }): Promise<any> {
+    const response = await api.post(`/v1/student/vocabulary/practice/submit-fill-in-blank-answer/${fillInBlankAttemptId}`, data)
+    return response.data
+  },
+
+  async getFillInBlankProgress(fillInBlankAttemptId: string): Promise<any> {
+    const response = await api.get(`/v1/student/vocabulary/practice/fill-in-blank-progress/${fillInBlankAttemptId}`)
+    return response.data
+  },
+
+  async confirmFillInBlankCompletion(fillInBlankAttemptId: string): Promise<any> {
+    const response = await api.post(`/v1/student/vocabulary/practice/confirm-fill-in-blank-completion/${fillInBlankAttemptId}`)
+    return response.data
+  },
+
+  async declineFillInBlankCompletion(fillInBlankAttemptId: string): Promise<any> {
+    const response = await api.post(`/v1/student/vocabulary/practice/decline-fill-in-blank-completion/${fillInBlankAttemptId}`)
+    return response.data
   }
 }

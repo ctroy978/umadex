@@ -13,7 +13,7 @@ from app.models.user import User, UserRole
 from app.models.classroom import Classroom, ClassroomStudent, ClassroomAssignment, StudentAssignment
 from app.models.reading import ReadingAssignment
 from app.models.vocabulary import VocabularyList
-from app.models.vocabulary_practice import VocabularyPuzzleAttempt
+from app.models.vocabulary_practice import VocabularyPuzzleAttempt, VocabularyFillInBlankAttempt
 from app.models.umaread import UmareadAssignmentProgress
 from app.models.tests import AssignmentTest, StudentTestAttempt
 from app.utils.deps import get_current_user
@@ -1701,3 +1701,208 @@ async def clear_all_vocabulary_sessions(
     except Exception as e:
         logger.error(f"Error clearing vocabulary sessions: {e}")
         return {"success": False, "message": f"Failed to clear sessions: {str(e)}"}
+
+
+# Fill-in-the-Blank Models
+
+class StartFillInBlankResponse(BaseModel):
+    fill_in_blank_attempt_id: str
+    total_sentences: int
+    passing_score: int
+    current_sentence_index: int
+    sentence: Optional[Dict[str, Any]]
+    is_complete: Optional[bool] = False
+    needs_confirmation: Optional[bool] = False
+    correct_answers: Optional[int] = None
+    score_percentage: Optional[float] = None
+
+
+class SubmitFillInBlankAnswerRequest(BaseModel):
+    sentence_id: str
+    student_answer: str = Field(..., min_length=1, max_length=100)
+    time_spent_seconds: int = Field(..., ge=0)
+
+
+class SubmitFillInBlankAnswerResponse(BaseModel):
+    valid: bool
+    errors: Optional[Dict[str, str]] = None
+    is_correct: bool
+    correct_answer: str
+    correct_answers: int
+    sentences_remaining: int
+    is_complete: bool
+    passed: Optional[bool] = None
+    score_percentage: Optional[float] = None
+    needs_confirmation: bool = False
+    next_sentence: Optional[Dict[str, Any]] = None
+    progress_percentage: float
+
+
+class FillInBlankProgressResponse(BaseModel):
+    fill_in_blank_attempt_id: str
+    status: str
+    total_sentences: int
+    sentences_completed: int
+    current_sentence_index: int
+    correct_answers: int
+    incorrect_answers: int
+    passing_score: int
+    progress_percentage: float
+    current_sentence: Optional[Dict[str, Any]]
+    vocabulary_words: List[str]
+
+
+class FillInBlankCompletionResponse(BaseModel):
+    success: bool
+    message: str
+    final_score: int
+    score_percentage: float
+
+
+# Fill-in-the-Blank Endpoints
+
+@router.post("/vocabulary/{assignment_id}/practice/start-fill-in-blank", response_model=StartFillInBlankResponse)
+async def start_fill_in_blank(
+    assignment_id: UUID,
+    current_user: User = Depends(require_student_or_teacher),
+    db: AsyncSession = Depends(get_db)
+):
+    """Start a new fill-in-the-blank activity"""
+    # Verify student has access
+    access_check = await _validate_assignment_access_helper(
+        assignment_type="vocabulary",
+        assignment_id=assignment_id,
+        current_user=current_user,
+        db=db
+    )
+    
+    # Get classroom assignment ID
+    ca_result = await db.execute(
+        select(ClassroomAssignment.id)
+        .where(
+            and_(
+                ClassroomAssignment.classroom_id == access_check['classroom_id'],
+                ClassroomAssignment.vocabulary_list_id == assignment_id,
+                ClassroomAssignment.assignment_type == "vocabulary"
+            )
+        )
+    )
+    classroom_assignment_id = ca_result.scalar()
+    
+    practice_service = VocabularyPracticeService(db)
+    fill_in_blank_data = await practice_service.start_fill_in_blank(
+        student_id=current_user.id,
+        vocabulary_list_id=assignment_id,
+        classroom_assignment_id=classroom_assignment_id
+    )
+    
+    return StartFillInBlankResponse(**fill_in_blank_data)
+
+
+@router.post("/vocabulary/practice/submit-fill-in-blank-answer/{fill_in_blank_attempt_id}", response_model=SubmitFillInBlankAnswerResponse)
+async def submit_fill_in_blank_answer(
+    fill_in_blank_attempt_id: UUID,
+    request: SubmitFillInBlankAnswerRequest,
+    current_user: User = Depends(require_student_or_teacher),
+    db: AsyncSession = Depends(get_db)
+):
+    """Submit a fill-in-the-blank answer for evaluation"""
+    logger = logging.getLogger(__name__)
+    
+    try:
+        # Validate sentence_id
+        try:
+            sentence_id = UUID(request.sentence_id)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid sentence_id format: {request.sentence_id}"
+            )
+        
+        # Get fill-in-blank attempt with basic validation
+        result = await db.execute(
+            select(VocabularyFillInBlankAttempt)
+            .where(VocabularyFillInBlankAttempt.id == fill_in_blank_attempt_id)
+        )
+        fill_in_blank_attempt = result.scalar_one_or_none()
+        
+        if not fill_in_blank_attempt:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Fill-in-blank attempt not found"
+            )
+        
+        if fill_in_blank_attempt.student_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized to submit answer for this attempt"
+            )
+        
+        # Submit answer
+        practice_service = VocabularyPracticeService(db)
+        result = await practice_service.submit_fill_in_blank_answer(
+            fill_in_blank_attempt_id=fill_in_blank_attempt_id,
+            sentence_id=sentence_id,
+            student_answer=request.student_answer,
+            time_spent_seconds=request.time_spent_seconds
+        )
+        
+        return SubmitFillInBlankAnswerResponse(**result)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in submit_fill_in_blank_answer: {e}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to submit answer: {str(e)}"
+        )
+
+
+@router.get("/vocabulary/practice/fill-in-blank-progress/{fill_in_blank_attempt_id}", response_model=FillInBlankProgressResponse)
+async def get_fill_in_blank_progress(
+    fill_in_blank_attempt_id: UUID,
+    current_user: User = Depends(require_student_or_teacher),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get current progress in fill-in-the-blank"""
+    practice_service = VocabularyPracticeService(db)
+    
+    result = await practice_service.get_fill_in_blank_progress(fill_in_blank_attempt_id)
+    return FillInBlankProgressResponse(**result)
+
+
+@router.post("/vocabulary/practice/confirm-fill-in-blank-completion/{fill_in_blank_attempt_id}", response_model=FillInBlankCompletionResponse)
+async def confirm_fill_in_blank_completion(
+    fill_in_blank_attempt_id: UUID,
+    current_user: User = Depends(require_student_or_teacher),
+    db: AsyncSession = Depends(get_db)
+):
+    """Confirm completion of fill-in-the-blank assignment"""
+    practice_service = VocabularyPracticeService(db)
+    
+    result = await practice_service.confirm_fill_in_blank_completion(
+        fill_in_blank_attempt_id=fill_in_blank_attempt_id,
+        student_id=current_user.id
+    )
+    
+    return FillInBlankCompletionResponse(**result)
+
+
+@router.post("/vocabulary/practice/decline-fill-in-blank-completion/{fill_in_blank_attempt_id}", response_model=FillInBlankCompletionResponse)
+async def decline_fill_in_blank_completion(
+    fill_in_blank_attempt_id: UUID,
+    current_user: User = Depends(require_student_or_teacher),
+    db: AsyncSession = Depends(get_db)
+):
+    """Decline fill-in-the-blank completion and prepare for retake"""
+    practice_service = VocabularyPracticeService(db)
+    
+    result = await practice_service.decline_fill_in_blank_completion(
+        fill_in_blank_attempt_id=fill_in_blank_attempt_id,
+        student_id=current_user.id
+    )
+    
+    return FillInBlankCompletionResponse(**result)

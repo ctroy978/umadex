@@ -23,7 +23,10 @@ from app.models.vocabulary_practice import (
     VocabularyConceptMapAttempt,
     VocabularyPuzzleGame,
     VocabularyPuzzleResponse,
-    VocabularyPuzzleAttempt
+    VocabularyPuzzleAttempt,
+    VocabularyFillInBlankSentence,
+    VocabularyFillInBlankResponse,
+    VocabularyFillInBlankAttempt
 )
 from app.models.classroom import ClassroomAssignment, StudentAssignment
 from app.models.user import User
@@ -151,7 +154,7 @@ class VocabularyPracticeService:
         
         # Check StudentAssignment for completion status (new authoritative source)
         assignment_completions = {}
-        for assignment_type in ['story_builder', 'concept_mapping', 'puzzle_path']:
+        for assignment_type in ['story_builder', 'concept_mapping', 'puzzle_path', 'fill_in_blank']:
             # Map assignment types to specific vocabulary subtypes
             student_assignment_type = f"vocabulary_{assignment_type}" if assignment_type != 'story_builder' else "vocabulary_story_builder"
             
@@ -177,7 +180,7 @@ class VocabularyPracticeService:
         # Format assignment statuses
         assignments = []
         
-        for assignment_type in ['story_builder', 'concept_mapping', 'puzzle_path']:
+        for assignment_type in ['story_builder', 'concept_mapping', 'puzzle_path', 'fill_in_blank']:
             assignment_data = progress.practice_status.get('assignments', {}).get(assignment_type, {})
             is_completed = assignment_completions[assignment_type] is not None
             
@@ -191,11 +194,13 @@ class VocabularyPracticeService:
                     session_type = 'concept_mapping'
                 elif 'puzzle_attempt_id' in current_session:
                     session_type = 'puzzle_path'
+                elif 'fill_in_blank_attempt_id' in current_session:
+                    session_type = 'fill_in_blank'
                 
                 has_active_session = (session_type == assignment_type)
             
             # Available assignments (All 4 assignments are now available)
-            is_available = assignment_type in ['story_builder', 'concept_mapping', 'puzzle_path']
+            is_available = assignment_type in ['story_builder', 'concept_mapping', 'puzzle_path', 'fill_in_blank']
             
             assignments.append({
                 'type': assignment_type,
@@ -224,9 +229,49 @@ class VocabularyPracticeService:
         names = {
             'story_builder': 'Story Builder',
             'concept_mapping': 'Concept Mapping',
-            'puzzle_path': 'Word Puzzle Path'
+            'puzzle_path': 'Word Puzzle Path',
+            'fill_in_blank': 'Fill in the Blank'
         }
         return names.get(assignment_type, assignment_type.replace('_', ' ').title())
+    
+    async def _get_next_attempt_number(
+        self,
+        student_id: UUID,
+        vocabulary_list_id: UUID,
+        attempt_model_class
+    ) -> int:
+        """Get the next attempt number for a specific assignment type"""
+        
+        # Get progress to access practice_status
+        progress_result = await self.db.execute(
+            select(VocabularyPracticeProgress).where(
+                and_(
+                    VocabularyPracticeProgress.student_id == student_id,
+                    VocabularyPracticeProgress.vocabulary_list_id == vocabulary_list_id
+                )
+            )
+        )
+        progress = progress_result.scalar_one_or_none()
+        
+        if not progress:
+            return 1
+        
+        # Determine assignment type based on attempt model class
+        if attempt_model_class == VocabularyFillInBlankAttempt:
+            assignment_type = 'fill_in_blank'
+        elif attempt_model_class == VocabularyStoryAttempt:
+            assignment_type = 'story_builder'
+        elif attempt_model_class == VocabularyConceptMapAttempt:
+            assignment_type = 'concept_mapping'
+        elif attempt_model_class == VocabularyPuzzleAttempt:
+            assignment_type = 'puzzle_path'
+        else:
+            # Fallback: return 1 for unknown types
+            return 1
+        
+        # Get current attempt number from practice_status
+        assignment_status = progress.practice_status.get('assignments', {}).get(assignment_type, {})
+        return assignment_status.get('attempts', 0) + 1
     
     # Concept Mapping Methods
     
@@ -2098,3 +2143,511 @@ class VocabularyPracticeService:
                 student_assignment.progress_metadata = {**student_assignment.progress_metadata, 'subtype': subtype}
         
         return student_assignment
+    
+    # Fill-in-the-Blank Methods
+    
+    async def start_fill_in_blank(
+        self,
+        student_id: UUID,
+        vocabulary_list_id: UUID,
+        classroom_assignment_id: int
+    ) -> Dict[str, Any]:
+        """Start a new fill-in-the-blank activity with session management"""
+        
+        # Check for existing active session first
+        existing_session = await self.session_manager.get_current_session(student_id, vocabulary_list_id)
+        if existing_session and 'fill_in_blank_attempt_id' in existing_session:
+            # Resume existing fill-in-blank attempt
+            return await self._resume_fill_in_blank(student_id, vocabulary_list_id, existing_session)
+        
+        # Get or create progress
+        progress = await self.get_or_create_practice_progress(
+            student_id, vocabulary_list_id, classroom_assignment_id
+        )
+        
+        # Check if fill-in-blank is already completed
+        completed_assignments = progress.practice_status.get('completed_assignments', [])
+        if 'fill_in_blank' in completed_assignments:
+            raise ValueError("Fill-in-the-blank has already been completed. Cannot retake completed activities.")
+        
+        # Check for existing pending confirmation attempt
+        existing_attempt_result = await self.db.execute(
+            select(VocabularyFillInBlankAttempt)
+            .where(
+                and_(
+                    VocabularyFillInBlankAttempt.student_id == student_id,
+                    VocabularyFillInBlankAttempt.vocabulary_list_id == vocabulary_list_id,
+                    VocabularyFillInBlankAttempt.status == 'pending_confirmation'
+                )
+            )
+        )
+        existing_attempt = existing_attempt_result.scalar_one_or_none()
+        
+        if existing_attempt:
+            # Return the existing attempt data with a flag to show confirmation dialog
+            score_percentage = (existing_attempt.correct_answers / existing_attempt.total_sentences) * 100 if existing_attempt.total_sentences > 0 else 0
+            return {
+                'fill_in_blank_attempt_id': str(existing_attempt.id),
+                'total_sentences': existing_attempt.total_sentences,
+                'passing_score': existing_attempt.passing_score,
+                'current_sentence_index': existing_attempt.total_sentences,  # All sentences completed
+                'sentence': None,  # No current sentence
+                'is_complete': True,
+                'needs_confirmation': True,
+                'correct_answers': existing_attempt.correct_answers,
+                'score_percentage': score_percentage
+            }
+        
+        # Get fill-in-blank sentences for this vocabulary list
+        sentences_result = await self.db.execute(
+            select(VocabularyFillInBlankSentence)
+            .where(VocabularyFillInBlankSentence.vocabulary_list_id == vocabulary_list_id)
+            .order_by(VocabularyFillInBlankSentence.sentence_order)
+        )
+        sentences = sentences_result.scalars().all()
+        
+        if not sentences:
+            raise ValueError("No fill-in-the-blank sentences found for this vocabulary list")
+        
+        # Get vocabulary words for answer choices
+        words_result = await self.db.execute(
+            select(VocabularyWord)
+            .where(VocabularyWord.list_id == vocabulary_list_id)
+            .order_by(VocabularyWord.position)
+        )
+        words = words_result.scalars().all()
+        vocabulary_words = [word.word for word in words]
+        
+        # Create new attempt
+        attempt_number = await self._get_next_attempt_number(
+            student_id, vocabulary_list_id, VocabularyFillInBlankAttempt
+        )
+        
+        # Shuffle sentence order
+        sentence_ids = [str(sentence.id) for sentence in sentences]
+        random.shuffle(sentence_ids)
+        
+        fill_in_blank_attempt = VocabularyFillInBlankAttempt(
+            student_id=student_id,
+            vocabulary_list_id=vocabulary_list_id,
+            practice_progress_id=progress.id,
+            attempt_number=attempt_number,
+            total_sentences=len(sentences),
+            sentence_order=sentence_ids,
+            passing_score=70
+        )
+        
+        self.db.add(fill_in_blank_attempt)
+        await self.db.commit()
+        await self.db.refresh(fill_in_blank_attempt)
+        
+        # Get first sentence
+        first_sentence_id = UUID(sentence_ids[0])
+        first_sentence_result = await self.db.execute(
+            select(VocabularyFillInBlankSentence)
+            .where(VocabularyFillInBlankSentence.id == first_sentence_id)
+        )
+        first_sentence = first_sentence_result.scalar_one()
+        
+        # Create session data
+        session_data = {
+            'fill_in_blank_attempt_id': str(fill_in_blank_attempt.id),
+            'activity_type': 'fill_in_blank',
+            'vocabulary_words': vocabulary_words,
+            'started_at': datetime.now(timezone.utc).isoformat()
+        }
+        
+        # Save session
+        await self.session_manager.set_current_session(
+            student_id, vocabulary_list_id, session_data
+        )
+        
+        return {
+            'fill_in_blank_attempt_id': str(fill_in_blank_attempt.id),
+            'total_sentences': fill_in_blank_attempt.total_sentences,
+            'passing_score': fill_in_blank_attempt.passing_score,
+            'current_sentence_index': 0,
+            'sentence': {
+                'id': str(first_sentence.id),
+                'sentence_with_blank': first_sentence.sentence_with_blank,
+                'vocabulary_words': vocabulary_words
+            },
+            'is_complete': False,
+            'needs_confirmation': False,
+            'correct_answers': 0,
+            'score_percentage': 0.0
+        }
+    
+    async def _resume_fill_in_blank(
+        self,
+        student_id: UUID,
+        vocabulary_list_id: UUID,
+        session_data: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Resume an existing fill-in-blank attempt from session"""
+        
+        fill_in_blank_attempt_id = UUID(session_data['fill_in_blank_attempt_id'])
+        
+        # Get the attempt
+        result = await self.db.execute(
+            select(VocabularyFillInBlankAttempt)
+            .where(VocabularyFillInBlankAttempt.id == fill_in_blank_attempt_id)
+        )
+        attempt = result.scalar_one_or_none()
+        
+        if not attempt:
+            # Session is stale, clear it
+            await self.session_manager.clear_session(student_id, vocabulary_list_id)
+            raise ValueError("Fill-in-blank attempt not found. Please start a new attempt.")
+        
+        # Check if already complete
+        if attempt.status == 'pending_confirmation':
+            score_percentage = (attempt.correct_answers / attempt.total_sentences) * 100 if attempt.total_sentences > 0 else 0
+            return {
+                'fill_in_blank_attempt_id': str(attempt.id),
+                'total_sentences': attempt.total_sentences,
+                'passing_score': attempt.passing_score,
+                'current_sentence_index': attempt.total_sentences,
+                'sentence': None,
+                'is_complete': True,
+                'needs_confirmation': True,
+                'correct_answers': attempt.correct_answers,
+                'score_percentage': score_percentage
+            }
+        
+        # Get current sentence
+        if attempt.current_sentence_index < len(attempt.sentence_order):
+            current_sentence_id = UUID(attempt.sentence_order[attempt.current_sentence_index])
+            sentence_result = await self.db.execute(
+                select(VocabularyFillInBlankSentence)
+                .where(VocabularyFillInBlankSentence.id == current_sentence_id)
+            )
+            current_sentence = sentence_result.scalar_one()
+            
+            sentence_data = {
+                'id': str(current_sentence.id),
+                'sentence_with_blank': current_sentence.sentence_with_blank,
+                'vocabulary_words': session_data.get('vocabulary_words', [])
+            }
+        else:
+            sentence_data = None
+        
+        score_percentage = (attempt.correct_answers / attempt.total_sentences) * 100 if attempt.total_sentences > 0 else 0
+        
+        return {
+            'fill_in_blank_attempt_id': str(attempt.id),
+            'total_sentences': attempt.total_sentences,
+            'passing_score': attempt.passing_score,
+            'current_sentence_index': attempt.current_sentence_index,
+            'sentence': sentence_data,
+            'is_complete': attempt.current_sentence_index >= attempt.total_sentences,
+            'needs_confirmation': False,
+            'correct_answers': attempt.correct_answers,
+            'score_percentage': score_percentage
+        }
+    
+    async def submit_fill_in_blank_answer(
+        self,
+        fill_in_blank_attempt_id: UUID,
+        sentence_id: UUID,
+        student_answer: str,
+        time_spent_seconds: int
+    ) -> Dict[str, Any]:
+        """Submit an answer for a fill-in-the-blank sentence"""
+        
+        # Get the attempt
+        attempt_result = await self.db.execute(
+            select(VocabularyFillInBlankAttempt)
+            .where(VocabularyFillInBlankAttempt.id == fill_in_blank_attempt_id)
+        )
+        attempt = attempt_result.scalar_one_or_none()
+        
+        if not attempt:
+            raise ValueError("Fill-in-blank attempt not found")
+        
+        if attempt.status not in ['in_progress']:
+            raise ValueError("Cannot submit answer - attempt is not in progress")
+        
+        # Get the sentence
+        sentence_result = await self.db.execute(
+            select(VocabularyFillInBlankSentence)
+            .where(VocabularyFillInBlankSentence.id == sentence_id)
+        )
+        sentence = sentence_result.scalar_one_or_none()
+        
+        if not sentence:
+            raise ValueError("Sentence not found")
+        
+        # Evaluate the answer (case-insensitive exact match)
+        is_correct = student_answer.strip().lower() == sentence.correct_answer.lower()
+        
+        # Create response record
+        response = VocabularyFillInBlankResponse(
+            student_id=attempt.student_id,
+            vocabulary_list_id=attempt.vocabulary_list_id,
+            practice_progress_id=attempt.practice_progress_id,
+            sentence_id=sentence_id,
+            student_answer=student_answer.strip(),
+            is_correct=is_correct,
+            attempt_number=attempt.attempt_number,
+            time_spent_seconds=time_spent_seconds
+        )
+        
+        self.db.add(response)
+        
+        # Update attempt progress
+        if is_correct:
+            attempt.correct_answers += 1
+        else:
+            attempt.incorrect_answers += 1
+        
+        attempt.sentences_completed += 1
+        attempt.current_sentence_index += 1
+        
+        # Store response in attempt data
+        response_data = {
+            'sentence_id': str(sentence_id),
+            'student_answer': student_answer.strip(),
+            'is_correct': is_correct,
+            'correct_answer': sentence.correct_answer,
+            'time_spent_seconds': time_spent_seconds
+        }
+        
+        if not attempt.responses:
+            attempt.responses = {}
+        attempt.responses[str(sentence_id)] = response_data
+        
+        # Check if assignment is complete
+        is_complete = attempt.current_sentence_index >= attempt.total_sentences
+        score_percentage = (attempt.correct_answers / attempt.total_sentences) * 100 if attempt.total_sentences > 0 else 0
+        
+        if is_complete:
+            attempt.score_percentage = score_percentage
+            attempt.completed_at = datetime.now(timezone.utc)
+            
+            # Check if passed
+            passed = score_percentage >= attempt.passing_score
+            if passed:
+                attempt.status = 'pending_confirmation'
+            else:
+                attempt.status = 'failed'
+        
+        await self.db.commit()
+        
+        # Get next sentence if not complete
+        next_sentence = None
+        if not is_complete:
+            next_sentence_id = UUID(attempt.sentence_order[attempt.current_sentence_index])
+            next_sentence_result = await self.db.execute(
+                select(VocabularyFillInBlankSentence)
+                .where(VocabularyFillInBlankSentence.id == next_sentence_id)
+            )
+            next_sentence_obj = next_sentence_result.scalar_one()
+            
+            # Get vocabulary words from session
+            session_data = await self.session_manager.get_current_session(
+                attempt.student_id, attempt.vocabulary_list_id
+            )
+            vocabulary_words = session_data.get('vocabulary_words', []) if session_data else []
+            
+            next_sentence = {
+                'id': str(next_sentence_obj.id),
+                'sentence_with_blank': next_sentence_obj.sentence_with_blank,
+                'vocabulary_words': vocabulary_words
+            }
+        
+        progress_percentage = (attempt.sentences_completed / attempt.total_sentences) * 100
+        
+        return {
+            'valid': True,
+            'is_correct': is_correct,
+            'correct_answer': sentence.correct_answer,
+            'correct_answers': attempt.correct_answers,
+            'sentences_remaining': attempt.total_sentences - attempt.sentences_completed,
+            'is_complete': is_complete,
+            'passed': score_percentage >= attempt.passing_score if is_complete else None,
+            'score_percentage': score_percentage,
+            'needs_confirmation': is_complete and score_percentage >= attempt.passing_score,
+            'next_sentence': next_sentence,
+            'progress_percentage': progress_percentage
+        }
+    
+    async def get_fill_in_blank_progress(self, fill_in_blank_attempt_id: UUID) -> Dict[str, Any]:
+        """Get current progress for fill-in-the-blank attempt"""
+        
+        result = await self.db.execute(
+            select(VocabularyFillInBlankAttempt)
+            .where(VocabularyFillInBlankAttempt.id == fill_in_blank_attempt_id)
+        )
+        attempt = result.scalar_one_or_none()
+        
+        if not attempt:
+            raise ValueError("Fill-in-blank attempt not found")
+        
+        # Get current sentence if not complete
+        current_sentence = None
+        if attempt.current_sentence_index < len(attempt.sentence_order):
+            current_sentence_id = UUID(attempt.sentence_order[attempt.current_sentence_index])
+            sentence_result = await self.db.execute(
+                select(VocabularyFillInBlankSentence)
+                .where(VocabularyFillInBlankSentence.id == current_sentence_id)
+            )
+            sentence_obj = sentence_result.scalar_one()
+            
+            # Get vocabulary words from session
+            session_data = await self.session_manager.get_current_session(
+                attempt.student_id, attempt.vocabulary_list_id
+            )
+            vocabulary_words = session_data.get('vocabulary_words', []) if session_data else []
+            
+            current_sentence = {
+                'id': str(sentence_obj.id),
+                'sentence_with_blank': sentence_obj.sentence_with_blank,
+                'vocabulary_words': vocabulary_words
+            }
+        
+        # Get vocabulary words
+        words_result = await self.db.execute(
+            select(VocabularyWord.word)
+            .where(VocabularyWord.list_id == attempt.vocabulary_list_id)
+            .order_by(VocabularyWord.position)
+        )
+        vocabulary_words = [word for word, in words_result.fetchall()]
+        
+        progress_percentage = (attempt.sentences_completed / attempt.total_sentences) * 100
+        
+        return {
+            'fill_in_blank_attempt_id': str(attempt.id),
+            'status': attempt.status,
+            'total_sentences': attempt.total_sentences,
+            'sentences_completed': attempt.sentences_completed,
+            'current_sentence_index': attempt.current_sentence_index,
+            'correct_answers': attempt.correct_answers,
+            'incorrect_answers': attempt.incorrect_answers,
+            'passing_score': attempt.passing_score,
+            'progress_percentage': progress_percentage,
+            'current_sentence': current_sentence,
+            'vocabulary_words': vocabulary_words
+        }
+    
+    async def confirm_fill_in_blank_completion(
+        self,
+        fill_in_blank_attempt_id: UUID,
+        student_id: UUID
+    ) -> Dict[str, Any]:
+        """Confirm completion of fill-in-the-blank assignment"""
+        
+        # Get the attempt
+        result = await self.db.execute(
+            select(VocabularyFillInBlankAttempt)
+            .where(VocabularyFillInBlankAttempt.id == fill_in_blank_attempt_id)
+        )
+        attempt = result.scalar_one_or_none()
+        
+        if not attempt:
+            raise ValueError("Fill-in-blank attempt not found")
+        
+        if attempt.student_id != student_id:
+            raise ValueError("Not authorized to confirm this attempt")
+        
+        if attempt.status != 'pending_confirmation':
+            raise ValueError("Attempt is not pending confirmation")
+        
+        # Mark as passed
+        attempt.status = 'passed'
+        
+        # Update practice progress
+        progress_result = await self.db.execute(
+            select(VocabularyPracticeProgress)
+            .where(VocabularyPracticeProgress.id == attempt.practice_progress_id)
+        )
+        progress = progress_result.scalar_one()
+        
+        # Update assignment status in practice_status
+        practice_status = progress.practice_status.copy()
+        self._ensure_assignment_status(practice_status, 'fill_in_blank')
+        
+        # Mark as completed
+        practice_status['assignments']['fill_in_blank']['status'] = 'completed'
+        practice_status['assignments']['fill_in_blank']['completed_at'] = datetime.now(timezone.utc).isoformat()
+        practice_status['assignments']['fill_in_blank']['best_score'] = int(attempt.score_percentage or 0)
+        practice_status['completed_assignments'].append('fill_in_blank')
+        
+        # Remove duplicates
+        practice_status['completed_assignments'] = list(set(practice_status['completed_assignments']))
+        
+        progress.practice_status = practice_status
+        
+        # Get classroom assignment for StudentAssignment creation
+        ca_result = await self.db.execute(
+            select(ClassroomAssignment.id)
+            .where(
+                and_(
+                    ClassroomAssignment.vocabulary_list_id == attempt.vocabulary_list_id,
+                    ClassroomAssignment.assignment_type == "vocabulary"
+                )
+            )
+        )
+        classroom_assignment_id = ca_result.scalar_one()
+        
+        # Create or update StudentAssignment record
+        await self._create_or_update_student_assignment(
+            student_id=student_id,
+            assignment_id=attempt.vocabulary_list_id,
+            classroom_assignment_id=classroom_assignment_id,
+            assignment_type="vocabulary",
+            subtype="fill_in_blank"
+        )
+        
+        await self.db.commit()
+        
+        # Clear session
+        await self.session_manager.clear_session(student_id, attempt.vocabulary_list_id)
+        
+        score_percentage = attempt.score_percentage or 0
+        
+        return {
+            'success': True,
+            'message': 'Fill-in-the-blank assignment completed successfully!',
+            'final_score': attempt.correct_answers,
+            'score_percentage': score_percentage
+        }
+    
+    async def decline_fill_in_blank_completion(
+        self,
+        fill_in_blank_attempt_id: UUID,
+        student_id: UUID
+    ) -> Dict[str, Any]:
+        """Decline fill-in-the-blank completion and prepare for retake"""
+        
+        # Get the attempt
+        result = await self.db.execute(
+            select(VocabularyFillInBlankAttempt)
+            .where(VocabularyFillInBlankAttempt.id == fill_in_blank_attempt_id)
+        )
+        attempt = result.scalar_one_or_none()
+        
+        if not attempt:
+            raise ValueError("Fill-in-blank attempt not found")
+        
+        if attempt.student_id != student_id:
+            raise ValueError("Not authorized to decline this attempt")
+        
+        if attempt.status != 'pending_confirmation':
+            raise ValueError("Attempt is not pending confirmation")
+        
+        # Mark as declined
+        attempt.status = 'declined'
+        await self.db.commit()
+        
+        # Clear session to allow new attempt
+        await self.session_manager.clear_session(student_id, attempt.vocabulary_list_id)
+        
+        score_percentage = attempt.score_percentage or 0
+        
+        return {
+            'success': True,
+            'message': 'Assignment declined. You can retake it later.',
+            'final_score': attempt.correct_answers,
+            'score_percentage': score_percentage
+        }

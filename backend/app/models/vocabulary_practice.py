@@ -357,3 +357,99 @@ class VocabularyPuzzleAttempt(Base):
             name='check_puzzle_attempt_status'
         ),
     )
+
+
+class VocabularyFillInBlankSentence(Base):
+    """Stores generated fill-in-the-blank sentences for vocabulary practice"""
+    __tablename__ = "vocabulary_fill_in_blank_sentences"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    vocabulary_list_id = Column(UUID(as_uuid=True), ForeignKey("vocabulary_lists.id", ondelete="CASCADE"), nullable=False)
+    word_id = Column(UUID(as_uuid=True), ForeignKey("vocabulary_words.id", ondelete="CASCADE"), nullable=False)
+    sentence_with_blank = Column(Text, nullable=False)
+    correct_answer = Column(String(100), nullable=False)
+    sentence_order = Column(Integer, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    vocabulary_list = relationship("VocabularyList")
+    word = relationship("VocabularyWord")
+    responses = relationship("VocabularyFillInBlankResponse", back_populates="sentence")
+    
+    __table_args__ = (
+        UniqueConstraint('vocabulary_list_id', 'sentence_order', name='unique_sentence_order'),
+    )
+
+
+class VocabularyFillInBlankResponse(Base):
+    """Stores student fill-in-the-blank responses"""
+    __tablename__ = "vocabulary_fill_in_blank_responses"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    student_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    vocabulary_list_id = Column(UUID(as_uuid=True), ForeignKey("vocabulary_lists.id", ondelete="CASCADE"), nullable=False)
+    practice_progress_id = Column(UUID(as_uuid=True), ForeignKey("vocabulary_practice_progress.id", ondelete="CASCADE"), nullable=False)
+    sentence_id = Column(UUID(as_uuid=True), ForeignKey("vocabulary_fill_in_blank_sentences.id", ondelete="CASCADE"), nullable=False)
+    student_answer = Column(String(100), nullable=False)
+    is_correct = Column(Boolean, nullable=False)
+    attempt_number = Column(Integer, nullable=False, default=1)
+    time_spent_seconds = Column(Integer)
+    answered_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    student = relationship("User", foreign_keys=[student_id])
+    vocabulary_list = relationship("VocabularyList")
+    practice_progress = relationship("VocabularyPracticeProgress")
+    sentence = relationship("VocabularyFillInBlankSentence", back_populates="responses")
+    
+    __table_args__ = (
+        UniqueConstraint('practice_progress_id', 'sentence_id', 'attempt_number', 
+                        name='unique_fill_in_blank_response_attempt'),
+    )
+
+
+class VocabularyFillInBlankAttempt(Base):
+    """Records fill-in-the-blank attempts"""
+    __tablename__ = "vocabulary_fill_in_blank_attempts"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    student_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    vocabulary_list_id = Column(UUID(as_uuid=True), ForeignKey("vocabulary_lists.id", ondelete="CASCADE"), nullable=False)
+    practice_progress_id = Column(UUID(as_uuid=True), ForeignKey("vocabulary_practice_progress.id", ondelete="CASCADE"), nullable=False)
+    
+    attempt_number = Column(Integer, nullable=False)
+    total_sentences = Column(Integer, nullable=False)
+    sentences_completed = Column(Integer, nullable=False, default=0)
+    current_sentence_index = Column(Integer, nullable=False, default=0)
+    
+    # Scoring
+    correct_answers = Column(Integer, nullable=False, default=0)
+    incorrect_answers = Column(Integer, nullable=False, default=0)
+    score_percentage = Column(Numeric(5, 2))
+    passing_score = Column(Integer, nullable=False, default=70)
+    
+    # Tracking
+    sentence_order = Column(JSONB, nullable=False, default=list)  # Shuffled order of sentence IDs
+    responses = Column(JSONB, nullable=False, default=dict)  # Map of sentence_id to response data
+    
+    status = Column(String(20), nullable=False, default='in_progress')
+    
+    started_at = Column(DateTime(timezone=True), server_default=func.now())
+    completed_at = Column(DateTime(timezone=True))
+    time_spent_seconds = Column(Integer)
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    
+    # Relationships
+    student = relationship("User", foreign_keys=[student_id])
+    vocabulary_list = relationship("VocabularyList")
+    practice_progress = relationship("VocabularyPracticeProgress")
+    
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('in_progress', 'completed', 'passed', 'failed', 'abandoned', 'pending_confirmation', 'declined')",
+            name='check_fill_in_blank_attempt_status'
+        ),
+    )

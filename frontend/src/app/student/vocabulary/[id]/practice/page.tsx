@@ -69,6 +69,8 @@ export default function VocabularyPracticePage() {
         return '🗺️'
       case 'puzzle_path':
         return '🧩'
+      case 'fill_in_blank':
+        return '✏️'
       default:
         return '📝'
     }
@@ -119,6 +121,8 @@ export default function VocabularyPracticePage() {
       router.push(`/student/vocabulary/${vocabularyId}/practice/concept-mapping`)
     } else if (assignment.type === 'puzzle_path' && assignment.can_start) {
       router.push(`/student/vocabulary/${vocabularyId}/practice/puzzle-path`)
+    } else if (assignment.type === 'fill_in_blank' && assignment.can_start) {
+      router.push(`/student/vocabulary/${vocabularyId}/practice/fill-in-blank`)
     }
   }
 
@@ -259,6 +263,8 @@ export default function VocabularyPracticePage() {
                     'Create comprehensive concept maps showing deep understanding of vocabulary words.'}
                   {assignment.type === 'puzzle_path' && 
                     'Navigate through word puzzles including scrambled words, crossword clues, and more.'}
+                  {assignment.type === 'fill_in_blank' && 
+                    'Complete sentences by selecting the correct vocabulary word from multiple choices.'}
                 </p>
 
                 <button

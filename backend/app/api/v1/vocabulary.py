@@ -21,6 +21,7 @@ from app.schemas.vocabulary import (
 from app.services.vocabulary import VocabularyService
 from app.services.vocabulary_story_generator import VocabularyStoryGenerator
 from app.services.vocabulary_puzzle_generator import VocabularyPuzzleGenerator
+from app.services.vocabulary_fill_in_blank_generator import VocabularyFillInBlankGenerator
 import logging
 
 router = APIRouter()
@@ -60,6 +61,14 @@ async def pre_generate_vocabulary_assignments(list_id: UUID):
                 logger.info(f"Successfully pre-generated puzzle games for list {list_id}")
             except Exception as e:
                 logger.error(f"Failed to pre-generate puzzle games for list {list_id}: {e}")
+            
+            # Generate fill-in-the-blank sentences
+            try:
+                fill_in_blank_generator = VocabularyFillInBlankGenerator(db)
+                await fill_in_blank_generator.generate_fill_in_blank_sentences(list_id)
+                logger.info(f"Successfully pre-generated fill-in-the-blank sentences for list {list_id}")
+            except Exception as e:
+                logger.error(f"Failed to pre-generate fill-in-the-blank sentences for list {list_id}: {e}")
             
             logger.info(f"Completed pre-generation of vocabulary assignments for list {list_id}")
             
