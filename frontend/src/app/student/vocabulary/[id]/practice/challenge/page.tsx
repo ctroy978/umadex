@@ -56,14 +56,9 @@ export default function VocabularyChallengePage() {
   const startTimeRef = useRef<number>(Date.now())
   const [showCompletionDialog, setShowCompletionDialog] = useState(false)
   const [confirmingCompletion, setConfirmingCompletion] = useState(false)
-  const [hasInitialized, setHasInitialized] = useState(false)
-
   useEffect(() => {
-    if (!hasInitialized && vocabularyId) {
-      setHasInitialized(true)
-      startNewGame()
-    }
-  }, [vocabularyId, hasInitialized])
+    startNewGame()
+  }, [vocabularyId])
 
   useEffect(() => {
     // Reset timer when new question starts
@@ -90,8 +85,10 @@ export default function VocabularyChallengePage() {
     if (loading) return // Prevent multiple concurrent calls
     
     try {
+      console.log('Starting vocabulary challenge for ID:', vocabularyId)
       setLoading(true)
       const session = await studentApi.startVocabularyChallenge(vocabularyId)
+      console.log('Got session response:', session)
       setGameSession(session)
       
       // Handle session resumption
@@ -104,6 +101,11 @@ export default function VocabularyChallengePage() {
       }
     } catch (err: any) {
       console.error('Failed to start game:', err)
+      console.error('Error details:', {
+        message: err.message,
+        response: err.response?.data,
+        status: err.response?.status
+      })
       
       // Check if it's a completion error
       if (err.response?.data?.detail?.includes('already been completed')) {

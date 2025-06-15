@@ -18,8 +18,60 @@ from app.schemas.vocabulary import (
     VocabularyWordReviewResponse, VocabularyExportFormat
 )
 from app.services.vocabulary import VocabularyService
+from app.services.vocabulary_game_generator import VocabularyGameGenerator
+from app.services.vocabulary_story_generator import VocabularyStoryGenerator
+from app.services.vocabulary_puzzle_generator import VocabularyPuzzleGenerator
+import logging
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+
+
+async def pre_generate_vocabulary_assignments(list_id: UUID):
+    """Background task to pre-generate all vocabulary practice assignments"""
+    try:
+        # Create a new database session for the background task
+        from app.core.database import AsyncSessionLocal
+        
+        async with AsyncSessionLocal() as db:
+            logger.info(f"Starting pre-generation of vocabulary assignments for list {list_id}")
+            
+            # Generate fill-in-the-blank questions
+            try:
+                game_generator = VocabularyGameGenerator(db)
+                await game_generator.generate_game_questions(list_id)
+                logger.info(f"Successfully pre-generated fill-in-the-blank questions for list {list_id}")
+            except Exception as e:
+                logger.error(f"Failed to pre-generate fill-in-the-blank questions for list {list_id}: {e}")
+            
+            # Generate story prompts
+            try:
+                story_generator = VocabularyStoryGenerator(db)
+                await story_generator.generate_story_prompts(list_id)
+                logger.info(f"Successfully pre-generated story prompts for list {list_id}")
+            except Exception as e:
+                logger.error(f"Failed to pre-generate story prompts for list {list_id}: {e}")
+            
+            # Generate puzzle games
+            try:
+                puzzle_generator = VocabularyPuzzleGenerator(db)
+                puzzle_data = await puzzle_generator.generate_puzzle_set(list_id)
+                
+                # Save puzzles to database
+                from app.models.vocabulary_practice import VocabularyPuzzleGame
+                for p_data in puzzle_data:
+                    puzzle = VocabularyPuzzleGame(**p_data)
+                    db.add(puzzle)
+                
+                await db.commit()
+                logger.info(f"Successfully pre-generated puzzle games for list {list_id}")
+            except Exception as e:
+                logger.error(f"Failed to pre-generate puzzle games for list {list_id}: {e}")
+            
+            logger.info(f"Completed pre-generation of vocabulary assignments for list {list_id}")
+            
+    except Exception as e:
+        logger.error(f"Critical error in pre-generation task for list {list_id}: {e}")
 
 
 @router.post("/vocabulary", response_model=VocabularyListResponse, status_code=status.HTTP_201_CREATED)
@@ -370,6 +422,7 @@ async def regenerate_word_definition(
 @router.post("/vocabulary/{list_id}/publish", response_model=VocabularyListResponse)
 async def publish_vocabulary_list(
     list_id: UUID,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -390,6 +443,10 @@ async def publish_vocabulary_list(
     
     try:
         await VocabularyService.publish_vocabulary_list(db, list_id)
+        
+        # Schedule background pre-generation of practice assignments
+        background_tasks.add_task(pre_generate_vocabulary_assignments, list_id)
+        
         # Reload the vocabulary list with proper relationship loading
         published_list = await VocabularyService.get_vocabulary_list(db, list_id, include_words=False)
         

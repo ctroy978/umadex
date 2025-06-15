@@ -46,7 +46,8 @@ class ClassroomStudent(Base):
 class ClassroomAssignment(Base):
     __tablename__ = "classroom_assignments"
     __table_args__ = (
-        UniqueConstraint('classroom_id', 'assignment_id', 'vocabulary_list_id', name='_classroom_assignment_uc'),
+        UniqueConstraint('classroom_id', 'assignment_id', name='_classroom_reading_assignment_uc'),
+        UniqueConstraint('classroom_id', 'vocabulary_list_id', 'assignment_type', name='_classroom_vocab_assignment_uc'),
     )
     
     id = Column(Integer, primary_key=True, autoincrement=True)

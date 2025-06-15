@@ -6,6 +6,7 @@ from uuid import UUID
 from datetime import datetime
 from sqlalchemy import select, and_, or_, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import IntegrityError
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 
@@ -543,17 +544,27 @@ async def update_all_classroom_assignments(
             )
         )
         if assignment_result.scalar_one_or_none():
-            schedule = requested_reading[assignment_id]
-            ca = ClassroomAssignment(
-                classroom_id=classroom_id,
-                assignment_id=assignment_id,
-                assignment_type="reading",
-                display_order=display_order,
-                start_date=schedule.start_date,
-                end_date=schedule.end_date
+            # Check if assignment already exists for this classroom
+            existing_result = await db.execute(
+                select(ClassroomAssignment).where(
+                    and_(
+                        ClassroomAssignment.classroom_id == classroom_id,
+                        ClassroomAssignment.assignment_id == assignment_id
+                    )
+                )
             )
-            db.add(ca)
-            display_order += 1
+            if not existing_result.scalar_one_or_none():
+                schedule = requested_reading[assignment_id]
+                ca = ClassroomAssignment(
+                    classroom_id=classroom_id,
+                    assignment_id=assignment_id,
+                    assignment_type="reading",
+                    display_order=display_order,
+                    start_date=schedule.start_date,
+                    end_date=schedule.end_date
+                )
+                db.add(ca)
+                display_order += 1
     
     # Add new vocabulary assignments
     for list_id in vocabulary_to_add:
@@ -568,19 +579,42 @@ async def update_all_classroom_assignments(
             )
         )
         if vocab_result.scalar_one_or_none():
-            schedule = requested_vocabulary[list_id]
-            ca = ClassroomAssignment(
-                classroom_id=classroom_id,
-                vocabulary_list_id=list_id,
-                assignment_type="vocabulary",
-                display_order=display_order,
-                start_date=schedule.start_date,
-                end_date=schedule.end_date
+            # Check if vocabulary assignment already exists for this classroom
+            existing_result = await db.execute(
+                select(ClassroomAssignment).where(
+                    and_(
+                        ClassroomAssignment.classroom_id == classroom_id,
+                        ClassroomAssignment.vocabulary_list_id == list_id,
+                        ClassroomAssignment.assignment_type == "vocabulary"
+                    )
+                )
             )
-            db.add(ca)
-            display_order += 1
+            if not existing_result.scalar_one_or_none():
+                schedule = requested_vocabulary[list_id]
+                ca = ClassroomAssignment(
+                    classroom_id=classroom_id,
+                    vocabulary_list_id=list_id,
+                    assignment_type="vocabulary",
+                    display_order=display_order,
+                    start_date=schedule.start_date,
+                    end_date=schedule.end_date
+                )
+                db.add(ca)
+                display_order += 1
     
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError as e:
+        await db.rollback()
+        if "classroom_reading_assignment_uc" in str(e) or "classroom_vocab_assignment_uc" in str(e):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="One or more assignments are already assigned to this classroom"
+            )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Database constraint violation"
+        )
     
     total_added = len(reading_to_add) + len(vocabulary_to_add)
     total_removed = len(reading_to_remove) + len(vocabulary_to_remove)

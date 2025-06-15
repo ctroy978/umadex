@@ -667,7 +667,7 @@ async def _validate_assignment_access_helper(
         )
     
     result = await db.execute(ca_query)
-    ca_result = result.one_or_none()
+    ca_result = result.first()
     
     if not ca_result:
         raise HTTPException(
@@ -785,7 +785,7 @@ async def get_assignment_test_status(
     )
     
     result = await db.execute(ca_query)
-    ca_result = result.one_or_none()
+    ca_result = result.first()
     
     if not ca_result:
         raise HTTPException(

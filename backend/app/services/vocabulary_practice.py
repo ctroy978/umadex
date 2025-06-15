@@ -11,6 +11,7 @@ from sqlalchemy.orm import selectinload
 import json
 import logging
 import random
+import asyncio
 
 from app.models.vocabulary import VocabularyList, VocabularyWord
 from app.models.vocabulary_practice import (
@@ -173,24 +174,43 @@ class VocabularyPracticeService:
             questions = questions_result.scalars().all()
             
             if not questions:
-                # Generate questions
-                generator = VocabularyGameGenerator(self.db)
-                question_data = await generator.generate_game_questions(vocabulary_list_id)
-                
-                # Save questions to database
-                for q_data in question_data:
-                    question = VocabularyGameQuestion(**q_data)
-                    self.db.add(question)
-                
-                await self.db.commit()
-                
-                # Reload questions
-                questions_result = await self.db.execute(
-                    select(VocabularyGameQuestion)
-                    .where(VocabularyGameQuestion.vocabulary_list_id == vocabulary_list_id)
-                    .order_by(VocabularyGameQuestion.question_order)
-                )
-                questions = questions_result.scalars().all()
+                # Generate questions with timeout protection
+                logger.info(f"No questions found for vocabulary list {vocabulary_list_id}, generating now...")
+                try:
+                    generator = VocabularyGameGenerator(self.db)
+                    question_data = await asyncio.wait_for(
+                        generator.generate_game_questions(vocabulary_list_id),
+                        timeout=60.0  # 60 second timeout for question generation
+                    )
+                    
+                    if not question_data:
+                        raise ValueError("Question generation failed - no questions were created")
+                    
+                    # Save questions to database
+                    for q_data in question_data:
+                        question = VocabularyGameQuestion(**q_data)
+                        self.db.add(question)
+                    
+                    await self.db.commit()
+                    logger.info(f"Successfully generated and saved {len(question_data)} questions")
+                    
+                    # Reload questions
+                    questions_result = await self.db.execute(
+                        select(VocabularyGameQuestion)
+                        .where(VocabularyGameQuestion.vocabulary_list_id == vocabulary_list_id)
+                        .order_by(VocabularyGameQuestion.question_order)
+                    )
+                    questions = questions_result.scalars().all()
+                    
+                except asyncio.TimeoutError:
+                    logger.error(f"Question generation timed out for vocabulary list {vocabulary_list_id}")
+                    raise ValueError("Question generation is taking too long. Please try again later or contact your teacher.")
+                except Exception as e:
+                    logger.error(f"Question generation failed for vocabulary list {vocabulary_list_id}: {str(e)}")
+                    raise ValueError("Unable to generate questions for this vocabulary list. Please contact your teacher.")
+            
+            if not questions:
+                raise ValueError("No questions available for this vocabulary assignment. Please contact your teacher.")
             
             # Calculate scoring - each question worth 1 point, 70% threshold
             total_questions = len(questions)

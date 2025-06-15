@@ -17,12 +17,22 @@ logger = logging.getLogger(__name__)
 class VocabularyStoryGenerator:
     """Generates story prompts for vocabulary practice"""
     
+
+
     # Available settings for story prompts
     SETTINGS = [
         "enchanted forest", "abandoned space station", "underwater city", "ancient castle",
         "bustling marketplace", "mysterious island", "time machine laboratory", "dragon's lair",
         "robot factory", "magical library", "pirate ship", "mountain peak",
-        "desert oasis", "hidden cave", "futuristic city"
+        "desert oasis", "hidden cave", "futuristic city", "haunted mansion",
+        "arctic research base", "steampunk airship", "alien planet", "medieval village",
+        "old west town", "floating sky city", "ancient temple", "post-apocalyptic wasteland",
+        "vampire's crypt", "wizard's tower", "treehouse kingdom", "underground bunker",
+        "coral reef palace", "ghost town saloon", "crystal cavern", "circus",
+        "jungle temple", "moon colony", "fairy tale cottage", "dimensional portal",
+        "car repair shop", "coffee shop", "hospital emergency room", "school cafeteria",
+        "bookstore", "laundromat", "barbershop", "grocery store checkout line",
+        "taxi cab", "hotel lobby"
     ]
     
     # Available tones for stories
