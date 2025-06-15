@@ -31,7 +31,7 @@ class VocabularyGameQuestion(Base):
     
     __table_args__ = (
         CheckConstraint(
-            "question_type IN ('riddle', 'poem', 'sentence_completion', 'word_association', 'scenario')",
+            "question_type IN ('fill_in_blank')",
             name='check_question_type'
         ),
         CheckConstraint(
@@ -127,6 +127,9 @@ class VocabularyGameAttempt(Base):
     # Question responses
     question_responses = Column(JSONB, nullable=False, default=list)
     
+    # Shuffled question order (list of question IDs)
+    shuffled_question_order = Column(JSONB, nullable=False, default=list)
+    
     status = Column(String(20), nullable=False, default='in_progress')
     
     started_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -147,7 +150,7 @@ class VocabularyGameAttempt(Base):
             name='check_game_type'
         ),
         CheckConstraint(
-            "status IN ('in_progress', 'completed', 'passed', 'failed', 'abandoned')",
+            "status IN ('in_progress', 'completed', 'passed', 'failed', 'abandoned', 'pending_confirmation', 'declined')",
             name='check_attempt_status'
         ),
     )

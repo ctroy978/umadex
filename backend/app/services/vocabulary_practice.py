@@ -10,6 +10,7 @@ from sqlalchemy import select, and_, or_, update, func
 from sqlalchemy.orm import selectinload
 import json
 import logging
+import random
 
 from app.models.vocabulary import VocabularyList, VocabularyWord
 from app.models.vocabulary_practice import (
@@ -165,10 +166,14 @@ class VocabularyPracticeService:
             )
             questions = questions_result.scalars().all()
         
-        # Calculate scoring
+        # Calculate scoring - each question worth 1 point, 70% threshold
         total_questions = len(questions)
-        max_possible_score = total_questions * 5  # 5 points per question
-        passing_score = int(max_possible_score * self.PASSING_THRESHOLD)
+        max_possible_score = total_questions  # 1 point per question
+        passing_score = int(total_questions * 0.7)  # 70% threshold
+        
+        # Shuffle questions for this attempt
+        question_ids = [str(q.id) for q in questions]
+        random.shuffle(question_ids)
         
         # Get current attempt number
         vocab_challenge_status = progress.practice_status.get('assignments', {}).get('vocabulary_challenge', {})
@@ -183,7 +188,8 @@ class VocabularyPracticeService:
             attempt_number=attempt_number,
             total_questions=total_questions,
             max_possible_score=max_possible_score,
-            passing_score=passing_score
+            passing_score=passing_score,
+            shuffled_question_order=question_ids
         )
         self.db.add(game_attempt)
         await self.db.commit()
@@ -216,8 +222,16 @@ class VocabularyPracticeService:
             }
         )
         
-        # Return first question
-        first_question = questions[0] if questions else None
+        # Return first question using shuffled order
+        first_question = None
+        if question_ids:
+            # Get the first question from shuffled order
+            first_question_id = question_ids[0]
+            first_question_result = await self.db.execute(
+                select(VocabularyGameQuestion)
+                .where(VocabularyGameQuestion.id == first_question_id)
+            )
+            first_question = first_question_result.scalar_one_or_none()
         
         return {
             'game_attempt_id': str(game_attempt.id),
@@ -319,17 +333,15 @@ class VocabularyPracticeService:
         # Check answer (case-insensitive, trimmed)
         is_correct = student_answer.strip().lower() == question.correct_answer.strip().lower()
         
-        # Calculate points
-        points_earned = 0
-        if is_correct:
-            points_earned = 5 if attempt_number == 1 else 3
+        # Calculate points - 1 point per correct answer, no retries
+        points_earned = 1 if is_correct else 0
         
         # Update game attempt
         question_responses = game_attempt.question_responses.copy()
         question_responses.append({
             'question_id': str(question_id),
             'question_order': len(question_responses) + 1,
-            'attempts': attempt_number,
+            'attempts': 1,  # Only one attempt per question
             'correct': is_correct,
             'points_earned': points_earned,
             'student_answer': student_answer,
@@ -347,9 +359,9 @@ class VocabularyPracticeService:
             # Calculate percentage score
             percentage_score = (game_attempt.current_score / game_attempt.max_possible_score) * 100 if game_attempt.max_possible_score > 0 else 0
             
-            # Set status based on score - use pending_confirmation for passing scores
+            # Set status based on 70% threshold
             if game_attempt.current_score >= game_attempt.passing_score:
-                game_attempt.status = 'pending_confirmation'
+                game_attempt.status = 'passed'  # Direct pass, no confirmation needed
             else:
                 game_attempt.status = 'failed'
             
@@ -360,10 +372,8 @@ class VocabularyPracticeService:
                 time_diff = game_attempt.completed_at - game_attempt.started_at
                 game_attempt.time_spent_seconds = int(time_diff.total_seconds())
             
-            # Only update practice progress for failed attempts
-            # Successful attempts will be handled in the confirmation flow
-            if game_attempt.status == 'failed':
-                await self._update_practice_progress(game_attempt)
+            # Update practice progress for both passed and failed attempts
+            await self._update_practice_progress(game_attempt)
         
         await self.db.commit()
         
@@ -383,7 +393,7 @@ class VocabularyPracticeService:
         
         # Get next question if not complete
         next_question = None
-        if not is_complete and attempt_number == 2:  # Move to next question after 2 attempts
+        if not is_complete:
             questions_result = await self.db.execute(
                 select(VocabularyGameQuestion)
                 .where(VocabularyGameQuestion.vocabulary_list_id == game_attempt.vocabulary_list_id)
@@ -396,24 +406,22 @@ class VocabularyPracticeService:
         
         # Calculate percentage score if complete
         percentage_score = None
-        needs_confirmation = False
         if is_complete:
             percentage_score = (game_attempt.current_score / game_attempt.max_possible_score) * 100 if game_attempt.max_possible_score > 0 else 0
-            needs_confirmation = game_attempt.status == 'pending_confirmation'
         
         return {
             'correct': is_correct,
             'points_earned': points_earned,
-            'explanation': question.explanation,
+            'explanation': '',  # No explanation per requirements
             'correct_answer': question.correct_answer if not is_correct else None,
             'current_score': game_attempt.current_score,
             'questions_remaining': game_attempt.total_questions - game_attempt.questions_answered,
             'is_complete': is_complete,
-            'passed': game_attempt.status == 'pending_confirmation' if is_complete else None,
+            'passed': game_attempt.status == 'passed' if is_complete else None,
             'percentage_score': percentage_score,
-            'needs_confirmation': needs_confirmation,
+            'needs_confirmation': False,  # No confirmation dialog needed
             'next_question': self._format_question(next_question) if next_question else None,
-            'can_retry': attempt_number < 2 and not is_correct
+            'can_retry': False  # No retries allowed per question
         }
     
     async def get_next_question(
@@ -432,18 +440,24 @@ class VocabularyPracticeService:
         if not game_attempt or game_attempt.status != 'in_progress':
             raise ValueError("Invalid or completed game attempt")
         
-        # Get all questions
-        questions_result = await self.db.execute(
-            select(VocabularyGameQuestion)
-            .where(VocabularyGameQuestion.vocabulary_list_id == game_attempt.vocabulary_list_id)
-            .order_by(VocabularyGameQuestion.question_order)
-        )
-        all_questions = questions_result.scalars().all()
+        # Get shuffled question order
+        shuffled_order = game_attempt.shuffled_question_order or []
         
         # Get next unanswered question
         answered_count = game_attempt.questions_answered
-        if answered_count < len(all_questions):
-            next_question = all_questions[answered_count]
+        if answered_count < len(shuffled_order):
+            # Get the question ID from shuffled order
+            next_question_id = shuffled_order[answered_count]
+            
+            # Retrieve the specific question
+            question_result = await self.db.execute(
+                select(VocabularyGameQuestion)
+                .where(VocabularyGameQuestion.id == next_question_id)
+            )
+            next_question = question_result.scalar_one_or_none()
+            
+            if not next_question:
+                raise ValueError(f"Question not found: {next_question_id}")
             return {
                 'question': self._format_question(next_question),
                 'current_question': answered_count + 1,
@@ -590,7 +604,22 @@ class VocabularyPracticeService:
             vocab_challenge['status'] = 'completed'
             vocab_challenge['completed_at'] = datetime.now(timezone.utc).isoformat()
             
-            # Note: Completion tracking is now handled by PostgreSQL StudentAssignment records
+            # Create StudentAssignment record for completion tracking
+            student_assignment = StudentAssignment(
+                student_id=game_attempt.student_id,
+                assignment_id=game_attempt.vocabulary_list_id,
+                classroom_assignment_id=progress.classroom_assignment_id,
+                assignment_type="vocabulary",
+                progress_metadata={
+                    "subtype": "vocabulary_challenge",
+                    "score": game_attempt.current_score,
+                    "max_score": game_attempt.max_possible_score,
+                    "percentage": round((game_attempt.current_score / game_attempt.max_possible_score) * 100, 1),
+                    "attempt_number": game_attempt.attempt_number
+                },
+                completed_at=datetime.now(timezone.utc)
+            )
+            self.db.add(student_assignment)
         else:
             vocab_challenge['status'] = 'failed'
         

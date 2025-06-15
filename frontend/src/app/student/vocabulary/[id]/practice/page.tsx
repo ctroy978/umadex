@@ -258,7 +258,7 @@ export default function VocabularyPracticePage() {
 
                 <p className="text-gray-600 mb-4">
                   {assignment.type === 'vocabulary_challenge' && 
-                    'Test your vocabulary knowledge through riddles, poems, and word puzzles.'}
+                    'Fill in the blanks with the correct vocabulary words in context-rich sentences.'}
                   {assignment.type === 'story_builder' && 
                     'Write creative stories using your vocabulary words in different settings and tones.'}
                   {assignment.type === 'concept_mapping' && 

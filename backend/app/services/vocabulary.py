@@ -201,7 +201,7 @@ class VocabularyService:
         db: AsyncSession,
         list_id: UUID
     ) -> VocabularyList:
-        """Generate AI definitions for all pending words in a list"""
+        """Generate AI definitions for all pending words in a list and create fill-in-the-blank questions"""
         vocabulary_list = await VocabularyService.get_vocabulary_list(db, list_id, include_words=True)
         if not vocabulary_list:
             raise ValueError("Vocabulary list not found")
@@ -235,6 +235,15 @@ class VocabularyService:
             for i in range(0, len(tasks), batch_size):
                 batch = tasks[i:i + batch_size]
                 await asyncio.gather(*batch)
+        
+        # Generate fill-in-the-blank questions for vocabulary challenge
+        try:
+            from app.services.vocabulary_game_generator import VocabularyGameGenerator
+            game_generator = VocabularyGameGenerator(db)
+            await game_generator.generate_game_questions(list_id)
+        except Exception as e:
+            # Don't fail the whole process if game generation fails
+            print(f"Warning: Could not generate vocabulary challenge questions: {e}")
         
         # Update status to reviewing
         vocabulary_list.status = VocabularyStatus.REVIEWING
