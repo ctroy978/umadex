@@ -136,7 +136,7 @@ class VocabularyPracticeService:
             )
         )
         if existing_completion.scalar_one_or_none():
-            raise ValueError("Vocabulary challenge has already been completed. Cannot retake completed activities.")
+            raise ValueError("Fill in the Blank activity has already been completed. Cannot retake completed activities.")
         
         # Check if questions exist, generate if not
         questions_result = await self.db.execute(
@@ -659,7 +659,7 @@ class VocabularyPracticeService:
     def _get_assignment_display_name(self, assignment_type: str) -> str:
         """Get display name for assignment type"""
         names = {
-            'vocabulary_challenge': 'Vocabulary Challenge',
+            'vocabulary_challenge': 'Fill in the Blank',
             'story_builder': 'Story Builder',
             'concept_mapping': 'Concept Mapping',
             'puzzle_path': 'Word Puzzle Path'
@@ -2563,7 +2563,7 @@ class VocabularyPracticeService:
         
         return {
             'success': True,
-            'message': 'Vocabulary challenge assignment completed successfully',
+            'message': 'Fill in the Blank activity completed successfully',
             'final_score': game_attempt.current_score,
             'percentage_score': percentage_score
         }

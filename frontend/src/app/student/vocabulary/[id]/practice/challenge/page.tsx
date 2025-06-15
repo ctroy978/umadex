@@ -235,7 +235,7 @@ export default function VocabularyChallengePage() {
               </button>
               <div>
                 <h1 className="text-xl font-semibold text-gray-900">
-                  Vocabulary Challenge
+                  Fill in the Blank
                 </h1>
                 <p className="text-sm text-gray-500">
                   Question {gameSession.current_question} of {gameSession.total_questions}
@@ -417,7 +417,7 @@ export default function VocabularyChallengePage() {
                 {feedback.passed ? 'Congratulations!' : 'Game Complete'}
               </h2>
               <p className={`text-lg font-semibold ${feedback.passed ? 'text-green-600' : 'text-red-600'}`}>
-                {feedback.passed ? 'You PASSED the Vocabulary Challenge!' : 'You did not pass this time'}
+                {feedback.passed ? 'You PASSED the Fill in the Blank activity!' : 'You did not pass this time'}
               </p>
             </div>
             
