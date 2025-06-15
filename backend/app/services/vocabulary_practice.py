@@ -49,6 +49,28 @@ class VocabularyPracticeService:
         self.db = db
         self.session_manager = VocabularySessionManager()
     
+    def _ensure_assignment_status(self, practice_status: dict, assignment_type: str, extra_fields: dict = None) -> dict:
+        """Safely ensure assignment status structure exists in practice_status"""
+        if 'assignments' not in practice_status:
+            practice_status['assignments'] = {}
+        
+        if assignment_type not in practice_status['assignments']:
+            base_structure = {
+                'status': 'not_started',
+                'attempts': 0,
+                'best_score': 0,
+                'last_attempt_at': None,
+                'completed_at': None
+            }
+            
+            # Add extra fields for specific assignment types
+            if extra_fields:
+                base_structure.update(extra_fields)
+            
+            practice_status['assignments'][assignment_type] = base_structure
+        
+        return practice_status['assignments'][assignment_type]
+    
     async def get_or_create_practice_progress(
         self,
         student_id: UUID,
@@ -110,137 +132,148 @@ class VocabularyPracticeService:
     ) -> Dict[str, Any]:
         """Start a new vocabulary challenge game with session management"""
         
-        # Check for existing active session first
-        existing_session = await self.session_manager.get_current_session(student_id, vocabulary_list_id)
-        if existing_session and 'game_attempt_id' in existing_session:
-            # Resume existing game attempt
-            return await self._resume_vocabulary_challenge(student_id, vocabulary_list_id, existing_session)
+        logger.info(f"Starting vocabulary challenge for student {student_id}, vocabulary {vocabulary_list_id}")
         
-        # Get or create progress
-        progress = await self.get_or_create_practice_progress(
-            student_id, vocabulary_list_id, classroom_assignment_id
-        )
-        
-        # Check if vocabulary challenge is already completed using PostgreSQL StudentAssignment
-        existing_completion = await self.db.execute(
-            select(StudentAssignment.completed_at)
-            .where(
-                and_(
-                    StudentAssignment.student_id == student_id,
-                    StudentAssignment.assignment_id == vocabulary_list_id,
-                    StudentAssignment.classroom_assignment_id == classroom_assignment_id,
-                    StudentAssignment.assignment_type == "vocabulary",
-                    StudentAssignment.progress_metadata['subtype'].astext == 'vocabulary_challenge',
-                    StudentAssignment.completed_at.is_not(None)
+        try:
+            # Check for existing active session first
+            existing_session = await self.session_manager.get_current_session(student_id, vocabulary_list_id)
+            if existing_session and 'game_attempt_id' in existing_session:
+                logger.info(f"Resuming existing session for student {student_id}")
+                # Resume existing game attempt
+                return await self._resume_vocabulary_challenge(student_id, vocabulary_list_id, existing_session)
+            
+            # Get or create progress
+            progress = await self.get_or_create_practice_progress(
+                student_id, vocabulary_list_id, classroom_assignment_id
+            )
+            
+            # Check if vocabulary challenge is already completed using PostgreSQL StudentAssignment
+            existing_completion = await self.db.execute(
+                select(StudentAssignment.completed_at)
+                .where(
+                    and_(
+                        StudentAssignment.student_id == student_id,
+                        StudentAssignment.assignment_id == vocabulary_list_id,
+                        StudentAssignment.classroom_assignment_id == classroom_assignment_id,
+                        StudentAssignment.assignment_type == "vocabulary",
+                        StudentAssignment.progress_metadata['subtype'].astext == 'vocabulary_challenge',
+                        StudentAssignment.completed_at.is_not(None)
+                    )
                 )
             )
-        )
-        if existing_completion.scalar_one_or_none():
-            raise ValueError("Fill in the Blank activity has already been completed. Cannot retake completed activities.")
-        
-        # Check if questions exist, generate if not
-        questions_result = await self.db.execute(
-            select(VocabularyGameQuestion)
-            .where(VocabularyGameQuestion.vocabulary_list_id == vocabulary_list_id)
-            .order_by(VocabularyGameQuestion.question_order)
-        )
-        questions = questions_result.scalars().all()
-        
-        if not questions:
-            # Generate questions
-            generator = VocabularyGameGenerator(self.db)
-            question_data = await generator.generate_game_questions(vocabulary_list_id)
+            if existing_completion.scalar_one_or_none():
+                raise ValueError("Fill in the Blank activity has already been completed. Cannot retake completed activities.")
             
-            # Save questions to database
-            for q_data in question_data:
-                question = VocabularyGameQuestion(**q_data)
-                self.db.add(question)
-            
-            await self.db.commit()
-            
-            # Reload questions
+            # Check if questions exist, generate if not
             questions_result = await self.db.execute(
                 select(VocabularyGameQuestion)
                 .where(VocabularyGameQuestion.vocabulary_list_id == vocabulary_list_id)
                 .order_by(VocabularyGameQuestion.question_order)
             )
             questions = questions_result.scalars().all()
-        
-        # Calculate scoring - each question worth 1 point, 70% threshold
-        total_questions = len(questions)
-        max_possible_score = total_questions  # 1 point per question
-        passing_score = int(total_questions * 0.7)  # 70% threshold
-        
-        # Shuffle questions for this attempt
-        question_ids = [str(q.id) for q in questions]
-        random.shuffle(question_ids)
-        
-        # Get current attempt number
-        vocab_challenge_status = progress.practice_status.get('assignments', {}).get('vocabulary_challenge', {})
-        attempt_number = vocab_challenge_status.get('attempts', 0) + 1
-        
-        # Create new game attempt
-        game_attempt = VocabularyGameAttempt(
-            student_id=student_id,
-            vocabulary_list_id=vocabulary_list_id,
-            practice_progress_id=progress.id,
-            game_type='vocabulary_challenge',
-            attempt_number=attempt_number,
-            total_questions=total_questions,
-            max_possible_score=max_possible_score,
-            passing_score=passing_score,
-            shuffled_question_order=question_ids
-        )
-        self.db.add(game_attempt)
-        await self.db.commit()
-        await self.db.refresh(game_attempt)
-        
-        # Update progress to mark as in progress
-        practice_status = progress.practice_status.copy()
-        practice_status['assignments']['vocabulary_challenge']['status'] = 'in_progress'
-        practice_status['assignments']['vocabulary_challenge']['attempts'] = attempt_number
-        practice_status['assignments']['vocabulary_challenge']['last_attempt_at'] = datetime.now(timezone.utc).isoformat()
-        
-        progress.practice_status = practice_status
-        session_data = {
-            'game_attempt_id': str(game_attempt.id),
-            'current_question': 0,
-            'questions_remaining': total_questions
-        }
-        progress.current_game_session = session_data
-        
-        await self.db.commit()
-        
-        # Store session in Redis for fast access
-        await self.session_manager.set_current_session(student_id, vocabulary_list_id, session_data)
-        await self.session_manager.set_current_attempt(
-            student_id, vocabulary_list_id, 'vocabulary_challenge',
-            {
-                'attempt_id': str(game_attempt.id),
-                'attempt_number': attempt_number,
-                'started_at': datetime.now(timezone.utc).isoformat()
-            }
-        )
-        
-        # Return first question using shuffled order
-        first_question = None
-        if question_ids:
-            # Get the first question from shuffled order
-            first_question_id = question_ids[0]
-            first_question_result = await self.db.execute(
-                select(VocabularyGameQuestion)
-                .where(VocabularyGameQuestion.id == first_question_id)
+            
+            if not questions:
+                # Generate questions
+                generator = VocabularyGameGenerator(self.db)
+                question_data = await generator.generate_game_questions(vocabulary_list_id)
+                
+                # Save questions to database
+                for q_data in question_data:
+                    question = VocabularyGameQuestion(**q_data)
+                    self.db.add(question)
+                
+                await self.db.commit()
+                
+                # Reload questions
+                questions_result = await self.db.execute(
+                    select(VocabularyGameQuestion)
+                    .where(VocabularyGameQuestion.vocabulary_list_id == vocabulary_list_id)
+                    .order_by(VocabularyGameQuestion.question_order)
+                )
+                questions = questions_result.scalars().all()
+            
+            # Calculate scoring - each question worth 1 point, 70% threshold
+            total_questions = len(questions)
+            max_possible_score = total_questions  # 1 point per question
+            passing_score = int(total_questions * 0.7)  # 70% threshold
+            
+            # Shuffle questions for this attempt
+            question_ids = [str(q.id) for q in questions]
+            random.shuffle(question_ids)
+            
+            # Get current attempt number
+            vocab_challenge_status = progress.practice_status.get('assignments', {}).get('vocabulary_challenge', {})
+            attempt_number = vocab_challenge_status.get('attempts', 0) + 1
+            
+            # Create new game attempt
+            game_attempt = VocabularyGameAttempt(
+                student_id=student_id,
+                vocabulary_list_id=vocabulary_list_id,
+                practice_progress_id=progress.id,
+                game_type='vocabulary_challenge',
+                attempt_number=attempt_number,
+                total_questions=total_questions,
+                max_possible_score=max_possible_score,
+                passing_score=passing_score,
+                shuffled_question_order=question_ids
             )
-            first_question = first_question_result.scalar_one_or_none()
-        
-        return {
-            'game_attempt_id': str(game_attempt.id),
-            'total_questions': total_questions,
-            'passing_score': passing_score,
-            'max_possible_score': max_possible_score,
-            'current_question': 1,
-            'question': self._format_question(first_question) if first_question else None
-        }
+            self.db.add(game_attempt)
+            await self.db.commit()
+            await self.db.refresh(game_attempt)
+            
+            # Update progress to mark as in progress
+            practice_status = progress.practice_status.copy()
+            
+            # Ensure vocabulary_challenge status exists and update it
+            vocab_challenge = self._ensure_assignment_status(practice_status, 'vocabulary_challenge')
+            vocab_challenge['status'] = 'in_progress'
+            vocab_challenge['attempts'] = attempt_number
+            vocab_challenge['last_attempt_at'] = datetime.now(timezone.utc).isoformat()
+            
+            progress.practice_status = practice_status
+            session_data = {
+                'game_attempt_id': str(game_attempt.id),
+                'current_question': 0,
+                'questions_remaining': total_questions
+            }
+            progress.current_game_session = session_data
+            
+            await self.db.commit()
+            
+            # Store session in Redis for fast access
+            await self.session_manager.set_current_session(student_id, vocabulary_list_id, session_data)
+            await self.session_manager.set_current_attempt(
+                student_id, vocabulary_list_id, 'vocabulary_challenge',
+                {
+                    'attempt_id': str(game_attempt.id),
+                    'attempt_number': attempt_number,
+                    'started_at': datetime.now(timezone.utc).isoformat()
+                }
+            )
+            
+            # Return first question using shuffled order
+            first_question = None
+            if question_ids:
+                # Get the first question from shuffled order
+                first_question_id = question_ids[0]
+                first_question_result = await self.db.execute(
+                    select(VocabularyGameQuestion)
+                    .where(VocabularyGameQuestion.id == first_question_id)
+                )
+                first_question = first_question_result.scalar_one_or_none()
+            
+            return {
+                'game_attempt_id': str(game_attempt.id),
+                'total_questions': total_questions,
+                'passing_score': passing_score,
+                'max_possible_score': max_possible_score,
+                'current_question': 1,
+                'question': self._format_question(first_question) if first_question else None
+            }
+            
+        except Exception as e:
+            logger.error(f"Error in start_vocabulary_challenge for student {student_id}: {str(e)}", exc_info=True)
+            raise
     
     async def _resume_vocabulary_challenge(
         self,
@@ -733,26 +766,19 @@ class VocabularyPracticeService:
         
         # Update progress to mark as in progress
         practice_status = progress.practice_status.copy()
-        if 'assignments' not in practice_status:
-            practice_status['assignments'] = {}
-        if 'concept_mapping' not in practice_status['assignments']:
-            practice_status['assignments']['concept_mapping'] = {
-                "status": "not_started",
-                "attempts": 0,
-                "best_score": 0,
-                "average_score": 0,
-                "last_attempt_at": None,
-                "completed_at": None,
-                "current_word_index": 0,
-                "total_words": 0,
-                "words_completed": 0
-            }
         
-        practice_status['assignments']['concept_mapping']['status'] = 'in_progress'
-        practice_status['assignments']['concept_mapping']['attempts'] = attempt_number
-        practice_status['assignments']['concept_mapping']['last_attempt_at'] = datetime.now(timezone.utc).isoformat()
-        practice_status['assignments']['concept_mapping']['total_words'] = total_words
-        practice_status['assignments']['concept_mapping']['current_word_index'] = 0
+        # Ensure concept_mapping status exists with special fields and update it
+        concept_mapping = self._ensure_assignment_status(practice_status, 'concept_mapping', {
+            "average_score": 0,
+            "current_word_index": 0,
+            "total_words": 0,
+            "words_completed": 0
+        })
+        concept_mapping['status'] = 'in_progress'
+        concept_mapping['attempts'] = attempt_number
+        concept_mapping['last_attempt_at'] = datetime.now(timezone.utc).isoformat()
+        concept_mapping['total_words'] = total_words
+        concept_mapping['current_word_index'] = 0
         
         progress.practice_status = practice_status
         session_data = {
@@ -1420,25 +1446,18 @@ class VocabularyPracticeService:
         
         # Update progress to mark as in progress
         practice_status = progress.practice_status.copy()
-        if 'assignments' not in practice_status:
-            practice_status['assignments'] = {}
-        if 'puzzle_path' not in practice_status['assignments']:
-            practice_status['assignments']['puzzle_path'] = {
-                "status": "not_started",
-                "attempts": 0,
-                "best_score": 0,
-                "last_attempt_at": None,
-                "completed_at": None,
-                "current_puzzle": 0,
-                "total_puzzles": 0,
-                "puzzles_completed": 0
-            }
         
-        practice_status['assignments']['puzzle_path']['status'] = 'in_progress'
-        practice_status['assignments']['puzzle_path']['attempts'] = attempt_number
-        practice_status['assignments']['puzzle_path']['last_attempt_at'] = datetime.now(timezone.utc).isoformat()
-        practice_status['assignments']['puzzle_path']['total_puzzles'] = total_puzzles
-        practice_status['assignments']['puzzle_path']['current_puzzle'] = 0
+        # Ensure puzzle_path status exists with special fields and update it
+        puzzle_path = self._ensure_assignment_status(practice_status, 'puzzle_path', {
+            "current_puzzle": 0,
+            "total_puzzles": 0,
+            "puzzles_completed": 0
+        })
+        puzzle_path['status'] = 'in_progress'
+        puzzle_path['attempts'] = attempt_number
+        puzzle_path['last_attempt_at'] = datetime.now(timezone.utc).isoformat()
+        puzzle_path['total_puzzles'] = total_puzzles
+        puzzle_path['current_puzzle'] = 0
         
         progress.practice_status = practice_status
         session_data = {
@@ -2057,20 +2076,12 @@ class VocabularyPracticeService:
         
         # Update progress to mark as in progress
         practice_status = progress.practice_status.copy()
-        if 'assignments' not in practice_status:
-            practice_status['assignments'] = {}
-        if 'story_builder' not in practice_status['assignments']:
-            practice_status['assignments']['story_builder'] = {
-                "status": "not_started",
-                "attempts": 0,
-                "best_score": 0,
-                "last_attempt_at": None,
-                "completed_at": None
-            }
         
-        practice_status['assignments']['story_builder']['status'] = 'in_progress'
-        practice_status['assignments']['story_builder']['attempts'] = attempt_number
-        practice_status['assignments']['story_builder']['last_attempt_at'] = datetime.now(timezone.utc).isoformat()
+        # Ensure story_builder status exists and update it
+        story_builder = self._ensure_assignment_status(practice_status, 'story_builder')
+        story_builder['status'] = 'in_progress'
+        story_builder['attempts'] = attempt_number
+        story_builder['last_attempt_at'] = datetime.now(timezone.utc).isoformat()
         
         progress.practice_status = practice_status
         session_data = {

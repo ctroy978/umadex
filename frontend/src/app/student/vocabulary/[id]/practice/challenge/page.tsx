@@ -56,10 +56,14 @@ export default function VocabularyChallengePage() {
   const startTimeRef = useRef<number>(Date.now())
   const [showCompletionDialog, setShowCompletionDialog] = useState(false)
   const [confirmingCompletion, setConfirmingCompletion] = useState(false)
+  const [hasInitialized, setHasInitialized] = useState(false)
 
   useEffect(() => {
-    startNewGame()
-  }, [vocabularyId])
+    if (!hasInitialized && vocabularyId) {
+      setHasInitialized(true)
+      startNewGame()
+    }
+  }, [vocabularyId, hasInitialized])
 
   useEffect(() => {
     // Reset timer when new question starts
@@ -83,6 +87,8 @@ export default function VocabularyChallengePage() {
   }, [gameSession, showCompletionDialog, feedback?.is_complete])
 
   const startNewGame = async () => {
+    if (loading) return // Prevent multiple concurrent calls
+    
     try {
       setLoading(true)
       const session = await studentApi.startVocabularyChallenge(vocabularyId)
