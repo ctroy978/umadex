@@ -393,7 +393,7 @@ class VocabularyTestService:
             """),
             {
                 "classroom_id": str(assignment.classroom_id),
-                "current_assignment_id": str(classroom_assignment_id),
+                "current_assignment_id": classroom_assignment_id,
                 "cutoff_date": cutoff_date,
                 "max_lists": weeks_back
             }
@@ -446,7 +446,7 @@ class VocabularyTestService:
             """),
             {
                 "vocabulary_list_id": str(vocabulary_list_id),
-                "classroom_assignment_id": str(classroom_assignment_id),
+                "classroom_assignment_id": classroom_assignment_id,
                 "questions": json.dumps(questions),
                 "total_questions": len(questions),
                 "chained_lists": json.dumps([str(id) for id in chained_lists]),
@@ -527,7 +527,7 @@ class VocabularyTestService:
         result = await db.execute(
             text("""
                 SELECT ta.*, vt.questions, vt.total_questions, vt.vocabulary_list_id,
-                       vt.classroom_assignment_id
+                       vt.classroom_assignment_id, vt.chained_lists
                 FROM vocabulary_test_attempts ta
                 JOIN vocabulary_tests vt ON vt.id = ta.test_id
                 WHERE ta.id = :test_attempt_id
@@ -539,7 +539,7 @@ class VocabularyTestService:
         if not attempt_data:
             raise ValueError("Test attempt not found")
         
-        questions = json.loads(attempt_data.questions)
+        questions = attempt_data.questions
         detailed_results = []
         correct_count = 0
         
@@ -572,25 +572,31 @@ class VocabularyTestService:
         total_questions = len(questions)
         score_percentage = (correct_count / total_questions) * 100 if total_questions > 0 else 0
         
-        # Update test attempt
-        await db.execute(
+        # Update test attempt and get the updated record
+        completed_at = datetime.now(timezone.utc)
+        result = await db.execute(
             text("""
                 UPDATE vocabulary_test_attempts 
                 SET responses = :responses,
                     score_percentage = :score_percentage,
                     questions_correct = :questions_correct,
-                    completed_at = NOW(),
+                    completed_at = :completed_at,
                     status = 'completed',
-                    time_spent_seconds = EXTRACT(EPOCH FROM (NOW() - started_at))
+                    time_spent_seconds = EXTRACT(EPOCH FROM (:completed_at - started_at))
                 WHERE id = :test_attempt_id
+                RETURNING time_spent_seconds
             """),
             {
                 "test_attempt_id": str(test_attempt_id),
                 "responses": json.dumps(responses),
                 "score_percentage": score_percentage,
-                "questions_correct": correct_count
+                "questions_correct": correct_count,
+                "completed_at": completed_at
             }
         )
+        
+        updated_attempt = result.fetchone()
+        time_spent_seconds = int(updated_attempt.time_spent_seconds) if updated_attempt.time_spent_seconds else None
         
         # Create gradebook entry
         await VocabularyTestService._create_gradebook_entry(
@@ -601,11 +607,15 @@ class VocabularyTestService:
         
         return {
             "test_attempt_id": test_attempt_id,
+            "test_id": attempt_data.test_id,
             "score_percentage": score_percentage,
             "questions_correct": correct_count,
             "total_questions": total_questions,
-            "detailed_results": detailed_results,
-            "status": "completed"
+            "time_spent_seconds": time_spent_seconds,
+            "status": "completed",
+            "started_at": attempt_data.started_at,
+            "completed_at": completed_at,
+            "detailed_results": detailed_results
         }
 
     @staticmethod
@@ -666,7 +676,7 @@ class VocabularyTestService:
                 SELECT classroom_id FROM classroom_assignments 
                 WHERE id = :assignment_id
             """),
-            {"assignment_id": str(attempt_data.classroom_assignment_id)}
+            {"assignment_id": attempt_data.classroom_assignment_id}
         )
         classroom = result.fetchone()
         
@@ -693,7 +703,7 @@ class VocabularyTestService:
                     "test_attempt_id": str(attempt_data.id),
                     "questions_correct": questions_correct,
                     "total_questions": attempt_data.total_questions,
-                    "chained_lists": json.loads(attempt_data.questions) if hasattr(attempt_data, 'chained_lists') else [],
+                    "chained_lists": attempt_data.chained_lists if hasattr(attempt_data, 'chained_lists') else [],
                     "time_spent_seconds": None  # Will be calculated after completion
                 })
             }
@@ -713,7 +723,7 @@ class VocabularyTestService:
         result = await db.execute(
             text("SELECT is_test_time_allowed(:assignment_id, :check_time)"),
             {
-                "assignment_id": str(classroom_assignment_id),
+                "assignment_id": classroom_assignment_id,
                 "check_time": check_time
             }
         )
@@ -728,7 +738,7 @@ class VocabularyTestService:
                     FROM classroom_assignments 
                     WHERE id = :assignment_id
                 """),
-                {"assignment_id": str(classroom_assignment_id)}
+                {"assignment_id": classroom_assignment_id}
             )
             assignment = result.fetchone()
             
