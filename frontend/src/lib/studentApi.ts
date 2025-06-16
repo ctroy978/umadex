@@ -290,10 +290,10 @@ export interface VocabularyTestEligibilityResponse {
   assignments_completed: number
   assignments_required: number
   progress_details: {
-    flashcards_completed: boolean
-    practice_completed: boolean
-    challenge_completed: boolean
-    sentences_completed: boolean
+    story_builder_completed: boolean
+    concept_mapping_completed: boolean
+    puzzle_path_completed: boolean
+    fill_in_blank_completed: boolean
   }
 }
 

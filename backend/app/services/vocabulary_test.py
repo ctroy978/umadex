@@ -31,65 +31,48 @@ class VocabularyTestService:
     ) -> Dict[str, Any]:
         """Check if student is eligible to take vocabulary test"""
         
-        # Get or create progress record
-        result = await db.execute(
-            text("""
-                INSERT INTO student_vocabulary_progress 
-                (student_id, vocabulary_list_id, classroom_assignment_id)
-                VALUES (:student_id, :vocabulary_list_id, :classroom_assignment_id)
-                ON CONFLICT (student_id, vocabulary_list_id, classroom_assignment_id) 
-                DO UPDATE SET updated_at = NOW()
-                RETURNING *
-            """),
-            {
-                "student_id": str(student_id),
-                "vocabulary_list_id": str(vocabulary_list_id), 
-                "classroom_assignment_id": str(classroom_assignment_id)
-            }
-        )
-        progress = result.fetchone()
+        # Check actual completion from StudentAssignment table
+        from app.models.classroom import StudentAssignment
+        from sqlalchemy import select, and_
         
-        if not progress:
-            # Get existing progress record
+        # Check completion for each vocabulary practice activity
+        assignment_types = ['story_builder', 'concept_mapping', 'puzzle_path', 'fill_in_blank']
+        completed_assignments = {}
+        completed_count = 0
+        
+        for assignment_type in assignment_types:
             result = await db.execute(
-                text("""
-                    SELECT * FROM student_vocabulary_progress 
-                    WHERE student_id = :student_id 
-                    AND vocabulary_list_id = :vocabulary_list_id
-                    AND classroom_assignment_id = :classroom_assignment_id
-                """),
-                {
-                    "student_id": str(student_id),
-                    "vocabulary_list_id": str(vocabulary_list_id),
-                    "classroom_assignment_id": str(classroom_assignment_id)
-                }
+                select(StudentAssignment.completed_at)
+                .where(
+                    and_(
+                        StudentAssignment.student_id == student_id,
+                        StudentAssignment.assignment_id == vocabulary_list_id,
+                        StudentAssignment.classroom_assignment_id == classroom_assignment_id,
+                        StudentAssignment.assignment_type == "vocabulary",
+                        StudentAssignment.progress_metadata['completed_subtypes'].contains([assignment_type])
+                    )
+                )
             )
-            progress = result.fetchone()
+            completion_date = result.scalar_one_or_none()
+            is_completed = completion_date is not None
+            completed_assignments[assignment_type] = is_completed
+            
+            if is_completed:
+                completed_count += 1
         
-        if not progress:
-            return {
-                "eligible": False,
-                "reason": "No progress record found",
-                "assignments_completed": 0,
-                "assignments_required": 3,
-                "progress_details": {
-                    "flashcards_completed": False,
-                    "practice_completed": False,
-                    "challenge_completed": False,
-                    "sentences_completed": False
-                }
-            }
+        # Student is eligible if they've completed 3 or more activities
+        is_eligible = completed_count >= 3
         
         return {
-            "eligible": progress.test_eligible,
-            "reason": None if progress.test_eligible else "Complete at least 3 vocabulary assignments to unlock test",
-            "assignments_completed": progress.assignments_completed_count,
+            "eligible": is_eligible,
+            "reason": None if is_eligible else f"Complete at least 3 vocabulary assignments to unlock test. You have completed {completed_count} out of 4.",
+            "assignments_completed": completed_count,
             "assignments_required": 3,
             "progress_details": {
-                "flashcards_completed": progress.flashcards_completed,
-                "practice_completed": progress.practice_completed,
-                "challenge_completed": progress.challenge_completed,
-                "sentences_completed": progress.sentences_completed
+                "story_builder_completed": completed_assignments.get('story_builder', False),
+                "concept_mapping_completed": completed_assignments.get('concept_mapping', False), 
+                "puzzle_path_completed": completed_assignments.get('puzzle_path', False),
+                "fill_in_blank_completed": completed_assignments.get('fill_in_blank', False)
             }
         }
 
@@ -132,7 +115,7 @@ class VocabularyTestService:
             {
                 "student_id": str(student_id),
                 "vocabulary_list_id": str(vocabulary_list_id),
-                "classroom_assignment_id": str(classroom_assignment_id),
+                "classroom_assignment_id": classroom_assignment_id,
                 "completed": completed
             }
         )

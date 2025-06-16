@@ -1831,20 +1831,35 @@ async def check_vocabulary_test_eligibility(
 ):
     """Check if student is eligible to take vocabulary test"""
     
-    # Validate assignment access
-    assignment_data = await _validate_assignment_access_helper(
-        db=db,
+    # Validate assignment access using the correct helper function signature
+    await _validate_assignment_access_helper(
+        assignment_type="vocabulary",
         assignment_id=assignment_id,
-        student_id=current_user.id,
-        assignment_type="vocabulary"
+        current_user=current_user,
+        db=db
     )
     
-    vocabulary_list_id = assignment_data["assignment"].assignment_id
-    classroom_assignment_id = assignment_data["assignment"].id
+    # Get classroom assignment details
+    ca_result = await db.execute(
+        select(ClassroomAssignment)
+        .where(
+            and_(
+                ClassroomAssignment.vocabulary_list_id == assignment_id,
+                ClassroomAssignment.assignment_type == "vocabulary"
+            )
+        )
+    )
+    classroom_assignment = ca_result.scalar_one_or_none()
+    
+    if not classroom_assignment:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Vocabulary assignment not found"
+        )
     
     # Check test eligibility
     eligibility = await VocabularyTestService.check_test_eligibility(
-        db, current_user.id, vocabulary_list_id, classroom_assignment_id
+        db, current_user.id, assignment_id, classroom_assignment.id
     )
     
     return VocabularyTestEligibilityResponse(**eligibility)
@@ -1860,19 +1875,34 @@ async def update_vocabulary_assignment_progress(
     """Update progress for vocabulary assignment completion"""
     
     # Validate assignment access
-    assignment_data = await _validate_assignment_access_helper(
-        db=db,
+    await _validate_assignment_access_helper(
+        assignment_type="vocabulary",
         assignment_id=assignment_id,
-        student_id=current_user.id,
-        assignment_type="vocabulary"
+        current_user=current_user,
+        db=db
     )
     
-    vocabulary_list_id = assignment_data["assignment"].assignment_id
-    classroom_assignment_id = assignment_data["assignment"].id
+    # Get classroom assignment details
+    ca_result = await db.execute(
+        select(ClassroomAssignment)
+        .where(
+            and_(
+                ClassroomAssignment.vocabulary_list_id == assignment_id,
+                ClassroomAssignment.assignment_type == "vocabulary"
+            )
+        )
+    )
+    classroom_assignment = ca_result.scalar_one_or_none()
+    
+    if not classroom_assignment:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Vocabulary assignment not found"
+        )
     
     # Update assignment progress
     result = await VocabularyTestService.update_assignment_progress(
-        db, current_user.id, vocabulary_list_id, classroom_assignment_id,
+        db, current_user.id, assignment_id, classroom_assignment.id,
         progress_data.assignment_type, progress_data.completed
     )
     
@@ -1888,19 +1918,34 @@ async def start_vocabulary_test(
     """Start a new vocabulary test"""
     
     # Validate assignment access
-    assignment_data = await _validate_assignment_access_helper(
-        db=db,
+    await _validate_assignment_access_helper(
+        assignment_type="vocabulary",
         assignment_id=assignment_id,
-        student_id=current_user.id,
-        assignment_type="vocabulary"
+        current_user=current_user,
+        db=db
     )
     
-    vocabulary_list_id = assignment_data["assignment"].assignment_id
-    classroom_assignment_id = assignment_data["assignment"].id
+    # Get classroom assignment details
+    ca_result = await db.execute(
+        select(ClassroomAssignment)
+        .where(
+            and_(
+                ClassroomAssignment.vocabulary_list_id == assignment_id,
+                ClassroomAssignment.assignment_type == "vocabulary"
+            )
+        )
+    )
+    classroom_assignment = ca_result.scalar_one_or_none()
+    
+    if not classroom_assignment:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Vocabulary assignment not found"
+        )
     
     # Check if test time is allowed
     time_allowed, time_message = await VocabularyTestService.check_test_time_allowed(
-        db, classroom_assignment_id
+        db, classroom_assignment.id
     )
     
     if not time_allowed:
@@ -1911,7 +1956,7 @@ async def start_vocabulary_test(
     
     # Check test eligibility
     eligibility = await VocabularyTestService.check_test_eligibility(
-        db, current_user.id, vocabulary_list_id, classroom_assignment_id
+        db, current_user.id, assignment_id, classroom_assignment.id
     )
     
     if not eligibility["eligible"]:
@@ -1923,7 +1968,7 @@ async def start_vocabulary_test(
     try:
         # Generate test
         test_data = await VocabularyTestService.generate_test(
-            db, vocabulary_list_id, classroom_assignment_id, current_user.id
+            db, assignment_id, classroom_assignment.id, current_user.id
         )
         
         # Start test attempt

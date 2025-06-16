@@ -174,17 +174,27 @@ export default function VocabularyTestPage() {
 
                 {eligibilityData?.progress_details && (
                   <div className="grid grid-cols-2 gap-2 mt-4">
-                    {Object.entries(eligibilityData.progress_details).map(([activity, completed]) => (
-                      <div key={activity} className="flex items-center gap-2">
-                        {completed ? 
-                          <CheckCircle className="w-4 h-4 text-green-500" /> : 
-                          <XCircle className="w-4 h-4 text-gray-400" />
-                        }
-                        <span className="text-sm capitalize">
-                          {activity.replace('_', ' ')}
-                        </span>
-                      </div>
-                    ))}
+                    {Object.entries(eligibilityData.progress_details).map(([activity, completed]) => {
+                      // Map activity names to user-friendly labels
+                      const activityLabels: Record<string, string> = {
+                        'story_builder_completed': 'Story Builder',
+                        'concept_mapping_completed': 'Concept Mapping',
+                        'puzzle_path_completed': 'Puzzle Path',
+                        'fill_in_blank_completed': 'Fill in the Blank'
+                      }
+                      
+                      return (
+                        <div key={activity} className="flex items-center gap-2">
+                          {completed ? 
+                            <CheckCircle className="w-4 h-4 text-green-500" /> : 
+                            <XCircle className="w-4 h-4 text-gray-400" />
+                          }
+                          <span className="text-sm">
+                            {activityLabels[activity] || activity.replace('_', ' ')}
+                          </span>
+                        </div>
+                      )
+                    })}
                   </div>
                 )}
               </div>
