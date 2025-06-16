@@ -486,10 +486,6 @@ export default function ConceptMappingPage() {
                 <h2 className="text-3xl font-bold text-gray-900 mb-2">
                   {session.word?.word}
                 </h2>
-                <p className="text-gray-600">
-                  <span className="font-medium">{session.word?.part_of_speech}</span>
-                  {session.word?.definition && ` • ${session.word.definition}`}
-                </p>
               </div>
 
               {/* Instructions */}

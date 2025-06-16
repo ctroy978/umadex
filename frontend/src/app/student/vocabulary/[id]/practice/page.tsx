@@ -339,26 +339,36 @@ export default function VocabularyPracticePage() {
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900">Final Vocabulary Test</h3>
                   <p className="text-gray-600">
-                    {practiceStatus.test_unlocked
-                      ? 'Ready to test your vocabulary mastery!'
-                      : `Complete ${practiceStatus.required_count - practiceStatus.completed_count} more activities to unlock`}
+                    {!practiceStatus.test_unlocked
+                      ? `Complete ${practiceStatus.required_count - practiceStatus.completed_count} more activities to unlock`
+                      : practiceStatus.test_completed
+                        ? `Test completed! Score: ${practiceStatus.best_test_score?.toFixed(1)}% (${practiceStatus.test_attempts_count}/${practiceStatus.max_test_attempts} attempts used)`
+                        : 'Ready to test your vocabulary mastery!'
+                    }
                   </p>
                 </div>
               </div>
               <button
                 onClick={() => {
-                  if (practiceStatus.test_unlocked) {
+                  if (practiceStatus.test_unlocked && !practiceStatus.test_completed) {
                     router.push(`/student/vocabulary/${vocabularyId}/test`)
                   }
                 }}
-                disabled={!practiceStatus.test_unlocked}
+                disabled={!practiceStatus.test_unlocked || practiceStatus.test_completed}
                 className={`px-6 py-3 rounded-lg text-sm font-medium transition-colors ${
-                  practiceStatus.test_unlocked
+                  practiceStatus.test_unlocked && !practiceStatus.test_completed
                     ? 'bg-blue-600 text-white hover:bg-blue-700'
-                    : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                    : practiceStatus.test_completed
+                      ? 'bg-green-100 text-green-700 cursor-not-allowed'
+                      : 'bg-gray-100 text-gray-400 cursor-not-allowed'
                 }`}
               >
-                {practiceStatus.test_unlocked ? 'Take Test' : 'Locked'}
+                {!practiceStatus.test_unlocked
+                  ? 'Locked'
+                  : practiceStatus.test_completed
+                    ? 'Test Completed'
+                    : 'Take Test'
+                }
               </button>
             </div>
           </div>

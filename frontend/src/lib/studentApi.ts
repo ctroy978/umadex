@@ -117,7 +117,7 @@ export const studentApi = {
   },
 
   // Vocabulary Practice Activities
-  async getVocabularyPracticeStatus(assignmentId: string): Promise<any> {
+  async getVocabularyPracticeStatus(assignmentId: string): Promise<VocabularyPracticeStatusResponse> {
     const response = await api.get(`/v1/student/vocabulary/${assignmentId}/practice/status`)
     return response.data
   },
@@ -331,4 +331,22 @@ export interface VocabularyTestAttemptResponse {
     is_correct: boolean
     explanation: string
   }>
+}
+
+export interface VocabularyPracticeStatusResponse {
+  assignments: Array<{
+    type: string
+    name: string
+    is_completed: boolean
+    has_active_session: boolean
+  }>
+  completed_count: number
+  required_count: number
+  test_unlocked: boolean
+  test_unlock_date?: string
+  test_completed: boolean
+  test_attempts_count: number
+  max_test_attempts: number
+  best_test_score?: number
+  last_test_completed_at?: string
 }

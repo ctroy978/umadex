@@ -6,7 +6,7 @@ from typing import List, Dict, Any, Optional
 from uuid import UUID
 from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, or_, update, func
+from sqlalchemy import select, and_, or_, update, func, text
 from sqlalchemy.orm import selectinload
 import json
 import logging
@@ -177,6 +177,34 @@ class VocabularyPracticeService:
         completed_count = sum(1 for completion in assignment_completions.values() if completion is not None)
         test_unlocked = completed_count >= self.ASSIGNMENTS_TO_COMPLETE
         
+        # Check vocabulary test completion status
+        test_completion_result = await self.db.execute(
+            text("""
+                SELECT COUNT(*) as attempt_count,
+                       MAX(score_percentage) as best_score,
+                       MAX(completed_at) as last_completed,
+                       MAX(vt.max_attempts) as max_attempts
+                FROM vocabulary_test_attempts vta
+                JOIN vocabulary_tests vt ON vt.id = vta.test_id  
+                WHERE vta.student_id = :student_id 
+                AND vt.vocabulary_list_id = :vocabulary_list_id
+                AND vt.classroom_assignment_id = :classroom_assignment_id
+                AND vta.status = 'completed'
+            """),
+            {
+                "student_id": str(student_id),
+                "vocabulary_list_id": str(vocabulary_list_id), 
+                "classroom_assignment_id": classroom_assignment_id
+            }
+        )
+        test_completion_data = test_completion_result.fetchone()
+        
+        test_attempts_count = test_completion_data.attempt_count if test_completion_data else 0
+        best_test_score = test_completion_data.best_score if test_completion_data else None
+        last_test_completed_at = test_completion_data.last_completed if test_completion_data else None
+        max_test_attempts = test_completion_data.max_attempts if test_completion_data and test_completion_data.max_attempts else 3
+        test_completed = test_attempts_count > 0
+        
         # Format assignment statuses
         assignments = []
         
@@ -221,6 +249,11 @@ class VocabularyPracticeService:
             'required_count': self.ASSIGNMENTS_TO_COMPLETE,
             'test_unlocked': test_unlocked,
             'test_unlock_date': progress.practice_status.get('test_unlock_date'),
+            'test_completed': test_completed,
+            'test_attempts_count': test_attempts_count,
+            'max_test_attempts': max_test_attempts,
+            'best_test_score': best_test_score,
+            'last_test_completed_at': last_test_completed_at,
             'current_session': current_session
         }
     
@@ -1617,13 +1650,7 @@ class VocabularyPracticeService:
     ) -> Dict[str, Any]:
         """Start a new story builder challenge with session management"""
         
-        # Check for existing active session first
-        existing_session = await self.session_manager.get_current_session(student_id, vocabulary_list_id)
-        if existing_session and 'story_attempt_id' in existing_session:
-            # Resume existing story attempt
-            return await self._resume_story_builder(student_id, vocabulary_list_id, existing_session)
-        
-        # Get or create progress
+        # Get or create progress to check for failed attempts
         progress = await self.get_or_create_practice_progress(
             student_id, vocabulary_list_id, classroom_assignment_id
         )
@@ -1632,6 +1659,57 @@ class VocabularyPracticeService:
         completed_assignments = progress.practice_status.get('completed_assignments', [])
         if 'story_builder' in completed_assignments:
             raise ValueError("Story builder challenge has already been completed. Cannot retake completed activities.")
+        
+        # Check for existing failed attempts and clean them up for retry
+        story_builder_status = progress.practice_status.get('assignments', {}).get('story_builder', {})
+        if story_builder_status.get('status') == 'failed':
+            # Clean up failed story attempts from database
+            failed_attempts = await self.db.execute(
+                select(VocabularyStoryAttempt)
+                .where(
+                    and_(
+                        VocabularyStoryAttempt.student_id == student_id,
+                        VocabularyStoryAttempt.vocabulary_list_id == vocabulary_list_id,
+                        VocabularyStoryAttempt.status == 'failed'
+                    )
+                )
+            )
+            for attempt in failed_attempts.scalars():
+                await self.db.delete(attempt)
+            
+            # Clean up any StudentAssignment records created for failed attempts
+            existing_assignment = await self.db.execute(
+                select(StudentAssignment)
+                .where(
+                    and_(
+                        StudentAssignment.student_id == student_id,
+                        StudentAssignment.assignment_id == vocabulary_list_id,
+                        StudentAssignment.assignment_type == "vocabulary",
+                        StudentAssignment.assignment_subtype == "story_builder",
+                        StudentAssignment.passed == False
+                    )
+                )
+            )
+            failed_assignment = existing_assignment.scalar_one_or_none()
+            if failed_assignment:
+                await self.db.delete(failed_assignment)
+            
+            # Clear sessions and force fresh start by clearing status
+            await self.session_manager.clear_session(student_id, vocabulary_list_id)
+            await self.session_manager.clear_attempt(student_id, vocabulary_list_id, 'story_builder')
+            
+            # Reset the failed status to allow fresh attempt
+            story_builder_status['status'] = 'not_started'
+            progress.practice_status['assignments']['story_builder'] = story_builder_status
+            
+            # Commit the cleanup changes
+            await self.db.commit()
+        
+        # Check for existing active session after cleanup
+        existing_session = await self.session_manager.get_current_session(student_id, vocabulary_list_id)
+        if existing_session and 'story_attempt_id' in existing_session:
+            # Resume existing story attempt
+            return await self._resume_story_builder(student_id, vocabulary_list_id, existing_session)
         
         # Check if prompts exist, generate if not
         prompts_result = await self.db.execute(
@@ -2063,14 +2141,15 @@ class VocabularyPracticeService:
         # Update practice progress
         await self._update_story_practice_progress(story_attempt)
         
-        # Create or update StudentAssignment record
-        student_assignment = await self._create_or_update_student_assignment(
-            student_id=student_id,
-            assignment_id=story_attempt.vocabulary_list_id,
-            classroom_assignment_id=story_attempt.practice_progress.classroom_assignment_id,
-            assignment_type="vocabulary",
-            subtype="story_builder"
-        )
+        # Create or update StudentAssignment record only if passed
+        if story_attempt.status == 'passed':
+            student_assignment = await self._create_or_update_student_assignment(
+                student_id=student_id,
+                assignment_id=story_attempt.vocabulary_list_id,
+                classroom_assignment_id=story_attempt.practice_progress.classroom_assignment_id,
+                assignment_type="vocabulary",
+                subtype="story_builder"
+            )
         
         await self.db.commit()
         

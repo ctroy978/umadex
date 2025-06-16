@@ -12,7 +12,6 @@ import {
   ChartBarIcon,
   ArrowRightIcon,
   ExclamationCircleIcon,
-  PencilIcon,
   EyeIcon
 } from '@heroicons/react/24/outline'
 
@@ -63,6 +62,8 @@ interface Evaluation {
   revision_suggestion: string
 }
 
+const MAX_WORDS = 500
+
 export default function StoryBuilderPage() {
   const params = useParams()
   const router = useRouter()
@@ -70,7 +71,6 @@ export default function StoryBuilderPage() {
 
   const [storySession, setStorySession] = useState<StorySession | null>(null)
   const [currentStory, setCurrentStory] = useState('')
-  const [attemptNumber, setAttemptNumber] = useState(1)
   const [currentScore, setCurrentScore] = useState(0)
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
@@ -159,7 +159,7 @@ export default function StoryBuilderPage() {
         {
           prompt_id: storySession.prompt.id,
           story_text: currentStory.trim(),
-          attempt_number: attemptNumber
+          attempt_number: 1
         }
       )
 
@@ -186,7 +186,6 @@ export default function StoryBuilderPage() {
     setShowEvaluation(false)
     setEvaluation(null)
     setCurrentStory('')
-    setAttemptNumber(1)
 
     // If there's a next prompt in the evaluation, use it
     if (evaluation?.next_prompt) {
@@ -218,11 +217,6 @@ export default function StoryBuilderPage() {
     }
   }
 
-  const handleReviseStory = () => {
-    setShowEvaluation(false)
-    setAttemptNumber(2)
-    // Keep current story for revision
-  }
 
   const handleConfirmCompletion = async () => {
     if (!storySession) return
@@ -360,7 +354,7 @@ export default function StoryBuilderPage() {
             </div>
             {!showEvaluation && (
               <div className="text-sm text-gray-600">
-                Attempt {attemptNumber} of 2
+                Story 1 of 2
               </div>
             )}
           </div>
@@ -395,7 +389,7 @@ export default function StoryBuilderPage() {
           {!showEvaluation ? (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Your Story (3-5 sentences):
+                Your Story (3-5 sentences, max 500 words):
               </label>
               <textarea
                 value={currentStory}
@@ -406,8 +400,12 @@ export default function StoryBuilderPage() {
                 disabled={submitting}
               />
               <div className="flex justify-between items-center mt-2">
-                <span className="text-sm text-gray-600">
-                  {wordCount} words
+                <span className={`text-sm font-medium ${
+                  wordCount > MAX_WORDS ? 'text-red-600' : 
+                  wordCount > MAX_WORDS * 0.9 ? 'text-amber-600' : 'text-gray-600'
+                }`}>
+                  {wordCount} / {MAX_WORDS} words
+                  {wordCount > MAX_WORDS && ' (exceeds limit)'}
                 </span>
                 <span className="text-xs text-gray-500">
                   Include all required words naturally in your story
@@ -415,14 +413,16 @@ export default function StoryBuilderPage() {
               </div>
               <button
                 onClick={handleSubmitStory}
-                disabled={!currentStory.trim() || submitting}
+                disabled={!currentStory.trim() || submitting || wordCount > MAX_WORDS}
                 className={`mt-4 w-full px-6 py-3 rounded-lg font-medium transition-colors ${
-                  !currentStory.trim() || submitting
+                  !currentStory.trim() || submitting || wordCount > MAX_WORDS
                     ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
                     : 'bg-primary-600 text-white hover:bg-primary-700'
                 }`}
               >
-                {submitting ? 'Evaluating...' : 'Submit Story'}
+                {submitting ? 'Evaluating...' : 
+                 wordCount > MAX_WORDS ? `Reduce story by ${wordCount - MAX_WORDS} words` : 
+                 'Submit Story'}
               </button>
             </div>
           ) : (
@@ -480,53 +480,27 @@ export default function StoryBuilderPage() {
                 </div>
               )}
 
-              {/* Action Buttons */}
-              {evaluation?.can_revise && evaluation.evaluation.total_score < 70 ? (
-                <div className="flex space-x-4">
-                  <button
-                    onClick={handleReviseStory}
-                    className="flex-1 px-6 py-3 bg-amber-600 text-white rounded-lg font-medium hover:bg-amber-700 flex items-center justify-center"
-                  >
-                    <PencilIcon className="h-5 w-5 mr-2" />
-                    Revise Story (Attempt 2)
-                  </button>
-                  <button
-                    onClick={() => {
-                      if (evaluation?.is_complete) {
-                        // Don't automatically redirect - let the dialog handle it
-                        setShowCompletionDialog(true)
-                      } else {
-                        handleNextPrompt()
-                      }
-                    }}
-                    className="flex-1 px-6 py-3 bg-gray-600 text-white rounded-lg font-medium hover:bg-gray-700 flex items-center justify-center"
-                  >
-                    {evaluation?.is_complete ? 'View Results' : 'Skip to Next Story'}
+              {/* Action Button */}
+              <button
+                onClick={() => {
+                  if (evaluation?.is_complete) {
+                    // Don't automatically redirect - let the dialog handle it
+                    setShowCompletionDialog(true)
+                  } else {
+                    handleNextPrompt()
+                  }
+                }}
+                className="w-full px-6 py-3 bg-primary-600 text-white rounded-lg font-medium hover:bg-primary-700 flex items-center justify-center"
+              >
+                {evaluation?.is_complete ? (
+                  'View Results'
+                ) : (
+                  <>
+                    Next Story
                     <ArrowRightIcon className="h-5 w-5 ml-2" />
-                  </button>
-                </div>
-              ) : (
-                <button
-                  onClick={() => {
-                    if (evaluation?.is_complete) {
-                      // Don't automatically redirect - let the dialog handle it
-                      setShowCompletionDialog(true)
-                    } else {
-                      handleNextPrompt()
-                    }
-                  }}
-                  className="w-full px-6 py-3 bg-primary-600 text-white rounded-lg font-medium hover:bg-primary-700 flex items-center justify-center"
-                >
-                  {evaluation?.is_complete ? (
-                    'View Results'
-                  ) : (
-                    <>
-                      Next Story
-                      <ArrowRightIcon className="h-5 w-5 ml-2" />
-                    </>
-                  )}
-                </button>
-              )}
+                  </>
+                )}
+              </button>
             </div>
           )}
         </div>
