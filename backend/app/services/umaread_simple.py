@@ -63,53 +63,45 @@ class UMAReadService:
         )
         total_chunks = total_result.scalar()
         
-        # Check if student assignment exists
+        # First, find the classroom assignment for this reading assignment
+        classroom_assignment_result = await db.execute(
+            select(ClassroomAssignment).where(
+                ClassroomAssignment.assignment_id == assignment_id
+            )
+        )
+        classroom_assignment = classroom_assignment_result.scalar_one_or_none()
+        
+        if not classroom_assignment:
+            raise ValueError("This assignment hasn't been assigned to any classroom yet.")
+        
+        # Check if student assignment exists for this specific classroom assignment
         student_assignment_result = await db.execute(
             select(StudentAssignment).where(
                 and_(
                     StudentAssignment.student_id == student_id,
-                    StudentAssignment.assignment_id == assignment_id
+                    StudentAssignment.assignment_id == assignment_id,
+                    StudentAssignment.classroom_assignment_id == classroom_assignment.id
                 )
             )
         )
         student_assignment = student_assignment_result.scalar_one_or_none()
         
         if not student_assignment:
-            # Find the classroom assignment for this reading assignment
-            classroom_assignment_result = await db.execute(
-                select(ClassroomAssignment).where(
-                    ClassroomAssignment.assignment_id == assignment_id
-                )
-            )
-            classroom_assignment = classroom_assignment_result.scalar_one_or_none()
+            # Check if student is in the classroom
+            from ..models.classroom import ClassroomStudent
             
-            if not classroom_assignment:
-                # Check if student is in any classroom with this assignment
-                from ..models.classroom import ClassroomStudent, Classroom
-                
-                # Find classrooms that have this assignment
-                classroom_with_assignment = await db.execute(
-                    select(ClassroomAssignment)
-                    .where(ClassroomAssignment.assignment_id == assignment_id)
-                    .limit(1)
-                )
-                classroom_assignment = classroom_with_assignment.scalar_one_or_none()
-                
-                if not classroom_assignment:
-                    raise ValueError("This assignment hasn't been assigned to any classroom yet.")
-                
-                # Check if student is in the classroom
-                student_in_classroom = await db.execute(
-                    select(ClassroomStudent).where(
-                        and_(
-                            ClassroomStudent.student_id == student_id,
-                            ClassroomStudent.classroom_id == classroom_assignment.classroom_id
-                        )
+            student_in_classroom = await db.execute(
+                select(ClassroomStudent).where(
+                    and_(
+                        ClassroomStudent.student_id == student_id,
+                        ClassroomStudent.classroom_id == classroom_assignment.classroom_id,
+                        ClassroomStudent.removed_at.is_(None)
                     )
                 )
-                
-                if not student_in_classroom.scalar_one_or_none():
-                    raise ValueError("You need to join the classroom first to access this assignment.")
+            )
+            
+            if not student_in_classroom.scalar_one_or_none():
+                raise ValueError("You need to join the classroom first to access this assignment.")
             
             # Create new student assignment
             student_assignment = StudentAssignment(
@@ -132,7 +124,8 @@ class UMAReadService:
                     select(StudentAssignment).where(
                         and_(
                             StudentAssignment.student_id == student_id,
-                            StudentAssignment.assignment_id == assignment_id
+                            StudentAssignment.assignment_id == assignment_id,
+                            StudentAssignment.classroom_assignment_id == classroom_assignment.id
                         )
                     )
                 )
