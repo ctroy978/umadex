@@ -251,5 +251,84 @@ export const studentApi = {
   async declineFillInBlankCompletion(fillInBlankAttemptId: string): Promise<any> {
     const response = await api.post(`/v1/student/vocabulary/practice/decline-fill-in-blank-completion/${fillInBlankAttemptId}`)
     return response.data
+  },
+
+  // Vocabulary Test APIs
+  async checkVocabularyTestEligibility(assignmentId: string): Promise<VocabularyTestEligibilityResponse> {
+    const response = await api.get(`/v1/student/vocabulary/${assignmentId}/test/eligibility`)
+    return response.data
+  },
+
+  async updateVocabularyProgress(assignmentId: string, data: {
+    assignment_type: 'flashcards' | 'practice' | 'challenge' | 'sentences'
+    completed: boolean
+  }): Promise<any> {
+    const response = await api.post(`/v1/student/vocabulary/${assignmentId}/test/progress`, data)
+    return response.data
+  },
+
+  async startVocabularyTest(assignmentId: string): Promise<VocabularyTestStartResponse> {
+    const response = await api.post(`/v1/student/vocabulary/${assignmentId}/test/start`)
+    return response.data
+  },
+
+  async submitVocabularyTest(testAttemptId: string, responses: Record<string, string>): Promise<VocabularyTestAttemptResponse> {
+    const response = await api.post(`/v1/student/vocabulary/test/submit/${testAttemptId}`, { responses })
+    return response.data
+  },
+
+  async getVocabularyTestResults(testAttemptId: string): Promise<VocabularyTestAttemptResponse> {
+    const response = await api.get(`/v1/student/vocabulary/test/results/${testAttemptId}`)
+    return response.data
   }
+}
+
+// Vocabulary Test Types
+export interface VocabularyTestEligibilityResponse {
+  eligible: boolean
+  reason?: string
+  assignments_completed: number
+  assignments_required: number
+  progress_details: {
+    flashcards_completed: boolean
+    practice_completed: boolean
+    challenge_completed: boolean
+    sentences_completed: boolean
+  }
+}
+
+export interface VocabularyTestQuestion {
+  id: string
+  question_text: string
+  question_type: string
+  word: string
+}
+
+export interface VocabularyTestStartResponse {
+  test_attempt_id: string
+  questions: VocabularyTestQuestion[]
+  total_questions: number
+  time_limit_minutes: number
+  started_at: string
+}
+
+export interface VocabularyTestAttemptResponse {
+  test_attempt_id: string
+  test_id: string
+  score_percentage: number
+  questions_correct: number
+  total_questions: number
+  time_spent_seconds?: number
+  status: string
+  started_at: string
+  completed_at?: string
+  detailed_results: Array<{
+    question_id: string
+    question_text: string
+    correct_answer: string
+    student_answer: string
+    score: number
+    is_correct: boolean
+    explanation: string
+  }>
 }

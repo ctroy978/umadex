@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, field_validator
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from datetime import datetime
 from uuid import UUID
 
@@ -166,3 +166,87 @@ class VocabularyAIResponse(BaseModel):
     definition: str
     example_1: str
     example_2: str
+
+
+# Vocabulary Test Schemas
+class VocabularyTestConfig(BaseModel):
+    chain_enabled: bool = False
+    weeks_to_include: int = Field(default=1, ge=1, le=10)
+    questions_per_week: int = Field(default=5, ge=3, le=8)
+    current_week_questions: int = Field(default=10, ge=8, le=15)
+    max_attempts: int = Field(default=3, ge=1, le=5)
+    time_limit_minutes: int = Field(default=30, ge=10, le=120)
+
+
+class VocabularyTestConfigResponse(VocabularyTestConfig):
+    id: UUID
+    vocabulary_list_id: UUID
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+class VocabularyTestQuestion(BaseModel):
+    word: str
+    definition: str
+    question_type: str  # "definition", "example", "riddle"
+    question_text: str
+    correct_answer: str
+    vocabulary_list_id: UUID
+    difficulty_level: Optional[str] = None
+
+
+class VocabularyTestResponse(BaseModel):
+    test_id: UUID
+    vocabulary_list_id: UUID
+    total_questions: int
+    questions: List[VocabularyTestQuestion]
+    time_limit_minutes: int
+    max_attempts: int
+    chained_lists: List[UUID] = []
+    expires_at: datetime
+    created_at: datetime
+
+
+class VocabularyTestEligibilityResponse(BaseModel):
+    eligible: bool
+    reason: Optional[str] = None
+    assignments_completed: int
+    assignments_required: int
+    progress_details: Dict[str, bool]  # flashcards_completed, practice_completed, etc.
+
+
+class VocabularyTestAttemptRequest(BaseModel):
+    responses: Dict[str, str]  # question_id -> student_answer
+
+
+class VocabularyTestAttemptResponse(BaseModel):
+    test_attempt_id: UUID
+    test_id: UUID
+    score_percentage: float
+    questions_correct: int
+    total_questions: int
+    time_spent_seconds: Optional[int]
+    status: str
+    started_at: datetime
+    completed_at: Optional[datetime]
+    detailed_results: List[Dict[str, Any]]  # question-by-question results
+
+
+class VocabularyProgressUpdate(BaseModel):
+    assignment_type: str = Field(..., pattern="^(flashcards|practice|challenge|sentences)$")
+    completed: bool = True
+
+
+class TimeRestrictionConfig(BaseModel):
+    allowed_days: List[str] = Field(default=["monday", "tuesday", "wednesday", "thursday", "friday"])
+    allowed_times: List[Dict[str, str]] = Field(default=[{"start": "08:00", "end": "16:00"}])
+    timezone: str = Field(default="America/Los_Angeles")
+
+
+class ClassroomAssignmentTestConfig(BaseModel):
+    test_start_date: Optional[datetime] = None
+    test_end_date: Optional[datetime] = None
+    test_time_restrictions: Optional[TimeRestrictionConfig] = None

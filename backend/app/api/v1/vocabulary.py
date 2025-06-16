@@ -16,12 +16,15 @@ from app.schemas.vocabulary import (
     VocabularyListCreate, VocabularyListUpdate, VocabularyListResponse,
     VocabularyListSummary, VocabularyListPagination, VocabularyWordResponse,
     VocabularyWordReviewRequest, VocabularyWordManualUpdate,
-    VocabularyWordReviewResponse, VocabularyExportFormat
+    VocabularyWordReviewResponse, VocabularyExportFormat,
+    VocabularyTestConfig, VocabularyTestConfigResponse, VocabularyTestResponse,
+    ClassroomAssignmentTestConfig
 )
 from app.services.vocabulary import VocabularyService
 from app.services.vocabulary_story_generator import VocabularyStoryGenerator
 from app.services.vocabulary_puzzle_generator import VocabularyPuzzleGenerator
 from app.services.vocabulary_fill_in_blank_generator import VocabularyFillInBlankGenerator
+from app.services.vocabulary_test import VocabularyTestService
 import logging
 
 router = APIRouter()
@@ -554,3 +557,157 @@ async def export_vocabulary_presentation(
             "Content-Type": "text/html; charset=utf-8"
         }
     )
+
+
+# Vocabulary Test Configuration Endpoints
+@router.get("/vocabulary/{list_id}/test/config")
+async def get_test_config(
+    list_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get test configuration for a vocabulary list"""
+    if current_user.role.value != "teacher":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only teachers can access test configurations"
+        )
+    
+    # Verify vocabulary list ownership
+    vocabulary_list = await VocabularyService.get_vocabulary_list(db, list_id, include_words=False)
+    
+    if not vocabulary_list:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Vocabulary list not found"
+        )
+    
+    if vocabulary_list.teacher_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have permission to access this list's test configuration"
+        )
+    
+    config = await VocabularyTestService.get_test_config(db, list_id)
+    
+    if not config:
+        # Return default configuration
+        return {
+            "vocabulary_list_id": list_id,
+            "chain_enabled": False,
+            "weeks_to_include": 1,
+            "questions_per_week": 5,
+            "current_week_questions": 10,
+            "max_attempts": 3,
+            "time_limit_minutes": 30
+        }
+    
+    return VocabularyTestConfigResponse.model_validate(config)
+
+
+@router.put("/vocabulary/{list_id}/test/config", response_model=VocabularyTestConfigResponse)
+async def update_test_config(
+    list_id: UUID,
+    config_data: VocabularyTestConfig,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Update test configuration for a vocabulary list"""
+    if current_user.role.value != "teacher":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only teachers can update test configurations"
+        )
+    
+    # Verify vocabulary list ownership
+    vocabulary_list = await VocabularyService.get_vocabulary_list(db, list_id, include_words=False)
+    
+    if not vocabulary_list:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Vocabulary list not found"
+        )
+    
+    if vocabulary_list.teacher_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have permission to update this list's test configuration"
+        )
+    
+    config = await VocabularyTestService.save_test_config(
+        db, list_id, config_data.model_dump()
+    )
+    
+    return VocabularyTestConfigResponse.model_validate(config)
+
+
+@router.post("/vocabulary/{list_id}/test/generate", response_model=VocabularyTestResponse)
+async def generate_vocabulary_test(
+    list_id: UUID,
+    classroom_assignment_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Generate a vocabulary test for a student (used by student endpoints)"""
+    # This endpoint is called by the student endpoints, so we need to validate differently
+    # Check if test is already available/generated
+    
+    try:
+        test_data = await VocabularyTestService.generate_test(
+            db, list_id, classroom_assignment_id, current_user.id
+        )
+        return VocabularyTestResponse.model_validate(test_data)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+
+@router.get("/vocabulary/{list_id}/test/attempts")
+async def get_test_attempts(
+    list_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get test attempts for a vocabulary list (teacher view)"""
+    if current_user.role.value != "teacher":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only teachers can view test attempts"
+        )
+    
+    # Verify vocabulary list ownership
+    vocabulary_list = await VocabularyService.get_vocabulary_list(db, list_id, include_words=False)
+    
+    if not vocabulary_list:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Vocabulary list not found"
+        )
+    
+    if vocabulary_list.teacher_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have permission to view this list's test attempts"
+        )
+    
+    # Get all test attempts for this vocabulary list
+    result = await db.execute(
+        select(func.count())
+        .select_from(
+            select().select_from(text("""
+                vocabulary_test_attempts vta
+                JOIN vocabulary_tests vt ON vt.id = vta.test_id
+                WHERE vt.vocabulary_list_id = :list_id
+                AND vta.status = 'completed'
+            """))
+        ),
+        {"list_id": str(list_id)}
+    )
+    
+    return {
+        "vocabulary_list_id": list_id,
+        "total_attempts": result.scalar() or 0,
+        "message": "Test attempts analytics will be available in the teacher dashboard"
+    }

@@ -346,6 +346,11 @@ export default function VocabularyPracticePage() {
                 </div>
               </div>
               <button
+                onClick={() => {
+                  if (practiceStatus.test_unlocked) {
+                    router.push(`/student/vocabulary/${vocabularyId}/test`)
+                  }
+                }}
                 disabled={!practiceStatus.test_unlocked}
                 className={`px-6 py-3 rounded-lg text-sm font-medium transition-colors ${
                   practiceStatus.test_unlocked

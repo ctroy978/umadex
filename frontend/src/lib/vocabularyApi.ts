@@ -102,5 +102,31 @@ export const vocabularyApi = {
       responseType: 'blob'
     })
     return response.data
+  },
+
+  // Test Configuration Methods
+  async getTestConfig(listId: string): Promise<VocabularyTestConfig> {
+    const response = await api.get(`/v1/teacher/vocabulary/${listId}/test/config`)
+    return response.data
+  },
+
+  async updateTestConfig(listId: string, config: VocabularyTestConfig): Promise<VocabularyTestConfig> {
+    const response = await api.put(`/v1/teacher/vocabulary/${listId}/test/config`, config)
+    return response.data
+  },
+
+  async getTestAttempts(listId: string): Promise<any> {
+    const response = await api.get(`/v1/teacher/vocabulary/${listId}/test/attempts`)
+    return response.data
   }
+}
+
+// Test Configuration Types
+export interface VocabularyTestConfig {
+  chain_enabled: boolean
+  weeks_to_include: number
+  questions_per_week: number
+  current_week_questions: number
+  max_attempts: number
+  time_limit_minutes: number
 }

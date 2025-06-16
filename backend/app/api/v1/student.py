@@ -19,6 +19,11 @@ from app.models.tests import AssignmentTest, StudentTestAttempt
 from app.utils.deps import get_current_user
 from app.schemas.classroom import ClassroomResponse
 from app.services.vocabulary_practice import VocabularyPracticeService
+from app.services.vocabulary_test import VocabularyTestService
+from app.schemas.vocabulary import (
+    VocabularyTestEligibilityResponse, VocabularyTestAttemptRequest,
+    VocabularyTestAttemptResponse, VocabularyProgressUpdate
+)
 
 router = APIRouter()
 
@@ -1906,3 +1911,238 @@ async def decline_fill_in_blank_completion(
     )
     
     return FillInBlankCompletionResponse(**result)
+
+
+# ============================================================================
+# VOCABULARY TEST ENDPOINTS
+# ============================================================================
+
+class StartVocabularyTestResponse(BaseModel):
+    test_id: UUID
+    test_attempt_id: UUID
+    total_questions: int
+    time_limit_minutes: int
+    max_attempts: int
+    attempt_number: int
+    expires_at: datetime
+
+
+class VocabularyTestQuestion(BaseModel):
+    id: str
+    question_text: str
+    question_type: str
+    word: str
+
+
+class VocabularyTestStartResponse(BaseModel):
+    test_attempt_id: UUID
+    questions: List[VocabularyTestQuestion]
+    total_questions: int
+    time_limit_minutes: int
+    started_at: datetime
+
+
+@router.get("/vocabulary/{assignment_id}/test/eligibility", response_model=VocabularyTestEligibilityResponse)
+async def check_vocabulary_test_eligibility(
+    assignment_id: UUID,
+    current_user: User = Depends(require_student_or_teacher),
+    db: AsyncSession = Depends(get_db)
+):
+    """Check if student is eligible to take vocabulary test"""
+    
+    # Validate assignment access
+    assignment_data = await _validate_assignment_access_helper(
+        db=db,
+        assignment_id=assignment_id,
+        student_id=current_user.id,
+        assignment_type="vocabulary"
+    )
+    
+    vocabulary_list_id = assignment_data["assignment"].assignment_id
+    classroom_assignment_id = assignment_data["assignment"].id
+    
+    # Check test eligibility
+    eligibility = await VocabularyTestService.check_test_eligibility(
+        db, current_user.id, vocabulary_list_id, classroom_assignment_id
+    )
+    
+    return VocabularyTestEligibilityResponse(**eligibility)
+
+
+@router.post("/vocabulary/{assignment_id}/test/progress")
+async def update_vocabulary_assignment_progress(
+    assignment_id: UUID,
+    progress_data: VocabularyProgressUpdate,
+    current_user: User = Depends(require_student_or_teacher),
+    db: AsyncSession = Depends(get_db)
+):
+    """Update progress for vocabulary assignment completion"""
+    
+    # Validate assignment access
+    assignment_data = await _validate_assignment_access_helper(
+        db=db,
+        assignment_id=assignment_id,
+        student_id=current_user.id,
+        assignment_type="vocabulary"
+    )
+    
+    vocabulary_list_id = assignment_data["assignment"].assignment_id
+    classroom_assignment_id = assignment_data["assignment"].id
+    
+    # Update assignment progress
+    result = await VocabularyTestService.update_assignment_progress(
+        db, current_user.id, vocabulary_list_id, classroom_assignment_id,
+        progress_data.assignment_type, progress_data.completed
+    )
+    
+    return result
+
+
+@router.post("/vocabulary/{assignment_id}/test/start", response_model=VocabularyTestStartResponse)
+async def start_vocabulary_test(
+    assignment_id: UUID,
+    current_user: User = Depends(require_student_or_teacher),
+    db: AsyncSession = Depends(get_db)
+):
+    """Start a new vocabulary test"""
+    
+    # Validate assignment access
+    assignment_data = await _validate_assignment_access_helper(
+        db=db,
+        assignment_id=assignment_id,
+        student_id=current_user.id,
+        assignment_type="vocabulary"
+    )
+    
+    vocabulary_list_id = assignment_data["assignment"].assignment_id
+    classroom_assignment_id = assignment_data["assignment"].id
+    
+    # Check if test time is allowed
+    time_allowed, time_message = await VocabularyTestService.check_test_time_allowed(
+        db, classroom_assignment_id
+    )
+    
+    if not time_allowed:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Test not available: {time_message}"
+        )
+    
+    # Check test eligibility
+    eligibility = await VocabularyTestService.check_test_eligibility(
+        db, current_user.id, vocabulary_list_id, classroom_assignment_id
+    )
+    
+    if not eligibility["eligible"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=eligibility["reason"]
+        )
+    
+    try:
+        # Generate test
+        test_data = await VocabularyTestService.generate_test(
+            db, vocabulary_list_id, classroom_assignment_id, current_user.id
+        )
+        
+        # Start test attempt
+        test_attempt_id = await VocabularyTestService.start_test_attempt(
+            db, test_data["test_id"], current_user.id
+        )
+        
+        # Format questions for frontend (hide correct answers)
+        formatted_questions = []
+        for question in test_data["questions"]:
+            formatted_questions.append(VocabularyTestQuestion(
+                id=question["id"],
+                question_text=question["question_text"],
+                question_type=question["question_type"],
+                word=question["word"] if question["question_type"] != "definition" else ""
+            ))
+        
+        return VocabularyTestStartResponse(
+            test_attempt_id=test_attempt_id,
+            questions=formatted_questions,
+            total_questions=test_data["total_questions"],
+            time_limit_minutes=test_data["time_limit_minutes"],
+            started_at=datetime.now(timezone.utc)
+        )
+        
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+
+@router.post("/vocabulary/test/submit/{test_attempt_id}", response_model=VocabularyTestAttemptResponse)
+async def submit_vocabulary_test(
+    test_attempt_id: UUID,
+    responses: VocabularyTestAttemptRequest,
+    current_user: User = Depends(require_student_or_teacher),
+    db: AsyncSession = Depends(get_db)
+):
+    """Submit vocabulary test answers"""
+    
+    try:
+        # Evaluate test attempt
+        result = await VocabularyTestService.evaluate_test_attempt(
+            db, test_attempt_id, responses.responses
+        )
+        
+        return VocabularyTestAttemptResponse(**result)
+        
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+
+@router.get("/vocabulary/test/results/{test_attempt_id}", response_model=VocabularyTestAttemptResponse)
+async def get_vocabulary_test_results(
+    test_attempt_id: UUID,
+    current_user: User = Depends(require_student_or_teacher),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get vocabulary test results"""
+    
+    # Get test attempt results
+    result = await db.execute(
+        select().select_from(text("""
+            SELECT vta.*, vt.vocabulary_list_id, vt.classroom_assignment_id
+            FROM vocabulary_test_attempts vta
+            JOIN vocabulary_tests vt ON vt.id = vta.test_id
+            WHERE vta.id = :test_attempt_id
+            AND vta.student_id = :student_id
+            AND vta.status = 'completed'
+        """)),
+        {
+            "test_attempt_id": str(test_attempt_id),
+            "student_id": str(current_user.id)
+        }
+    )
+    
+    attempt = result.fetchone()
+    
+    if not attempt:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Test attempt not found or not completed"
+        )
+    
+    import json
+    detailed_results = json.loads(attempt.responses) if attempt.responses else []
+    
+    return VocabularyTestAttemptResponse(
+        test_attempt_id=attempt.id,
+        test_id=attempt.test_id,
+        score_percentage=float(attempt.score_percentage),
+        questions_correct=attempt.questions_correct,
+        total_questions=attempt.total_questions,
+        time_spent_seconds=attempt.time_spent_seconds,
+        status=attempt.status,
+        started_at=attempt.started_at,
+        completed_at=attempt.completed_at,
+        detailed_results=detailed_results
+    )

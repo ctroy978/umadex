@@ -9,9 +9,11 @@ import {
   PencilIcon,
   BookOpenIcon,
   ArchiveBoxIcon,
-  PresentationChartBarIcon
+  PresentationChartBarIcon,
+  Cog6ToothIcon
 } from '@heroicons/react/24/outline'
 import type { VocabularyList, VocabularyWord } from '@/types/vocabulary'
+import VocabularyTestConfigModal from '@/components/teacher/VocabularyTestConfigModal'
 
 export default function VocabularyViewPage({ params }: { params: { id: string } }) {
   const router = useRouter()
@@ -20,6 +22,7 @@ export default function VocabularyViewPage({ params }: { params: { id: string } 
   const [error, setError] = useState<string | null>(null)
   const [isExporting, setIsExporting] = useState(false)
   const [showInstructionsModal, setShowInstructionsModal] = useState(false)
+  const [showTestConfigModal, setShowTestConfigModal] = useState(false)
 
   useEffect(() => {
     loadVocabularyList()
@@ -200,6 +203,16 @@ export default function VocabularyViewPage({ params }: { params: { id: string } 
                 </div>
               </div>
             </div>
+
+            {list.status === 'published' && (
+              <button
+                onClick={() => setShowTestConfigModal(true)}
+                className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+              >
+                <Cog6ToothIcon className="h-4 w-4 mr-2" />
+                Configure Test
+              </button>
+            )}
             
             {list.status === 'published' && (
               <button
@@ -370,6 +383,16 @@ export default function VocabularyViewPage({ params }: { params: { id: string } 
             </div>
           </div>
         </div>
+      )}
+
+      {/* Test Configuration Modal */}
+      {showTestConfigModal && list && (
+        <VocabularyTestConfigModal
+          isOpen={showTestConfigModal}
+          onClose={() => setShowTestConfigModal(false)}
+          vocabularyListId={params.id}
+          vocabularyTitle={list.title}
+        />
       )}
     </div>
   )
