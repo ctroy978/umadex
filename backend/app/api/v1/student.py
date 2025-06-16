@@ -1444,133 +1444,14 @@ async def confirm_puzzle_completion(
     db: AsyncSession = Depends(get_db)
 ):
     """Confirm puzzle path completion and mark assignment as complete"""
-    logger = logging.getLogger(__name__)
+    practice_service = VocabularyPracticeService(db)
     
-    try:
-        # Get puzzle attempt 
-        result = await db.execute(
-            select(VocabularyPuzzleAttempt)
-            .where(VocabularyPuzzleAttempt.id == puzzle_attempt_id)
-            .options(selectinload(VocabularyPuzzleAttempt.practice_progress))
-        )
-        puzzle_attempt = result.scalar_one_or_none()
-        
-        if not puzzle_attempt:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Puzzle attempt not found"
-            )
-        
-        if puzzle_attempt.student_id != current_user.id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Not authorized to confirm this attempt"
-            )
-        
-        # Verify the attempt is in pending_confirmation status
-        if puzzle_attempt.status != 'pending_confirmation':
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Cannot confirm completion - puzzle attempt is not in pending confirmation status"
-            )
-        
-        # Get classroom assignment to create StudentAssignment record
-        ca_result = await db.execute(
-            select(ClassroomAssignment)
-            .where(
-                and_(
-                    ClassroomAssignment.vocabulary_list_id == puzzle_attempt.vocabulary_list_id,
-                    ClassroomAssignment.assignment_type == "vocabulary"
-                )
-            )
-        )
-        classroom_assignment = ca_result.scalar_one_or_none()
-        
-        if not classroom_assignment:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Classroom assignment not found"
-            )
-        
-        # Check if StudentAssignment already exists for this subtype
-        existing_assignment = await db.execute(
-            select(StudentAssignment)
-            .where(
-                and_(
-                    StudentAssignment.student_id == current_user.id,
-                    StudentAssignment.assignment_id == puzzle_attempt.vocabulary_list_id,
-                    StudentAssignment.classroom_assignment_id == classroom_assignment.id,
-                    StudentAssignment.assignment_type == "vocabulary",
-                    StudentAssignment.progress_metadata.contains({"subtype": "puzzle_path"})
-                )
-            )
-        )
-        existing = existing_assignment.scalar_one_or_none()
-        
-        if not existing:
-            # Create StudentAssignment record for puzzle_path completion
-            student_assignment = StudentAssignment(
-                student_id=current_user.id,
-                assignment_id=puzzle_attempt.vocabulary_list_id,
-                classroom_assignment_id=classroom_assignment.id,
-                assignment_type="vocabulary",
-                progress_metadata={
-                    "subtype": "puzzle_path",
-                    "final_score": puzzle_attempt.total_score,
-                    "max_possible_score": puzzle_attempt.max_possible_score,
-                    "percentage_score": (puzzle_attempt.total_score / puzzle_attempt.max_possible_score) * 100 if puzzle_attempt.max_possible_score > 0 else 0,
-                    "puzzles_completed": puzzle_attempt.puzzles_completed,
-                    "total_puzzles": puzzle_attempt.total_puzzles
-                },
-                completed_at=datetime.now(timezone.utc)
-            )
-            db.add(student_assignment)
-        else:
-            # Update existing record
-            existing.completed_at = datetime.now(timezone.utc)
-            existing.progress_metadata = {
-                "subtype": "puzzle_path",
-                "final_score": puzzle_attempt.total_score,
-                "max_possible_score": puzzle_attempt.max_possible_score,
-                "percentage_score": (puzzle_attempt.total_score / puzzle_attempt.max_possible_score) * 100 if puzzle_attempt.max_possible_score > 0 else 0,
-                "puzzles_completed": puzzle_attempt.puzzles_completed,
-                "total_puzzles": puzzle_attempt.total_puzzles
-            }
-        
-        # Update puzzle attempt status
-        puzzle_attempt.status = 'passed'
-        
-        # Update practice progress if it exists
-        if puzzle_attempt.practice_progress:
-            puzzle_attempt.practice_progress.practice_status['puzzle_path'] = 'completed'
-            puzzle_attempt.practice_progress.current_game_session = None
-        
-        await db.commit()
-        
-        # Clear Redis session data after confirming completion
-        from app.services.vocabulary_session import VocabularySessionManager
-        session_manager = VocabularySessionManager()
-        await session_manager.clear_all_session_data(current_user.id, puzzle_attempt.vocabulary_list_id)
-        
-        percentage_score = (puzzle_attempt.total_score / puzzle_attempt.max_possible_score) * 100 if puzzle_attempt.max_possible_score > 0 else 0
-        
-        return PuzzleCompletionResponse(
-            success=True,
-            message="Puzzle path assignment completed successfully!",
-            final_score=puzzle_attempt.total_score,
-            percentage_score=percentage_score
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error confirming puzzle completion: {e}")
-        import traceback
-        logger.error(f"Traceback: {traceback.format_exc()}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to confirm completion: {str(e)}"
-        )
+    result = await practice_service.confirm_puzzle_completion(
+        puzzle_attempt_id=puzzle_attempt_id,
+        student_id=current_user.id
+    )
+    
+    return PuzzleCompletionResponse(**result)
 
 
 @router.post("/vocabulary/practice/decline-puzzle-completion/{puzzle_attempt_id}", response_model=PuzzleCompletionResponse)

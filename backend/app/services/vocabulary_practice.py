@@ -166,7 +166,7 @@ class VocabularyPracticeService:
                         StudentAssignment.assignment_id == vocabulary_list_id,
                         StudentAssignment.classroom_assignment_id == classroom_assignment_id,
                         StudentAssignment.assignment_type == "vocabulary",
-                        StudentAssignment.progress_metadata['subtype'].astext == assignment_type
+                        StudentAssignment.progress_metadata['completed_subtypes'].contains([assignment_type])
                     )
                 )
             )
@@ -1502,6 +1502,37 @@ class VocabularyPracticeService:
         if puzzle_attempt.status != 'pending_confirmation':
             raise ValueError("Puzzle attempt is not pending confirmation")
         
+        # Check if this subtype was already completed
+        ca_result = await self.db.execute(
+            select(ClassroomAssignment.id)
+            .where(
+                and_(
+                    ClassroomAssignment.vocabulary_list_id == puzzle_attempt.vocabulary_list_id,
+                    ClassroomAssignment.assignment_type == "vocabulary"
+                )
+            )
+        )
+        classroom_assignment_id = ca_result.scalar_one()
+        
+        # Check for existing StudentAssignment record
+        existing_result = await self.db.execute(
+            select(StudentAssignment)
+            .where(
+                and_(
+                    StudentAssignment.student_id == student_id,
+                    StudentAssignment.assignment_id == puzzle_attempt.vocabulary_list_id,
+                    StudentAssignment.classroom_assignment_id == classroom_assignment_id,
+                    StudentAssignment.assignment_type == "vocabulary"
+                )
+            )
+        )
+        existing_assignment = existing_result.scalar_one_or_none()
+        
+        if existing_assignment and existing_assignment.progress_metadata:
+            completed_subtypes = existing_assignment.progress_metadata.get('completed_subtypes', [])
+            if 'puzzle_path' in completed_subtypes:
+                raise ValueError("Puzzle path assignment already completed for this vocabulary list")
+        
         # Calculate percentage score
         percentage_score = (puzzle_attempt.total_score / puzzle_attempt.max_possible_score) * 100
         
@@ -1518,7 +1549,7 @@ class VocabularyPracticeService:
         student_assignment = await self._create_or_update_student_assignment(
             student_id=student_id,
             assignment_id=puzzle_attempt.vocabulary_list_id,
-            classroom_assignment_id=puzzle_attempt.practice_progress.classroom_assignment_id,
+            classroom_assignment_id=classroom_assignment_id,
             assignment_type="vocabulary",
             subtype="puzzle_path"
         )
@@ -2104,16 +2135,13 @@ class VocabularyPracticeService:
     ) -> StudentAssignment:
         """Create or update StudentAssignment record"""
         
-        # Check if record exists (include subtype in search)
+        # Check if record exists (search without subtype to find existing record)
         search_conditions = [
             StudentAssignment.student_id == student_id,
             StudentAssignment.assignment_id == assignment_id,
             StudentAssignment.classroom_assignment_id == classroom_assignment_id,
             StudentAssignment.assignment_type == assignment_type
         ]
-        
-        if subtype:
-            search_conditions.append(StudentAssignment.progress_metadata['subtype'].astext == subtype)
         
         result = await self.db.execute(
             select(StudentAssignment)
@@ -2123,7 +2151,13 @@ class VocabularyPracticeService:
         
         if not student_assignment:
             # Create new record
-            progress_metadata = {'subtype': subtype} if subtype else {}
+            progress_metadata = {}
+            if subtype:
+                progress_metadata = {
+                    'completed_subtypes': [subtype],
+                    'latest_subtype': subtype
+                }
+            
             student_assignment = StudentAssignment(
                 student_id=student_id,
                 assignment_id=assignment_id,
@@ -2136,11 +2170,21 @@ class VocabularyPracticeService:
             )
             self.db.add(student_assignment)
         else:
-            # Update existing record
-            student_assignment.status = "completed"
-            student_assignment.completed_at = datetime.now(timezone.utc)
-            if subtype and 'subtype' not in student_assignment.progress_metadata:
-                student_assignment.progress_metadata = {**student_assignment.progress_metadata, 'subtype': subtype}
+            # Update existing record - add new completed subtype
+            current_metadata = student_assignment.progress_metadata or {}
+            completed_subtypes = current_metadata.get('completed_subtypes', [])
+            
+            if subtype and subtype not in completed_subtypes:
+                completed_subtypes.append(subtype)
+                student_assignment.progress_metadata = {
+                    **current_metadata,
+                    'completed_subtypes': completed_subtypes,
+                    'latest_subtype': subtype
+                }
+                student_assignment.completed_at = datetime.now(timezone.utc)
+                # Update status based on completion count (need 3 out of 4)
+                if len(completed_subtypes) >= 3:
+                    student_assignment.status = "completed"
         
         return student_assignment
     
@@ -2238,8 +2282,19 @@ class VocabularyPracticeService:
         )
         
         self.db.add(fill_in_blank_attempt)
+        
+        # Update progress to mark as in progress
+        practice_status = progress.practice_status.copy()
+        fill_in_blank_status = self._ensure_assignment_status(practice_status, 'fill_in_blank')
+        fill_in_blank_status['status'] = 'in_progress'
+        fill_in_blank_status['attempts'] = attempt_number
+        fill_in_blank_status['last_attempt_at'] = datetime.now(timezone.utc).isoformat()
+        
+        progress.practice_status = practice_status
+        
         await self.db.commit()
         await self.db.refresh(fill_in_blank_attempt)
+        await self.db.refresh(progress)  # Ensure progress is also refreshed
         
         # Get first sentence
         first_sentence_id = UUID(sentence_ids[0])
@@ -2553,32 +2608,7 @@ class VocabularyPracticeService:
         if attempt.status != 'pending_confirmation':
             raise ValueError("Attempt is not pending confirmation")
         
-        # Mark as passed
-        attempt.status = 'passed'
-        
-        # Update practice progress
-        progress_result = await self.db.execute(
-            select(VocabularyPracticeProgress)
-            .where(VocabularyPracticeProgress.id == attempt.practice_progress_id)
-        )
-        progress = progress_result.scalar_one()
-        
-        # Update assignment status in practice_status
-        practice_status = progress.practice_status.copy()
-        self._ensure_assignment_status(practice_status, 'fill_in_blank')
-        
-        # Mark as completed
-        practice_status['assignments']['fill_in_blank']['status'] = 'completed'
-        practice_status['assignments']['fill_in_blank']['completed_at'] = datetime.now(timezone.utc).isoformat()
-        practice_status['assignments']['fill_in_blank']['best_score'] = int(attempt.score_percentage or 0)
-        practice_status['completed_assignments'].append('fill_in_blank')
-        
-        # Remove duplicates
-        practice_status['completed_assignments'] = list(set(practice_status['completed_assignments']))
-        
-        progress.practice_status = practice_status
-        
-        # Get classroom assignment for StudentAssignment creation
+        # Check if this subtype was already completed
         ca_result = await self.db.execute(
             select(ClassroomAssignment.id)
             .where(
@@ -2589,6 +2619,62 @@ class VocabularyPracticeService:
             )
         )
         classroom_assignment_id = ca_result.scalar_one()
+        
+        # Check for existing StudentAssignment record
+        existing_result = await self.db.execute(
+            select(StudentAssignment)
+            .where(
+                and_(
+                    StudentAssignment.student_id == student_id,
+                    StudentAssignment.assignment_id == attempt.vocabulary_list_id,
+                    StudentAssignment.classroom_assignment_id == classroom_assignment_id,
+                    StudentAssignment.assignment_type == "vocabulary"
+                )
+            )
+        )
+        existing_assignment = existing_result.scalar_one_or_none()
+        
+        if existing_assignment and existing_assignment.progress_metadata:
+            completed_subtypes = existing_assignment.progress_metadata.get('completed_subtypes', [])
+            if 'fill_in_blank' in completed_subtypes:
+                raise ValueError("Fill-in-blank assignment already completed for this vocabulary list")
+        
+        # Mark as passed
+        attempt.status = 'passed'
+        
+        # Update practice progress
+        progress_result = await self.db.execute(
+            select(VocabularyPracticeProgress)
+            .where(VocabularyPracticeProgress.id == attempt.practice_progress_id)
+        )
+        progress = progress_result.scalar_one_or_none()
+        
+        # If progress doesn't exist (due to transaction issues), recreate it
+        if not progress:
+            progress = await self.get_or_create_practice_progress(
+                student_id=student_id,
+                vocabulary_list_id=attempt.vocabulary_list_id,
+                classroom_assignment_id=classroom_assignment_id
+            )
+        
+        # Update assignment status in practice_status
+        practice_status = progress.practice_status.copy()
+        fill_in_blank_status = self._ensure_assignment_status(practice_status, 'fill_in_blank')
+        
+        # Mark as completed
+        fill_in_blank_status['status'] = 'completed'
+        fill_in_blank_status['completed_at'] = datetime.now(timezone.utc).isoformat()
+        fill_in_blank_status['best_score'] = int(attempt.score_percentage or 0)
+        
+        # Ensure completed_assignments list exists
+        if 'completed_assignments' not in practice_status:
+            practice_status['completed_assignments'] = []
+        practice_status['completed_assignments'].append('fill_in_blank')
+        
+        # Remove duplicates
+        practice_status['completed_assignments'] = list(set(practice_status['completed_assignments']))
+        
+        progress.practice_status = practice_status
         
         # Create or update StudentAssignment record
         await self._create_or_update_student_assignment(
