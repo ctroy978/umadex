@@ -7,7 +7,8 @@ import {
   CheckCircleIcon, 
   XCircleIcon,
   ClockIcon,
-  AcademicCapIcon
+  AcademicCapIcon,
+  ExclamationCircleIcon
 } from '@heroicons/react/24/outline'
 import { studentApi } from '@/lib/studentApi'
 
@@ -58,6 +59,7 @@ export default function FillInBlankPracticePage() {
   const [startTime, setStartTime] = useState<Date>(new Date())
   const [error, setError] = useState<string | null>(null)
   const [showConfirmation, setShowConfirmation] = useState(false)
+  const [confirmingCompletion, setConfirmingCompletion] = useState(false)
 
   // Navigation protection
   useEffect(() => {
@@ -156,11 +158,14 @@ export default function FillInBlankPracticePage() {
     if (!session) return
 
     try {
+      setConfirmingCompletion(true)
       await studentApi.confirmFillInBlankCompletion(session.fill_in_blank_attempt_id)
       router.push(`/student/vocabulary/${assignmentId}/practice`)
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Failed to confirm completion')
       console.error('Failed to confirm completion:', err)
+    } finally {
+      setConfirmingCompletion(false)
     }
   }
 
@@ -168,13 +173,14 @@ export default function FillInBlankPracticePage() {
     if (!session) return
 
     try {
+      setConfirmingCompletion(true)
       await studentApi.declineFillInBlankCompletion(session.fill_in_blank_attempt_id)
-      setShowConfirmation(false)
-      // Allow retake
-      initializeSession()
+      router.push(`/student/vocabulary/${assignmentId}/practice`)
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Failed to decline completion')
       console.error('Failed to decline completion:', err)
+    } finally {
+      setConfirmingCompletion(false)
     }
   }
 
@@ -363,36 +369,58 @@ export default function FillInBlankPracticePage() {
           </div>
         ) : null}
 
-        {/* Confirmation Modal */}
+        {/* Completion Confirmation Dialog */}
         {showConfirmation && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-lg max-w-md w-full p-6">
-              <div className="text-center">
-                <CheckCircleIcon className={`h-12 w-12 ${scorePercentage >= session.passing_score ? 'text-green-500' : 'text-yellow-500'} mx-auto mb-4`} />
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">Assignment Complete!</h3>
-                <p className="text-gray-600 mb-4">
-                  You scored {scorePercentage.toFixed(0)}%.
+          <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg p-8 max-w-md w-full shadow-xl">
+              <div className="text-center mb-6">
+                <div className={`inline-flex items-center justify-center w-16 h-16 rounded-full mb-4 ${
+                  scorePercentage >= session.passing_score ? 'bg-green-100' : 'bg-amber-100'
+                }`}>
                   {scorePercentage >= session.passing_score ? (
-                    <> You passed the assignment! Would you like to submit your completion?</>
+                    <CheckCircleIcon className="h-8 w-8 text-green-600" />
                   ) : (
-                    <> You need {session.passing_score}% to pass. Would you like to retake the assignment?</>
+                    <ExclamationCircleIcon className="h-8 w-8 text-amber-600" />
                   )}
-                </p>
-                <div className="flex space-x-3">
-                  <button
-                    onClick={confirmCompletion}
-                    className="flex-1 bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700"
-                  >
-                    {scorePercentage >= session.passing_score ? 'Yes, Complete' : 'Continue Anyway'}
-                  </button>
-                  <button
-                    onClick={declineCompletion}
-                    className="flex-1 bg-gray-300 text-gray-700 py-2 px-4 rounded-md hover:bg-gray-400"
-                  >
-                    Retake Assignment Later
-                  </button>
                 </div>
+                <h3 className="text-2xl font-bold text-gray-900 mb-2">
+                  Fill-in-the-Blank Complete!
+                </h3>
+                <p className="text-lg text-gray-700 mb-4">
+                  You scored <span className="font-bold text-primary-600">{Math.round(scorePercentage)}%</span>
+                </p>
+                {scorePercentage >= session.passing_score ? (
+                  <p className="text-green-700">
+                    Congratulations! You scored {session.passing_score}% or higher.
+                    <br />
+                    <span className="font-semibold">Assignment completed successfully!</span>
+                  </p>
+                ) : (
+                  <p className="text-amber-700">
+                    You scored below {session.passing_score}%.
+                    <br />
+                    <span className="font-semibold">You need {session.passing_score}% or higher to complete this assignment.</span>
+                  </p>
+                )}
               </div>
+
+              {scorePercentage >= session.passing_score ? (
+                <button
+                  onClick={confirmCompletion}
+                  disabled={confirmingCompletion}
+                  className="w-full px-6 py-3 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                >
+                  {confirmingCompletion ? 'Completing...' : 'Complete Assignment'}
+                </button>
+              ) : (
+                <button
+                  onClick={declineCompletion}
+                  disabled={confirmingCompletion}
+                  className="w-full px-6 py-3 bg-amber-600 text-white rounded-lg font-medium hover:bg-amber-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                >
+                  {confirmingCompletion ? 'Processing...' : 'Retake Assignment Later'}
+                </button>
+              )}
             </div>
           </div>
         )}
