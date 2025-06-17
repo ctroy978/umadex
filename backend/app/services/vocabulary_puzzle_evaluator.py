@@ -40,6 +40,10 @@ class VocabularyPuzzleEvaluator:
             return await self._evaluate_word_match_response(
                 puzzle_data, correct_answer, student_answer, word, grade_level
             )
+        elif puzzle_type == 'fill_blank':
+            return await self._evaluate_fill_blank_response(
+                puzzle_data, correct_answer, student_answer, word, grade_level
+            )
         else:
             raise ValueError(f"Unknown puzzle type: {puzzle_type}")
     
@@ -57,7 +61,7 @@ class VocabularyPuzzleEvaluator:
         correct = correct_answer.lower().strip()
         student = student_answer.lower().strip()
         
-        # Perfect match
+        # Check for exact match only (case-insensitive)
         if student == correct:
             return {
                 'score': 4,
@@ -65,32 +69,14 @@ class VocabularyPuzzleEvaluator:
                 'feedback': f"Excellent! You correctly unscrambled '{word}'!",
                 'areas_checked': ['spelling', 'completeness', 'correctness']
             }
-        
-        # Check for minor spelling errors
-        if self._is_close_spelling(student, correct):
+        else:
+            # No partial credit - either right or wrong
             return {
-                'score': 3,
-                'accuracy': 'minor_error',
-                'feedback': f"Great job! You got '{student}' - just watch the spelling of '{correct}'.",
-                'areas_checked': ['spelling', 'completeness', 'correctness']
+                'score': 1,
+                'accuracy': 'incorrect',
+                'feedback': f"That's not quite right. The word '{correct}' can be unscrambled from those letters.",
+                'areas_checked': ['correctness']
             }
-        
-        # Check if it's a related word (synonym)
-        if await self._is_related_word(student, correct, grade_level):
-            return {
-                'score': 2,
-                'accuracy': 'partial_understanding',
-                'feedback': f"You wrote '{student}' which is similar, but the target word is '{correct}'.",
-                'areas_checked': ['meaning', 'correctness']
-            }
-        
-        # Incorrect
-        return {
-            'score': 1,
-            'accuracy': 'incorrect',
-            'feedback': f"That's not quite right. The word '{correct}' can be unscrambled from those letters.",
-            'areas_checked': ['correctness']
-        }
     
     async def _evaluate_crossword_response(
         self, 
@@ -106,6 +92,7 @@ class VocabularyPuzzleEvaluator:
         correct = correct_answer.lower().strip()
         student = student_answer.lower().strip()
         
+        # Check for exact match only (case-insensitive)
         if student == correct:
             return {
                 'score': 4,
@@ -113,29 +100,14 @@ class VocabularyPuzzleEvaluator:
                 'feedback': f"Perfect! '{word}' is exactly right for that clue!",
                 'areas_checked': ['clue_comprehension', 'spelling', 'correctness']
             }
-        
-        if self._is_close_spelling(student, correct):
+        else:
+            # No partial credit - either right or wrong
             return {
-                'score': 3,
-                'accuracy': 'minor_error',
-                'feedback': f"Good thinking! You got '{student}' - just check the spelling of '{correct}'.",
-                'areas_checked': ['clue_comprehension', 'spelling']
+                'score': 1,
+                'accuracy': 'incorrect',
+                'feedback': f"Not quite. The clue points to '{correct}'.",
+                'areas_checked': ['clue_comprehension']
             }
-        
-        if await self._is_related_word(student, correct, grade_level):
-            return {
-                'score': 2,
-                'accuracy': 'partial_understanding',
-                'feedback': f"'{student}' is close in meaning, but the answer is '{correct}'.",
-                'areas_checked': ['clue_comprehension', 'meaning']
-            }
-        
-        return {
-            'score': 1,
-            'accuracy': 'incorrect',
-            'feedback': f"Not quite. The clue points to '{correct}'. Try thinking about the definition.",
-            'areas_checked': ['clue_comprehension']
-        }
     
     async def _evaluate_word_match_response(
         self, 
@@ -161,6 +133,37 @@ class VocabularyPuzzleEvaluator:
                 'accuracy': 'incorrect',
                 'feedback': f"Not quite. '{word}' means: {correct_answer}",
                 'areas_checked': ['definition_recognition']
+            }
+    
+    async def _evaluate_fill_blank_response(
+        self, 
+        puzzle_data: Dict[str, Any], 
+        correct_answer: str, 
+        student_answer: str, 
+        word: str, 
+        grade_level: str
+    ) -> Dict[str, Any]:
+        """Evaluate fill in the blank puzzle response"""
+        
+        # Normalize answers for comparison
+        correct = correct_answer.lower().strip()
+        student = student_answer.lower().strip()
+        
+        # Check for exact match (case-insensitive)
+        if student == correct:
+            return {
+                'score': 4,
+                'accuracy': 'perfect',
+                'feedback': f"Excellent! '{word}' is the correct word for that sentence!",
+                'areas_checked': ['context_understanding', 'spelling', 'correctness']
+            }
+        else:
+            # No partial credit - either right or wrong
+            return {
+                'score': 1,
+                'accuracy': 'incorrect',
+                'feedback': f"Not quite. The correct word is '{word}'.",
+                'areas_checked': ['context_understanding']
             }
     
     def _is_close_spelling(self, student_answer: str, correct_answer: str) -> bool:

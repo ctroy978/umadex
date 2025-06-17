@@ -1361,54 +1361,69 @@ async def submit_puzzle_answer(
                 detail="Puzzle attempt is not in progress"
             )
         
-        # Simple evaluation: give 4 points for any answer (bypass AI evaluation issues)
-        evaluation = {
-            'score': 4,
-            'accuracy': 'correct',
-            'feedback': 'Answer accepted',
-            'areas_checked': ['basic_validation']
-        }
+        # Use the proper vocabulary practice service for evaluation
+        practice_service = VocabularyPracticeService(db)
         
-        # Update puzzle attempt with real database values
-        puzzle_attempt.puzzles_completed += 1
-        puzzle_attempt.current_puzzle_index += 1
-        puzzle_attempt.total_score += evaluation['score']
-        
-        # Check if all puzzles are complete
-        is_complete = puzzle_attempt.puzzles_completed >= puzzle_attempt.total_puzzles
-        
-        if is_complete:
-            # Calculate percentage score
-            if puzzle_attempt.max_possible_score > 0:
-                percentage_score = (puzzle_attempt.total_score / puzzle_attempt.max_possible_score) * 100
-            else:
-                percentage_score = 100
+        try:
+            # Submit answer to the practice service which handles evaluation
+            result = await practice_service.submit_puzzle_answer(
+                puzzle_attempt_id=puzzle_attempt_id,
+                puzzle_id=puzzle_id,
+                student_answer=request.student_answer,
+                time_spent_seconds=request.time_spent_seconds
+            )
             
-            puzzle_attempt.status = 'pending_confirmation' if percentage_score >= 70 else 'failed'
-            puzzle_attempt.completed_at = datetime.now(timezone.utc)
-        
-        await db.commit()
-        
-        # Calculate return values
-        percentage_score = None
-        if is_complete:
-            if puzzle_attempt.max_possible_score > 0:
-                percentage_score = (puzzle_attempt.total_score / puzzle_attempt.max_possible_score) * 100
-            else:
-                percentage_score = 100
-        
-        return SubmitPuzzleAnswerResponse(
-            valid=True,
-            evaluation=evaluation,
-            current_score=puzzle_attempt.total_score,
-            puzzles_remaining=puzzle_attempt.total_puzzles - puzzle_attempt.puzzles_completed,
-            is_complete=is_complete,
-            passed=puzzle_attempt.status == 'pending_confirmation' if is_complete else None,
-            percentage_score=percentage_score,
-            needs_confirmation=puzzle_attempt.status == 'pending_confirmation' if is_complete else False,
-            next_puzzle=None,
-            progress_percentage=(puzzle_attempt.puzzles_completed / puzzle_attempt.total_puzzles) * 100 if puzzle_attempt.total_puzzles > 0 else 0
-        )
+            # If the result doesn't have 'valid' key or it's False, return error
+            if not result.get('valid', True):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=result.get('errors', {'answer': 'Invalid answer'})
+                )
+            
+            # Get the evaluation from the result
+            evaluation = result.get('evaluation', {
+                'score': 1,
+                'accuracy': 'incorrect',
+                'feedback': 'Unable to evaluate answer',
+                'areas_checked': []
+            })
+            
+            # Refresh puzzle attempt to get updated values
+            await db.refresh(puzzle_attempt)
+            
+            # Return the result from the service
+            return SubmitPuzzleAnswerResponse(
+                valid=True,
+                evaluation=evaluation,
+                current_score=result.get('current_score', puzzle_attempt.total_score),
+                puzzles_remaining=result.get('puzzles_remaining', puzzle_attempt.total_puzzles - puzzle_attempt.puzzles_completed),
+                is_complete=result.get('is_complete', False),
+                passed=result.get('passed'),
+                percentage_score=result.get('percentage_score'),
+                needs_confirmation=result.get('needs_confirmation', False),
+                next_puzzle=result.get('next_puzzle'),
+                progress_percentage=result.get('progress_percentage', 0)
+            )
+            
+        except ValueError as e:
+            # Handle specific ValueError from service
+            logger.error(f"ValueError in puzzle answer submission: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(e)
+            )
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error submitting puzzle answer: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            
+            # If service call fails, handle it gracefully
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to evaluate answer: {str(e)}"
+            )
         
     except HTTPException:
         raise
