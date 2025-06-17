@@ -2296,8 +2296,12 @@ class VocabularyPracticeService:
         # Check for existing active session first
         existing_session = await self.session_manager.get_current_session(student_id, vocabulary_list_id)
         if existing_session and 'fill_in_blank_attempt_id' in existing_session:
-            # Resume existing fill-in-blank attempt
-            return await self._resume_fill_in_blank(student_id, vocabulary_list_id, existing_session)
+            try:
+                # Resume existing fill-in-blank attempt
+                return await self._resume_fill_in_blank(student_id, vocabulary_list_id, existing_session)
+            except ValueError:
+                # Session is stale, continue to create new attempt
+                pass
         
         # Get or create progress
         progress = await self.get_or_create_practice_progress(
@@ -2575,12 +2579,9 @@ class VocabularyPracticeService:
             attempt.score_percentage = score_percentage
             attempt.completed_at = datetime.now(timezone.utc)
             
-            # Check if passed
-            passed = score_percentage >= attempt.passing_score
-            if passed:
-                attempt.status = 'pending_confirmation'
-            else:
-                attempt.status = 'failed'
+            # Set status to pending_confirmation for BOTH pass and fail
+            # This ensures the dialog shows for both scenarios
+            attempt.status = 'pending_confirmation'
         
         await self.db.commit()
         
@@ -2617,7 +2618,7 @@ class VocabularyPracticeService:
             'is_complete': is_complete,
             'passed': score_percentage >= attempt.passing_score if is_complete else None,
             'score_percentage': score_percentage,
-            'needs_confirmation': is_complete and score_percentage >= attempt.passing_score,
+            'needs_confirmation': is_complete,
             'next_sentence': next_sentence,
             'progress_percentage': progress_percentage
         }
@@ -2734,8 +2735,15 @@ class VocabularyPracticeService:
             if 'fill_in_blank' in completed_subtypes:
                 raise ValueError("Fill-in-blank assignment already completed for this vocabulary list")
         
-        # Mark as passed
-        attempt.status = 'passed'
+        # Check if passed
+        score_percentage = attempt.score_percentage or 0
+        passed = score_percentage >= attempt.passing_score
+        
+        # Mark attempt status based on score
+        if passed:
+            attempt.status = 'passed'
+        else:
+            attempt.status = 'failed'
         
         # Update practice progress
         progress_result = await self.db.execute(
@@ -2756,36 +2764,41 @@ class VocabularyPracticeService:
         practice_status = progress.practice_status.copy()
         fill_in_blank_status = self._ensure_assignment_status(practice_status, 'fill_in_blank')
         
-        # Mark as completed
-        fill_in_blank_status['status'] = 'completed'
-        fill_in_blank_status['completed_at'] = datetime.now(timezone.utc).isoformat()
-        fill_in_blank_status['best_score'] = int(attempt.score_percentage or 0)
-        
-        # Ensure completed_assignments list exists
-        if 'completed_assignments' not in practice_status:
-            practice_status['completed_assignments'] = []
-        practice_status['completed_assignments'].append('fill_in_blank')
-        
-        # Remove duplicates
-        practice_status['completed_assignments'] = list(set(practice_status['completed_assignments']))
-        
-        progress.practice_status = practice_status
-        
-        # Create or update StudentAssignment record
-        await self._create_or_update_student_assignment(
-            student_id=student_id,
-            assignment_id=attempt.vocabulary_list_id,
-            classroom_assignment_id=classroom_assignment_id,
-            assignment_type="vocabulary",
-            subtype="fill_in_blank"
-        )
+        # Update status based on pass/fail
+        if passed:
+            fill_in_blank_status['status'] = 'completed'
+            fill_in_blank_status['completed_at'] = datetime.now(timezone.utc).isoformat()
+            fill_in_blank_status['best_score'] = int(score_percentage)
+            
+            # Ensure completed_assignments list exists
+            if 'completed_assignments' not in practice_status:
+                practice_status['completed_assignments'] = []
+            practice_status['completed_assignments'].append('fill_in_blank')
+            
+            # Remove duplicates
+            practice_status['completed_assignments'] = list(set(practice_status['completed_assignments']))
+            
+            progress.practice_status = practice_status
+            
+            # Create or update StudentAssignment record only if passed
+            await self._create_or_update_student_assignment(
+                student_id=student_id,
+                assignment_id=attempt.vocabulary_list_id,
+                classroom_assignment_id=classroom_assignment_id,
+                assignment_type="vocabulary",
+                subtype="fill_in_blank"
+            )
+        else:
+            # Failed - just update the status, don't mark as completed
+            fill_in_blank_status['status'] = 'failed'
+            fill_in_blank_status['last_attempt_at'] = datetime.now(timezone.utc).isoformat()
+            fill_in_blank_status['last_score'] = int(score_percentage)
+            progress.practice_status = practice_status
         
         await self.db.commit()
         
-        # Clear session
-        await self.session_manager.clear_session(student_id, attempt.vocabulary_list_id)
-        
-        score_percentage = attempt.score_percentage or 0
+        # Clear Redis session data
+        await self.session_manager.clear_all_session_data(student_id, attempt.vocabulary_list_id)
         
         return {
             'success': True,
@@ -2817,14 +2830,36 @@ class VocabularyPracticeService:
         if attempt.status != 'pending_confirmation':
             raise ValueError("Attempt is not pending confirmation")
         
-        # Mark as declined
-        attempt.status = 'declined'
-        await self.db.commit()
-        
-        # Clear session to allow new attempt
-        await self.session_manager.clear_session(student_id, attempt.vocabulary_list_id)
-        
         score_percentage = attempt.score_percentage or 0
+        
+        # 1. Delete all response records for this attempt
+        await self.db.execute(
+            delete(VocabularyFillInBlankResponse)
+            .where(
+                and_(
+                    VocabularyFillInBlankResponse.practice_progress_id == attempt.practice_progress_id,
+                    VocabularyFillInBlankResponse.attempt_number == attempt.attempt_number
+                )
+            )
+        )
+        
+        # 2. Delete the attempt record itself
+        await self.db.delete(attempt)
+        
+        # 3. Clear Redis session data
+        await self.session_manager.clear_all_session_data(student_id, attempt.vocabulary_list_id)
+        
+        # 4. Clear practice progress game session
+        if attempt.practice_progress_id:
+            progress_result = await self.db.execute(
+                select(VocabularyPracticeProgress)
+                .where(VocabularyPracticeProgress.id == attempt.practice_progress_id)
+            )
+            progress = progress_result.scalar_one_or_none()
+            if progress:
+                progress.current_game_session = {}
+        
+        await self.db.commit()
         
         return {
             'success': True,

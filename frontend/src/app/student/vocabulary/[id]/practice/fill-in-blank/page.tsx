@@ -116,7 +116,7 @@ export default function FillInBlankPracticePage() {
       setLastSubmissionResult(result)
       setShowFeedback(true)
       
-      if (result.needs_confirmation) {
+      if (result.is_complete && result.needs_confirmation) {
         setShowConfirmation(true)
       }
 
@@ -368,24 +368,28 @@ export default function FillInBlankPracticePage() {
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
             <div className="bg-white rounded-lg max-w-md w-full p-6">
               <div className="text-center">
-                <CheckCircleIcon className="h-12 w-12 text-green-500 mx-auto mb-4" />
+                <CheckCircleIcon className={`h-12 w-12 ${scorePercentage >= session.passing_score ? 'text-green-500' : 'text-yellow-500'} mx-auto mb-4`} />
                 <h3 className="text-lg font-semibold text-gray-900 mb-2">Assignment Complete!</h3>
                 <p className="text-gray-600 mb-4">
-                  You scored {scorePercentage.toFixed(0)}% and passed the assignment.
-                  Would you like to submit your completion?
+                  You scored {scorePercentage.toFixed(0)}%.
+                  {scorePercentage >= session.passing_score ? (
+                    <> You passed the assignment! Would you like to submit your completion?</>
+                  ) : (
+                    <> You need {session.passing_score}% to pass. Would you like to retake the assignment?</>
+                  )}
                 </p>
                 <div className="flex space-x-3">
                   <button
                     onClick={confirmCompletion}
                     className="flex-1 bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700"
                   >
-                    Yes, Complete
+                    {scorePercentage >= session.passing_score ? 'Yes, Complete' : 'Continue Anyway'}
                   </button>
                   <button
                     onClick={declineCompletion}
                     className="flex-1 bg-gray-300 text-gray-700 py-2 px-4 rounded-md hover:bg-gray-400"
                   >
-                    Retake
+                    Retake Assignment Later
                   </button>
                 </div>
               </div>
