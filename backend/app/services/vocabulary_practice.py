@@ -6,7 +6,7 @@ from typing import List, Dict, Any, Optional
 from uuid import UUID
 from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, or_, update, func, text
+from sqlalchemy import select, and_, or_, update, func, text, delete
 from sqlalchemy.orm import selectinload
 import json
 import logging
@@ -319,8 +319,12 @@ class VocabularyPracticeService:
         # Check for existing active session first
         existing_session = await self.session_manager.get_current_session(student_id, vocabulary_list_id)
         if existing_session and 'concept_attempt_id' in existing_session:
-            # Resume existing concept mapping attempt
-            return await self._resume_concept_mapping(student_id, vocabulary_list_id, existing_session)
+            # Try to resume existing concept mapping attempt
+            try:
+                return await self._resume_concept_mapping(student_id, vocabulary_list_id, existing_session)
+            except ValueError:
+                # Session is stale, continue to create new attempt
+                pass
         
         # Get or create progress
         progress = await self.get_or_create_practice_progress(
@@ -592,11 +596,9 @@ class VocabularyPracticeService:
             # Calculate percentage score for determination
             percentage_score = (float(concept_attempt.average_score) / 4.0) * 100
             
-            # Set status based on score with pending confirmation pattern
-            if percentage_score >= 70:
-                concept_attempt.status = 'pending_confirmation'
-            else:
-                concept_attempt.status = 'failed'
+            # Set status to pending_confirmation for both pass and fail
+            # This ensures the dialog shows for both scenarios
+            concept_attempt.status = 'pending_confirmation'
             
             concept_attempt.completed_at = datetime.now(timezone.utc)
             
@@ -604,11 +606,6 @@ class VocabularyPracticeService:
             if concept_attempt.started_at:
                 time_diff = concept_attempt.completed_at - concept_attempt.started_at
                 concept_attempt.time_spent_seconds = int(time_diff.total_seconds())
-            
-            # Only update practice progress for failed attempts
-            # Passed attempts will update progress after confirmation
-            if concept_attempt.status == 'failed':
-                await self._update_concept_mapping_progress(concept_attempt)
         
         await self.db.commit()
         
@@ -851,18 +848,37 @@ class VocabularyPracticeService:
         # Calculate percentage score
         percentage_score = (float(concept_attempt.average_score) / 4.0) * 100
         
-        # Update concept attempt status
-        concept_attempt.status = 'declined'
+        # Store final score for return
+        final_score = float(concept_attempt.average_score)
         
-        # Clear Redis session data
+        # Delete all concept map records for this attempt to allow retake
+        await self.db.execute(
+            delete(VocabularyConceptMap)
+            .where(
+                and_(
+                    VocabularyConceptMap.practice_progress_id == concept_attempt.practice_progress_id,
+                    VocabularyConceptMap.attempt_number == concept_attempt.attempt_number
+                )
+            )
+        )
+        
+        # Delete the concept attempt itself
+        await self.db.delete(concept_attempt)
+        
+        # Clear Redis session data AFTER deleting the attempt
+        # This ensures the session is cleared and won't reference the deleted attempt
         await self.session_manager.clear_all_session_data(student_id, concept_attempt.vocabulary_list_id)
+        
+        # Also clear the practice progress current_game_session to ensure clean state
+        if concept_attempt.practice_progress:
+            concept_attempt.practice_progress.current_game_session = {}
         
         await self.db.commit()
         
         return {
             'success': True,
             'message': 'Assignment declined. You can retake it later.',
-            'final_score': float(concept_attempt.average_score),
+            'final_score': final_score,
             'percentage_score': percentage_score
         }
     

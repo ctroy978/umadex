@@ -252,7 +252,7 @@ class VocabularyConceptMapAttempt(Base):
     
     __table_args__ = (
         CheckConstraint(
-            "status IN ('in_progress', 'completed', 'passed', 'failed', 'abandoned')",
+            "status IN ('in_progress', 'completed', 'passed', 'failed', 'abandoned', 'pending_confirmation', 'declined')",
             name='check_concept_map_attempt_status'
         ),
     )
