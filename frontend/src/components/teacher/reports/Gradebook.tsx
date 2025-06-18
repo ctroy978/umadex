@@ -122,7 +122,7 @@ export default function Gradebook() {
 
   // Filter assignments based on selected assignment types
   const filteredAssignments = useMemo(() => {
-    if (filters.assignmentTypes.length === 0) {
+    if (!filters.assignmentTypes || filters.assignmentTypes.length === 0) {
       return assignments; // Show all if no filter selected
     }
     return assignments.filter(assignment => 
@@ -564,6 +564,7 @@ export default function Gradebook() {
                 setFilters({
                   classrooms: [],
                   assignments: [],
+                  assignmentTypes: [],
                   dateRange: { start: null, end: null },
                   completionDateRange: { start: null, end: null },
                   studentSearch: '',
