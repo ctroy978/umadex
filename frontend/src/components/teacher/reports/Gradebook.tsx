@@ -31,6 +31,7 @@ interface StudentGrade {
   student_name: string;
   assignment_id: string;
   assignment_title: string;
+  assignment_type: string; // 'UMARead' or 'UMAVocab'
   work_title: string;
   date_assigned: string;
   date_completed: string | null;
@@ -44,6 +45,7 @@ interface StudentGrade {
 interface FilterState {
   classrooms: string[];
   assignments: string[];
+  assignmentTypes: string[];
   dateRange: {
     start: Date | null;
     end: Date | null;
@@ -88,6 +90,7 @@ export default function Gradebook() {
   const [filters, setFilters] = useState<FilterState>({
     classrooms: [],
     assignments: [],
+    assignmentTypes: [],
     dateRange: { start: null, end: null },
     completionDateRange: { start: null, end: null },
     studentSearch: '',
@@ -165,24 +168,46 @@ export default function Gradebook() {
         return;
       }
       
-      const response = await fetch('/api/v1/teacher/assignments/reading', {
+      const allAssignments: AssignmentOption[] = [];
+      
+      // Fetch UMARead assignments
+      const readingResponse = await fetch('/api/v1/teacher/assignments/reading', {
         headers: {
           'Authorization': `Bearer ${token}`
         }
       });
-      if (response.ok) {
-        const data = await response.json();
-        // Extract UMARead assignments with necessary fields
-        const assignmentOptions = data.assignments
+      if (readingResponse.ok) {
+        const data = await readingResponse.json();
+        const readingAssignments = data.assignments
           .filter((a: any) => a.assignment_type === 'UMARead')
           .map((a: any) => ({
             id: a.id,
             title: a.assignment_title,
             workTitle: a.work_title,
-            type: a.assignment_type
+            type: 'UMARead'
           }));
-        setAssignments(assignmentOptions);
+        allAssignments.push(...readingAssignments);
       }
+      
+      // Fetch UMAVocab assignments (published vocabulary lists)
+      const vocabResponse = await fetch('/api/v1/teacher/vocabulary?status=published&per_page=100', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (vocabResponse.ok) {
+        const data = await vocabResponse.json();
+        const vocabAssignments = data.items
+          .map((v: any) => ({
+            id: v.id,
+            title: v.title,
+            workTitle: `${v.grade_level} - ${v.subject_area}`,
+            type: 'UMAVocab'
+          }));
+        allAssignments.push(...vocabAssignments);
+      }
+      
+      setAssignments(allAssignments);
     } catch (error) {
       console.error('Error fetching assignments:', error);
     }
@@ -207,6 +232,9 @@ export default function Gradebook() {
       }
       if (filters.assignments.length > 0) {
         queryParams.append('assignments', filters.assignments.join(','));
+      }
+      if (filters.assignmentTypes.length > 0) {
+        queryParams.append('assignment_types', filters.assignmentTypes.join(','));
       }
       if (filters.dateRange.start) {
         queryParams.append('assigned_after', filters.dateRange.start.toISOString());
@@ -318,6 +346,9 @@ export default function Gradebook() {
       if (filters.assignments.length > 0) {
         queryParams.append('assignments', filters.assignments.join(','));
       }
+      if (filters.assignmentTypes.length > 0) {
+        queryParams.append('assignment_types', filters.assignmentTypes.join(','));
+      }
       // ... add other filters ...
       
       queryParams.append('format', 'csv');
@@ -357,7 +388,7 @@ export default function Gradebook() {
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Gradebook</h2>
           <p className="mt-1 text-sm text-gray-600">
-            View and analyze student test scores across all your UMARead assignments
+            View and analyze student test scores across all your UMARead and UMAVocab assignments
           </p>
         </div>
         <div className="flex gap-2">
@@ -425,6 +456,26 @@ export default function Gradebook() {
                     {assignment.title} - {assignment.workTitle}
                   </option>
                 ))}
+              </select>
+            </div>
+
+            {/* Assignment Type Filter */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Assignment Type
+              </label>
+              <select
+                multiple
+                value={filters.assignmentTypes}
+                onChange={(e) => {
+                  const selected = Array.from(e.target.selectedOptions, option => option.value);
+                  setFilters({ ...filters, assignmentTypes: selected });
+                }}
+                className="w-full border-gray-300 rounded-md shadow-sm"
+                size={2}
+              >
+                <option value="UMARead">UMARead</option>
+                <option value="UMAVocab">UMAVocab</option>
               </select>
             </div>
 
@@ -633,8 +684,17 @@ export default function Gradebook() {
                       {grade.student_name}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      <div className="max-w-xs truncate" title={grade.assignment_title}>
-                        {grade.assignment_title}
+                      <div className="flex items-center gap-2">
+                        <div className="max-w-xs truncate" title={grade.assignment_title}>
+                          {grade.assignment_title}
+                        </div>
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                          grade.assignment_type === 'UMARead' 
+                            ? 'bg-blue-100 text-blue-800' 
+                            : 'bg-purple-100 text-purple-800'
+                        }`}>
+                          {grade.assignment_type}
+                        </span>
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">

@@ -5,7 +5,7 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
 from uuid import UUID
 from decimal import Decimal
-from sqlalchemy import select, and_, func, desc, or_
+from sqlalchemy import select, and_, func, desc, or_, text, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload, joinedload
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Response
@@ -19,6 +19,7 @@ from app.models.user import User, UserRole
 from app.models.classroom import StudentEvent, Classroom, ClassroomStudent, ClassroomAssignment, StudentAssignment
 from app.models.reading import ReadingAssignment
 from app.models.tests import StudentTestAttempt
+from app.models.vocabulary import VocabularyList
 
 router = APIRouter()
 
@@ -69,6 +70,7 @@ class StudentGrade(BaseModel):
     student_name: str
     assignment_id: UUID
     assignment_title: str
+    assignment_type: str  # 'UMARead' or 'UMAVocab'
     work_title: str
     date_assigned: datetime
     date_completed: Optional[datetime]
@@ -263,6 +265,7 @@ async def get_gradebook(
     db: AsyncSession = Depends(get_db),
     classrooms: Optional[str] = Query(None, description="Comma-separated classroom IDs"),
     assignments: Optional[str] = Query(None, description="Comma-separated assignment IDs"),
+    assignment_types: Optional[str] = Query(None, description="Comma-separated assignment types (UMARead,UMAVocab)"),
     assigned_after: Optional[datetime] = Query(None),
     assigned_before: Optional[datetime] = Query(None),
     completed_after: Optional[datetime] = Query(None),
@@ -277,105 +280,247 @@ async def get_gradebook(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100)
 ):
-    """Get gradebook data for teacher's classrooms"""
+    """Get gradebook data for teacher's classrooms (UMARead and UMAVocab)"""
     
-    # Base query to get all student assignments for teacher's classrooms
-    query = select(
-        StudentAssignment,
-        User,
-        ClassroomAssignment,
-        ReadingAssignment,
-        Classroom,
-        StudentTestAttempt
-    ).join(
-        User, StudentAssignment.student_id == User.id
-    ).join(
-        ClassroomAssignment, StudentAssignment.classroom_assignment_id == ClassroomAssignment.id
-    ).join(
-        ReadingAssignment, ClassroomAssignment.assignment_id == ReadingAssignment.id
-    ).join(
-        Classroom, ClassroomAssignment.classroom_id == Classroom.id
-    ).outerjoin(
-        StudentTestAttempt, 
-        and_(
-            StudentTestAttempt.student_id == StudentAssignment.student_id,
-            StudentTestAttempt.assignment_id == StudentAssignment.assignment_id,
-            StudentTestAttempt.status == 'graded'
-        )
-    ).where(
-        and_(
-            Classroom.teacher_id == teacher.id,
-            Classroom.deleted_at.is_(None),
-            StudentAssignment.assignment_type == 'reading',
-            ReadingAssignment.assignment_type == 'UMARead',
-            User.deleted_at.is_(None)  # Exclude soft deleted students
-        )
-    )
+    # Parse filters
+    classroom_ids = [UUID(cid) for cid in classrooms.split(',')] if classrooms else None
+    assignment_ids = [UUID(aid) for aid in assignments.split(',')] if assignments else None
+    type_filter = assignment_types.split(',') if assignment_types else ['UMARead', 'UMAVocab']
     
-    # Apply filters
-    if classrooms:
-        classroom_ids = [UUID(cid) for cid in classrooms.split(',')]
-        query = query.where(Classroom.id.in_(classroom_ids))
-    
-    if assignments:
-        assignment_ids = [UUID(aid) for aid in assignments.split(',')]
-        query = query.where(ReadingAssignment.id.in_(assignment_ids))
-    
-    if assigned_after:
-        query = query.where(ClassroomAssignment.assigned_at >= assigned_after)
-    
-    if assigned_before:
-        query = query.where(ClassroomAssignment.assigned_at <= assigned_before)
-    
-    if completed_after:
-        query = query.where(StudentAssignment.completed_at >= completed_after)
-    
-    if completed_before:
-        query = query.where(StudentAssignment.completed_at <= completed_before)
-    
-    if student_search:
-        search_term = f"%{student_search}%"
-        query = query.where(
-            or_(
-                User.first_name.ilike(search_term),
-                User.last_name.ilike(search_term),
-                func.concat(User.first_name, ' ', User.last_name).ilike(search_term)
+    # Get all teacher's classrooms if not specified
+    if not classroom_ids:
+        classrooms_query = select(Classroom.id).where(
+            and_(
+                Classroom.teacher_id == teacher.id,
+                Classroom.deleted_at.is_(None)
             )
         )
+        classrooms_result = await db.execute(classrooms_query)
+        classroom_ids = [row[0] for row in classrooms_result.fetchall()]
     
-    if completion_status == "completed":
-        query = query.where(StudentTestAttempt.id.isnot(None))
-    elif completion_status == "incomplete":
-        query = query.where(StudentTestAttempt.id.is_(None))
+    if not classroom_ids:
+        # No classrooms found
+        return GradebookResponse(
+            grades=[],
+            summary=GradebookSummary(
+                total_students=0,
+                average_score=0.0,
+                completion_rate=0.0,
+                average_time=0.0,
+                class_average_by_assignment={}
+            ),
+            total_count=0,
+            page=page,
+            page_size=page_size
+        )
     
-    if min_score is not None:
-        query = query.where(StudentTestAttempt.score >= min_score)
+    all_grades = []
     
-    if max_score is not None:
-        query = query.where(StudentTestAttempt.score <= max_score)
+    # Query 1: Get UMARead scores (existing logic)
+    if 'UMARead' in type_filter:
+        umaread_query = select(
+            StudentAssignment,
+            User,
+            ClassroomAssignment,
+            ReadingAssignment,
+            Classroom,
+            StudentTestAttempt
+        ).join(
+            User, StudentAssignment.student_id == User.id
+        ).join(
+            ClassroomAssignment, StudentAssignment.classroom_assignment_id == ClassroomAssignment.id
+        ).join(
+            ReadingAssignment, ClassroomAssignment.assignment_id == ReadingAssignment.id
+        ).join(
+            Classroom, ClassroomAssignment.classroom_id == Classroom.id
+        ).outerjoin(
+            StudentTestAttempt, 
+            and_(
+                StudentTestAttempt.student_id == StudentAssignment.student_id,
+                StudentTestAttempt.assignment_id == StudentAssignment.assignment_id,
+                StudentTestAttempt.status == 'graded'
+            )
+        ).where(
+            and_(
+                Classroom.id.in_(classroom_ids),
+                Classroom.teacher_id == teacher.id,
+                Classroom.deleted_at.is_(None),
+                StudentAssignment.assignment_type == 'reading',
+                ReadingAssignment.assignment_type == 'UMARead',
+                User.deleted_at.is_(None)
+            )
+        )
+        
+        # Apply filters to UMARead query
+        if assignment_ids:
+            umaread_query = umaread_query.where(ReadingAssignment.id.in_(assignment_ids))
+        if assigned_after:
+            umaread_query = umaread_query.where(ClassroomAssignment.assigned_at >= assigned_after)
+        if assigned_before:
+            umaread_query = umaread_query.where(ClassroomAssignment.assigned_at <= assigned_before)
+        if completed_after:
+            umaread_query = umaread_query.where(StudentAssignment.completed_at >= completed_after)
+        if completed_before:
+            umaread_query = umaread_query.where(StudentAssignment.completed_at <= completed_before)
+        if student_search:
+            search_term = f"%{student_search}%"
+            umaread_query = umaread_query.where(
+                or_(
+                    User.first_name.ilike(search_term),
+                    User.last_name.ilike(search_term),
+                    func.concat(User.first_name, ' ', User.last_name).ilike(search_term)
+                )
+            )
+        if completion_status == "completed":
+            umaread_query = umaread_query.where(StudentTestAttempt.id.isnot(None))
+        elif completion_status == "incomplete":
+            umaread_query = umaread_query.where(StudentTestAttempt.id.is_(None))
+        if min_score is not None:
+            umaread_query = umaread_query.where(StudentTestAttempt.score >= min_score)
+        if max_score is not None:
+            umaread_query = umaread_query.where(StudentTestAttempt.score <= max_score)
+        
+        # Execute UMARead query
+        result = await db.execute(umaread_query)
+        umaread_rows = result.all()
+        
+        # Process UMARead results
+        for row in umaread_rows:
+            student_assignment = row.StudentAssignment
+            student = row.User
+            classroom_assignment = row.ClassroomAssignment
+            assignment = row.ReadingAssignment
+            test_attempt = row.StudentTestAttempt
+            
+            # Determine status
+            if test_attempt and test_attempt.status == 'graded':
+                status = 'completed'
+            elif student_assignment.completed_at:
+                status = 'test_available'
+            elif student_assignment.started_at:
+                status = 'in_progress'
+            else:
+                status = 'not_started'
+            
+            all_grades.append(StudentGrade(
+                id=str(student_assignment.id),
+                student_id=student.id,
+                student_name=f"{student.last_name}, {student.first_name}",
+                assignment_id=assignment.id,
+                assignment_title=assignment.assignment_title,
+                assignment_type='UMARead',
+                work_title=assignment.work_title,
+                date_assigned=classroom_assignment.assigned_at,
+                date_completed=student_assignment.completed_at,
+                test_date=test_attempt.submitted_at if test_attempt else None,
+                test_score=float(test_attempt.score) if test_attempt and test_attempt.score else None,
+                difficulty_reached=student_assignment.progress_metadata.get('highest_difficulty') if student_assignment.progress_metadata else None,
+                time_spent=test_attempt.time_spent_seconds // 60 if test_attempt and test_attempt.time_spent_seconds else None,
+                status=status
+            ))
     
-    # Execute query to get all results for summary statistics
-    result = await db.execute(query)
-    all_rows = result.all()
+    # Query 2: Get UMAVocab scores from gradebook_entries
+    if 'UMAVocab' in type_filter:
+        # Build filters for SQL query
+        # Build classroom IDs list
+        classroom_id_list = ','.join([f"'{str(cid)}'" for cid in classroom_ids])
+        
+        filters = [
+            "ge.assignment_type = 'umavocab_test'",
+            f"ge.classroom_id IN ({classroom_id_list})",
+            "u.deleted_at IS NULL"
+        ]
+        
+        if assignment_ids:
+            assignment_id_list = ','.join([f"'{str(aid)}'" for aid in assignment_ids])
+            filters.append(f"ge.assignment_id IN ({assignment_id_list})")
+        if completed_after:
+            filters.append(f"ge.completed_at >= '{completed_after.isoformat()}'")
+        if completed_before:
+            filters.append(f"ge.completed_at <= '{completed_before.isoformat()}'")
+        if student_search:
+            search_term = student_search.replace("'", "''")  # Escape single quotes
+            filters.append(
+                f"(u.first_name ILIKE '%{search_term}%' OR "
+                f"u.last_name ILIKE '%{search_term}%' OR "
+                f"CONCAT(u.first_name, ' ', u.last_name) ILIKE '%{search_term}%')"
+            )
+        if completion_status == "completed":
+            filters.append("ge.score_percentage IS NOT NULL")
+        elif completion_status == "incomplete":
+            filters.append("ge.score_percentage IS NULL")
+        if min_score is not None:
+            filters.append(f"ge.score_percentage >= {min_score}")
+        if max_score is not None:
+            filters.append(f"ge.score_percentage <= {max_score}")
+        
+        # Query gradebook_entries for vocabulary test scores
+        vocab_sql = f"""
+            SELECT 
+                ge.id,
+                ge.student_id,
+                u.first_name,
+                u.last_name,
+                ge.assignment_id,
+                vl.title as assignment_title,
+                vl.context_description,
+                ca.assigned_at,
+                ge.completed_at,
+                ge.score_percentage,
+                ge.metadata,
+                c.name as classroom_name
+            FROM gradebook_entries ge
+            JOIN users u ON ge.student_id = u.id
+            JOIN vocabulary_lists vl ON ge.assignment_id = vl.id
+            JOIN classrooms c ON ge.classroom_id = c.id
+            LEFT JOIN classroom_assignments ca ON ca.classroom_id = ge.classroom_id 
+                AND ca.assignment_id = ge.assignment_id
+                AND ca.assignment_type = 'vocabulary'
+            WHERE {' AND '.join(filters)}
+        """
+        
+        vocab_result = await db.execute(text(vocab_sql))
+        vocab_rows = vocab_result.fetchall()
+        
+        # Process UMAVocab results
+        for row in vocab_rows:
+            metadata = row.metadata or {}
+            time_spent = metadata.get('time_spent_seconds', 0) // 60 if metadata.get('time_spent_seconds') else None
+            
+            all_grades.append(StudentGrade(
+                id=str(row.id),
+                student_id=row.student_id,
+                student_name=f"{row.last_name}, {row.first_name}",
+                assignment_id=row.assignment_id,
+                assignment_title=row.assignment_title,
+                assignment_type='UMAVocab',
+                work_title=row.context_description[:50] + '...' if len(row.context_description) > 50 else row.context_description,
+                date_assigned=row.assigned_at or row.completed_at,  # Use completed_at if assigned_at is null
+                date_completed=row.completed_at,
+                test_date=row.completed_at,
+                test_score=float(row.score_percentage) if row.score_percentage else None,
+                difficulty_reached=None,  # Not applicable for vocabulary
+                time_spent=time_spent,
+                status='completed' if row.score_percentage is not None else 'in_progress'
+            ))
     
     # Calculate summary statistics
-    total_students = len(set(row.User.id for row in all_rows))
-    scores = [float(row.StudentTestAttempt.score) for row in all_rows if row.StudentTestAttempt and row.StudentTestAttempt.score]
+    total_students = len(set(grade.student_id for grade in all_grades))
+    scores = [grade.test_score for grade in all_grades if grade.test_score is not None]
     average_score = sum(scores) / len(scores) if scores else 0.0
-    completion_rate = (len(scores) / len(all_rows) * 100) if all_rows else 0.0
+    completion_rate = (len(scores) / len(all_grades) * 100) if all_grades else 0.0
     
-    times = [row.StudentTestAttempt.time_spent_seconds / 60 for row in all_rows 
-             if row.StudentTestAttempt and row.StudentTestAttempt.time_spent_seconds]
+    times = [grade.time_spent for grade in all_grades if grade.time_spent is not None]
     average_time = sum(times) / len(times) if times else 0.0
     
     # Calculate class averages by assignment
     assignment_scores: Dict[str, List[float]] = {}
-    for row in all_rows:
-        if row.StudentTestAttempt and row.StudentTestAttempt.score:
-            assignment_key = str(row.ReadingAssignment.id)
+    for grade in all_grades:
+        if grade.test_score is not None:
+            assignment_key = str(grade.assignment_id)
             if assignment_key not in assignment_scores:
                 assignment_scores[assignment_key] = []
-            assignment_scores[assignment_key].append(float(row.StudentTestAttempt.score))
+            assignment_scores[assignment_key].append(grade.test_score)
     
     class_average_by_assignment = {
         aid: sum(scores) / len(scores) 
@@ -384,63 +529,25 @@ async def get_gradebook(
     
     # Apply sorting
     if sort_by == "student_name":
-        all_rows.sort(key=lambda x: f"{x.User.last_name} {x.User.first_name}", 
-                     reverse=(sort_direction == "desc"))
+        all_grades.sort(key=lambda x: x.student_name, reverse=(sort_direction == "desc"))
     elif sort_by == "assignment_title":
-        all_rows.sort(key=lambda x: x.ReadingAssignment.assignment_title, 
-                     reverse=(sort_direction == "desc"))
+        all_grades.sort(key=lambda x: x.assignment_title, reverse=(sort_direction == "desc"))
+    elif sort_by == "assignment_type":
+        all_grades.sort(key=lambda x: x.assignment_type, reverse=(sort_direction == "desc"))
     elif sort_by == "date_assigned":
-        all_rows.sort(key=lambda x: x.ClassroomAssignment.assigned_at, 
-                     reverse=(sort_direction == "desc"))
+        all_grades.sort(key=lambda x: x.date_assigned or datetime.min, reverse=(sort_direction == "desc"))
     elif sort_by == "test_date":
-        all_rows.sort(key=lambda x: x.StudentTestAttempt.submitted_at if x.StudentTestAttempt else datetime.min, 
-                     reverse=(sort_direction == "desc"))
+        all_grades.sort(key=lambda x: x.test_date or datetime.min, reverse=(sort_direction == "desc"))
     elif sort_by == "test_score":
-        all_rows.sort(key=lambda x: float(x.StudentTestAttempt.score) if x.StudentTestAttempt and x.StudentTestAttempt.score else -1, 
-                     reverse=(sort_direction == "desc"))
+        all_grades.sort(key=lambda x: x.test_score or -1, reverse=(sort_direction == "desc"))
     
     # Apply pagination
     start = (page - 1) * page_size
     end = start + page_size
-    paginated_rows = all_rows[start:end]
-    
-    # Format response
-    grades = []
-    for row in paginated_rows:
-        student_assignment = row.StudentAssignment
-        student = row.User
-        classroom_assignment = row.ClassroomAssignment
-        assignment = row.ReadingAssignment
-        test_attempt = row.StudentTestAttempt
-        
-        # Determine status
-        if test_attempt and test_attempt.status == 'graded':
-            status = 'completed'
-        elif student_assignment.completed_at:
-            status = 'test_available'
-        elif student_assignment.started_at:
-            status = 'in_progress'
-        else:
-            status = 'not_started'
-        
-        grades.append(StudentGrade(
-            id=str(student_assignment.id),
-            student_id=student.id,
-            student_name=f"{student.last_name}, {student.first_name}",
-            assignment_id=assignment.id,
-            assignment_title=assignment.assignment_title,
-            work_title=assignment.work_title,
-            date_assigned=classroom_assignment.assigned_at,
-            date_completed=student_assignment.completed_at,
-            test_date=test_attempt.submitted_at if test_attempt else None,
-            test_score=float(test_attempt.score) if test_attempt and test_attempt.score else None,
-            difficulty_reached=student_assignment.progress_metadata.get('highest_difficulty') if student_assignment.progress_metadata else None,
-            time_spent=test_attempt.time_spent_seconds // 60 if test_attempt and test_attempt.time_spent_seconds else None,
-            status=status
-        ))
+    paginated_grades = all_grades[start:end]
     
     return GradebookResponse(
-        grades=grades,
+        grades=paginated_grades,
         summary=GradebookSummary(
             total_students=total_students,
             average_score=round(average_score, 1),
@@ -448,7 +555,7 @@ async def get_gradebook(
             average_time=round(average_time, 1),
             class_average_by_assignment=class_average_by_assignment
         ),
-        total_count=len(all_rows),
+        total_count=len(all_grades),
         page=page,
         page_size=page_size
     )
@@ -460,6 +567,7 @@ async def export_gradebook(
     db: AsyncSession = Depends(get_db),
     classrooms: Optional[str] = Query(None, description="Comma-separated classroom IDs"),
     assignments: Optional[str] = Query(None, description="Comma-separated assignment IDs"),
+    assignment_types: Optional[str] = Query(None, description="Comma-separated assignment types (UMARead,UMAVocab)"),
     assigned_after: Optional[datetime] = Query(None),
     assigned_before: Optional[datetime] = Query(None),
     completed_after: Optional[datetime] = Query(None),
@@ -485,6 +593,7 @@ async def export_gradebook(
         db=db,
         classrooms=classrooms,
         assignments=assignments,
+        assignment_types=assignment_types,
         assigned_after=assigned_after,
         assigned_before=assigned_before,
         completed_after=completed_after,
@@ -506,6 +615,7 @@ async def export_gradebook(
     writer.writerow([
         'Student Name',
         'Assignment Title',
+        'Assignment Type',
         'Work Title',
         'Date Assigned',
         'Date Completed',
@@ -520,6 +630,7 @@ async def export_gradebook(
         writer.writerow([
             grade.student_name,
             grade.assignment_title,
+            grade.assignment_type,
             grade.work_title,
             grade.date_assigned.strftime('%Y-%m-%d') if grade.date_assigned else '',
             grade.date_completed.strftime('%Y-%m-%d') if grade.date_completed else '',
