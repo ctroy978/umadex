@@ -82,12 +82,12 @@ export default function CreateVocabularyPage() {
               return acc
             }, [])
             
-            // Limit to 50 words max
-            draft.words = uniqueWords.slice(0, 50)
+            // Limit to 8 words max
+            draft.words = uniqueWords.slice(0, 8)
             
-            // If draft has more than 50 words, it's likely corrupted
-            if (uniqueWords.length > 50) {
-              console.warn('Draft had too many words, truncating to 50')
+            // If draft has more than 8 words, it's likely corrupted
+            if (uniqueWords.length > 8) {
+              console.warn('Draft had too many words, truncating to 8')
               localStorage.removeItem('vocabulary-draft')
             }
           }
@@ -113,7 +113,7 @@ export default function CreateVocabularyPage() {
       setAutoSaveStatus('saving')
       
       // Validate before saving - ensure words array is reasonable
-      if (formData.words && formData.words.length <= 50) {
+      if (formData.words && formData.words.length <= 8) {
         localStorage.setItem('vocabulary-draft', JSON.stringify(formData))
         setAutoSaveStatus('saved')
       } else {
@@ -134,8 +134,8 @@ export default function CreateVocabularyPage() {
       // Filter out empty words
       const validWords = data.words.filter(word => word.word.trim())
       
-      if (validWords.length < 5) {
-        alert('Please provide at least 5 vocabulary words')
+      if (validWords.length < 4) {
+        alert('Please provide at least 4 vocabulary words')
         setIsSubmitting(false)
         return
       }
@@ -174,7 +174,7 @@ export default function CreateVocabularyPage() {
   }
 
   const addWord = () => {
-    if (fields.length < 50) {
+    if (fields.length < 8) {
       append({ word: '', teacher_definition: '', teacher_example_1: '', teacher_example_2: '' })
     }
   }
@@ -280,15 +280,15 @@ export default function CreateVocabularyPage() {
             <div>
               <h2 className="text-lg font-medium">Vocabulary Words</h2>
               <p className="text-sm text-gray-600">
-                Add 5-50 words. You can optionally provide definitions and examples.
+                Add 4-8 words. You can optionally provide definitions and examples.
               </p>
             </div>
             <div className="text-sm">
-              <span className={fields.length < 5 ? "text-red-600 font-medium" : "text-gray-500"}>
-                {fields.length} / 50 words
+              <span className={fields.length < 4 ? "text-red-600 font-medium" : "text-gray-500"}>
+                {fields.length} / 8 words
               </span>
-              {fields.length < 5 && (
-                <span className="text-red-600 ml-2">(minimum 5 required)</span>
+              {fields.length < 4 && (
+                <span className="text-red-600 ml-2">(minimum 4 required)</span>
               )}
             </div>
           </div>
@@ -364,7 +364,7 @@ export default function CreateVocabularyPage() {
             ))}
           </div>
 
-          {fields.length < 50 && (
+          {fields.length < 8 && (
             <button
               type="button"
               onClick={addWord}
