@@ -1331,7 +1331,6 @@ async def submit_puzzle_answer(
 ):
     """Submit a puzzle answer for evaluation"""
     logger = logging.getLogger(__name__)
-    logger.info(f"API: submit_puzzle_answer called - attempt_id={puzzle_attempt_id}, request={request}")
     
     try:
         # Validate puzzle_id
