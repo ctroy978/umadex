@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { studentApi } from '@/lib/studentApi'
 import {
   ArrowLeftIcon,
@@ -67,7 +67,9 @@ const MAX_WORDS = 500
 export default function StoryBuilderPage() {
   const params = useParams()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const vocabularyId = params.id as string
+  const classroomId = searchParams.get('classroomId')
 
   const [storySession, setStorySession] = useState<StorySession | null>(null)
   const [currentStory, setCurrentStory] = useState('')
@@ -141,7 +143,8 @@ export default function StoryBuilderPage() {
       } else {
         alert('Failed to start story builder. Please try again.')
       }
-      router.back()
+      const query = classroomId ? `?classroomId=${classroomId}` : ''
+      router.push(`/student/vocabulary/${vocabularyId}/practice${query}`)
     } finally {
       setLoading(false)
     }
@@ -209,7 +212,8 @@ export default function StoryBuilderPage() {
           })
         } else {
           // No more prompts
-          router.push(`/student/vocabulary/${vocabularyId}/practice`)
+          const query = classroomId ? `?classroomId=${classroomId}` : ''
+          router.push(`/student/vocabulary/${vocabularyId}/practice${query}`)
         }
       } catch (err) {
         console.error('Failed to get next prompt:', err)
@@ -225,7 +229,8 @@ export default function StoryBuilderPage() {
     try {
       const result = await studentApi.confirmStoryCompletion(storySession.story_attempt_id)
       // Redirect to practice page with success message
-      router.push(`/student/vocabulary/${vocabularyId}/practice?completed=story-builder`)
+      const query = classroomId ? `&classroomId=${classroomId}` : ''
+      router.push(`/student/vocabulary/${vocabularyId}/practice?completed=story-builder${query}`)
     } catch (err: any) {
       console.error('Failed to confirm completion:', err)
       alert('Failed to complete assignment. Please try again.')
@@ -241,7 +246,8 @@ export default function StoryBuilderPage() {
     try {
       const result = await studentApi.declineStoryCompletion(storySession.story_attempt_id)
       // Redirect to practice page
-      router.push(`/student/vocabulary/${vocabularyId}/practice`)
+      const query = classroomId ? `?classroomId=${classroomId}` : ''
+      router.push(`/student/vocabulary/${vocabularyId}/practice${query}`)
     } catch (err: any) {
       console.error('Failed to decline completion:', err)
       alert('Failed to process request. Please try again.')
@@ -272,7 +278,10 @@ export default function StoryBuilderPage() {
           <ExclamationCircleIcon className="h-12 w-12 text-red-500 mx-auto mb-4" />
           <p className="text-gray-600">Unable to load story challenge. Please try again.</p>
           <button
-            onClick={() => router.back()}
+            onClick={() => {
+              const query = classroomId ? `?classroomId=${classroomId}` : ''
+              router.push(`/student/vocabulary/${vocabularyId}/practice${query}`)
+            }}
             className="mt-4 px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
           >
             Go Back
@@ -290,7 +299,14 @@ export default function StoryBuilderPage() {
           <div className="py-4 flex items-center justify-between">
             <div className="flex items-center">
               <button
-                onClick={() => router.back()}
+                onClick={() => {
+                  if (storySession && !storySession.is_complete) {
+                    const confirmLeave = window.confirm('You have unsaved progress. Are you sure you want to leave?')
+                    if (!confirmLeave) return
+                  }
+                  const query = classroomId ? `?classroomId=${classroomId}` : ''
+          router.push(`/student/vocabulary/${vocabularyId}/practice${query}`)
+                }}
                 className="mr-4 text-gray-500 hover:text-gray-700"
               >
                 <ArrowLeftIcon className="h-5 w-5" />

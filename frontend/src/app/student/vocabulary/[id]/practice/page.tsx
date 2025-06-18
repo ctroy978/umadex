@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { studentApi } from '@/lib/studentApi'
 import {
   ArrowLeftIcon,
@@ -37,7 +37,9 @@ interface PracticeStatus {
 export default function VocabularyPracticePage() {
   const params = useParams()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const vocabularyId = params.id as string
+  const classroomId = searchParams.get('classroomId')
 
   const [practiceStatus, setPracticeStatus] = useState<PracticeStatus | null>(null)
   const [loading, setLoading] = useState(true)
@@ -115,14 +117,16 @@ export default function VocabularyPracticePage() {
       return
     }
     
+    const query = classroomId ? `?classroomId=${classroomId}` : ''
+    
     if (assignment.type === 'story_builder' && assignment.can_start) {
-      router.push(`/student/vocabulary/${vocabularyId}/practice/story-builder`)
+      router.push(`/student/vocabulary/${vocabularyId}/practice/story-builder${query}`)
     } else if (assignment.type === 'concept_mapping' && assignment.can_start) {
-      router.push(`/student/vocabulary/${vocabularyId}/practice/concept-mapping`)
+      router.push(`/student/vocabulary/${vocabularyId}/practice/concept-mapping${query}`)
     } else if (assignment.type === 'puzzle_path' && assignment.can_start) {
-      router.push(`/student/vocabulary/${vocabularyId}/practice/puzzle-path`)
+      router.push(`/student/vocabulary/${vocabularyId}/practice/puzzle-path${query}`)
     } else if (assignment.type === 'fill_in_blank' && assignment.can_start) {
-      router.push(`/student/vocabulary/${vocabularyId}/practice/fill-in-blank`)
+      router.push(`/student/vocabulary/${vocabularyId}/practice/fill-in-blank${query}`)
     }
   }
 
@@ -145,7 +149,10 @@ export default function VocabularyPracticePage() {
           <h2 className="text-xl font-semibold text-gray-900 mb-2">Error Loading Activities</h2>
           <p className="text-gray-600 mb-6">{error || 'Unable to load practice activities'}</p>
           <button
-            onClick={() => router.back()}
+            onClick={() => {
+              const query = classroomId ? `?classroomId=${classroomId}` : ''
+              router.push(`/student/assignment/vocabulary/${vocabularyId}${query}`)
+            }}
             className="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
           >
             Go Back
@@ -163,7 +170,10 @@ export default function VocabularyPracticePage() {
           <div className="py-4 flex items-center justify-between">
             <div className="flex items-center">
               <button
-                onClick={() => router.back()}
+                onClick={() => {
+                  const query = classroomId ? `?classroomId=${classroomId}` : ''
+                  router.push(`/student/assignment/vocabulary/${vocabularyId}${query}`)
+                }}
                 className="mr-4 text-gray-500 hover:text-gray-700"
               >
                 <ArrowLeftIcon className="h-5 w-5" />
@@ -351,7 +361,8 @@ export default function VocabularyPracticePage() {
               <button
                 onClick={() => {
                   if (practiceStatus.test_unlocked && !practiceStatus.test_completed) {
-                    router.push(`/student/vocabulary/${vocabularyId}/test`)
+                    const query = classroomId ? `?classroomId=${classroomId}` : ''
+                    router.push(`/student/vocabulary/${vocabularyId}/test${query}`)
                   }
                 }}
                 disabled={!practiceStatus.test_unlocked || practiceStatus.test_completed}

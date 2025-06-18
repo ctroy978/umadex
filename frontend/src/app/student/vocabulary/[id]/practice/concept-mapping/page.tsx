@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { studentApi } from '@/lib/studentApi'
 import {
   ArrowLeftIcon,
@@ -79,7 +79,9 @@ interface SubmissionResult {
 export default function ConceptMappingPage() {
   const params = useParams()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const vocabularyId = params.id as string
+  const classroomId = searchParams.get('classroomId')
 
   const [session, setSession] = useState<ConceptMapSession | null>(null)
   const [formData, setFormData] = useState<ConceptMapFormData>({
@@ -154,7 +156,8 @@ export default function ConceptMappingPage() {
     } catch (err: any) {
       console.error('Failed to start concept mapping:', err)
       alert('Failed to start concept mapping. Please try again.')
-      router.back()
+      const query = classroomId ? `?classroomId=${classroomId}` : ''
+      router.push(`/student/vocabulary/${vocabularyId}/practice${query}`)
     } finally {
       setLoading(false)
     }
@@ -286,7 +289,8 @@ export default function ConceptMappingPage() {
         setShowCompletionDialog(true)
       } else {
         // Otherwise go to practice menu
-        router.push(`/student/vocabulary/${vocabularyId}/practice`)
+        const query = classroomId ? `?classroomId=${classroomId}` : ''
+        router.push(`/student/vocabulary/${vocabularyId}/practice${query}`)
       }
     } else {
       // Continue to next word
@@ -329,7 +333,8 @@ export default function ConceptMappingPage() {
       
       // Show completion message
       alert(`Concept mapping completed! You scored ${result.average_score?.toFixed(1)}/4.0 on ${result.words_completed} words.`)
-      router.push(`/student/vocabulary/${vocabularyId}/practice`)
+      const query = classroomId ? `?classroomId=${classroomId}` : ''
+      router.push(`/student/vocabulary/${vocabularyId}/practice${query}`)
     } catch (err: any) {
       console.error('Failed to finish early:', err)
       alert('Failed to finish early. Please try again.')
@@ -343,7 +348,8 @@ export default function ConceptMappingPage() {
     try {
       const result = await studentApi.confirmConceptCompletion(session.concept_attempt_id)
       // Redirect to practice page with success message
-      router.push(`/student/vocabulary/${vocabularyId}/practice?completed=concept-mapping`)
+      const query = classroomId ? `&classroomId=${classroomId}` : ''
+      router.push(`/student/vocabulary/${vocabularyId}/practice?completed=concept-mapping${query}`)
     } catch (err: any) {
       console.error('Failed to confirm completion:', err)
       alert('Failed to complete assignment. Please try again.')
@@ -359,7 +365,8 @@ export default function ConceptMappingPage() {
     try {
       const result = await studentApi.declineConceptCompletion(session.concept_attempt_id)
       // Redirect to practice page
-      router.push(`/student/vocabulary/${vocabularyId}/practice`)
+      const query = classroomId ? `?classroomId=${classroomId}` : ''
+      router.push(`/student/vocabulary/${vocabularyId}/practice${query}`)
     } catch (err: any) {
       console.error('Failed to decline completion:', err)
       alert('Failed to process request. Please try again.')
@@ -401,7 +408,10 @@ export default function ConceptMappingPage() {
           <h2 className="text-xl font-semibold text-gray-900 mb-2">Session Error</h2>
           <p className="text-gray-600 mb-6">Unable to start concept mapping session</p>
           <button
-            onClick={() => router.back()}
+            onClick={() => {
+              const query = classroomId ? `?classroomId=${classroomId}` : ''
+              router.push(`/student/vocabulary/${vocabularyId}/practice${query}`)
+            }}
             className="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
           >
             Go Back
@@ -419,7 +429,14 @@ export default function ConceptMappingPage() {
           <div className="py-4 flex items-center justify-between">
             <div className="flex items-center">
               <button
-                onClick={() => router.back()}
+                onClick={() => {
+                  if (session && !isComplete) {
+                    const confirmLeave = window.confirm('You have unsaved progress. Are you sure you want to leave?')
+                    if (!confirmLeave) return
+                  }
+                  const query = classroomId ? `?classroomId=${classroomId}` : ''
+        router.push(`/student/vocabulary/${vocabularyId}/practice${query}`)
+                }}
                 className="mr-4 text-gray-500 hover:text-gray-700"
               >
                 <ArrowLeftIcon className="h-5 w-5" />

@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useCallback } from 'react'
-import { useRouter, useParams } from 'next/navigation'
+import { useRouter, useParams, useSearchParams } from 'next/navigation'
 import { 
   ArrowLeftIcon, 
   CheckCircleIcon, 
@@ -48,7 +48,9 @@ interface SubmissionResult {
 export default function FillInBlankPracticePage() {
   const router = useRouter()
   const params = useParams()
+  const searchParams = useSearchParams()
   const assignmentId = params.id as string
+  const classroomId = searchParams.get('classroomId')
 
   const [session, setSession] = useState<FillInBlankSession | null>(null)
   const [loading, setLoading] = useState(true)
@@ -160,7 +162,8 @@ export default function FillInBlankPracticePage() {
     try {
       setConfirmingCompletion(true)
       await studentApi.confirmFillInBlankCompletion(session.fill_in_blank_attempt_id)
-      router.push(`/student/vocabulary/${assignmentId}/practice`)
+      const query = classroomId ? `?classroomId=${classroomId}` : ''
+      router.push(`/student/vocabulary/${assignmentId}/practice${query}`)
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Failed to confirm completion')
       console.error('Failed to confirm completion:', err)
@@ -175,7 +178,8 @@ export default function FillInBlankPracticePage() {
     try {
       setConfirmingCompletion(true)
       await studentApi.declineFillInBlankCompletion(session.fill_in_blank_attempt_id)
-      router.push(`/student/vocabulary/${assignmentId}/practice`)
+      const query = classroomId ? `?classroomId=${classroomId}` : ''
+      router.push(`/student/vocabulary/${assignmentId}/practice${query}`)
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Failed to decline completion')
       console.error('Failed to decline completion:', err)
@@ -185,11 +189,8 @@ export default function FillInBlankPracticePage() {
   }
 
   const goBack = () => {
-    if (session && !session.is_complete) {
-      const confirmLeave = window.confirm('You have unsaved progress. Are you sure you want to leave?')
-      if (!confirmLeave) return
-    }
-    router.push(`/student/vocabulary/${assignmentId}/practice`)
+    const query = classroomId ? `?classroomId=${classroomId}` : ''
+    router.push(`/student/vocabulary/${assignmentId}/practice${query}`)
   }
 
   if (loading) {
@@ -236,7 +237,14 @@ export default function FillInBlankPracticePage() {
           <div className="flex items-center justify-between py-4">
             <div className="flex items-center">
               <button
-                onClick={goBack}
+                onClick={() => {
+                  if (session && !session.is_complete) {
+                    const confirmLeave = window.confirm('You have unsaved progress. Are you sure you want to leave?')
+                    if (!confirmLeave) return
+                  }
+                  const query = classroomId ? `?classroomId=${classroomId}` : ''
+                  router.push(`/student/vocabulary/${assignmentId}/practice${query}`)
+                }}
                 className="flex items-center text-gray-600 hover:text-gray-900"
               >
                 <ArrowLeftIcon className="h-5 w-5 mr-2" />

@@ -43,7 +43,7 @@ export default function AssignmentCard({ assignment, classroomId }: AssignmentCa
         }
       } else if (!assignment.is_completed) {
         // Navigate to assignment page for incomplete assignments
-        router.push(`/student/assignment/${assignment.item_type}/${assignment.id}`)
+        router.push(`/student/assignment/${assignment.item_type}/${assignment.id}?classroomId=${classroomId}`)
       }
     }
   }

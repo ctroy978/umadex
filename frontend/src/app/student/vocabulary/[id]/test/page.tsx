@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { studentApi, VocabularyTestStartResponse, VocabularyTestAttemptResponse } from '@/lib/studentApi'
 import VocabularyTestInterface from '@/components/student/vocabulary-test/VocabularyTestInterface'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -39,7 +39,9 @@ interface TestResults {
 export default function VocabularyTestPage() {
   const params = useParams()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const assignmentId = params.id as string
+  const classroomId = searchParams.get('classroomId')
 
   const [pageState, setPageState] = useState<PageState>('loading')
   const [eligibilityData, setEligibilityData] = useState<any>(null)
@@ -126,7 +128,10 @@ export default function VocabularyTestPage() {
           </Alert>
           
           <div className="mt-4">
-            <Button onClick={() => router.back()} variant="outline">
+            <Button onClick={() => {
+              const query = classroomId ? `?classroomId=${classroomId}` : ''
+              router.push(`/student/vocabulary/${assignmentId}/practice${query}`)
+            }} variant="outline">
               <ArrowLeft className="w-4 h-4 mr-2" />
               Go Back
             </Button>
@@ -200,7 +205,10 @@ export default function VocabularyTestPage() {
               </div>
 
               <div className="flex gap-2">
-                <Button onClick={() => router.back()} variant="outline">
+                <Button onClick={() => {
+              const query = classroomId ? `?classroomId=${classroomId}` : ''
+              router.push(`/student/vocabulary/${assignmentId}/practice${query}`)
+            }} variant="outline">
                   <ArrowLeft className="w-4 h-4 mr-2" />
                   Back to Practice
                 </Button>
@@ -268,7 +276,10 @@ export default function VocabularyTestPage() {
               </div>
 
               <div className="flex gap-2 justify-end">
-                <Button onClick={() => router.back()} variant="outline">
+                <Button onClick={() => {
+              const query = classroomId ? `?classroomId=${classroomId}` : ''
+              router.push(`/student/vocabulary/${assignmentId}/practice${query}`)
+            }} variant="outline">
                   <ArrowLeft className="w-4 h-4 mr-2" />
                   Cancel
                 </Button>
@@ -381,7 +392,10 @@ export default function VocabularyTestPage() {
               </div>
 
               <div className="flex gap-2 justify-center">
-                <Button onClick={() => router.back()} className="bg-blue-600 hover:bg-blue-700">
+                <Button onClick={() => {
+                  const query = classroomId ? `?classroomId=${classroomId}` : ''
+                  router.push(`/student/vocabulary/${assignmentId}/practice${query}`)
+                }} className="bg-blue-600 hover:bg-blue-700">
                   Return to Assignment
                 </Button>
               </div>

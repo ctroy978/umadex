@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { studentApi } from '@/lib/studentApi'
 import {
   ArrowLeftIcon,
@@ -52,7 +52,9 @@ interface VocabularyAssignment {
 export default function VocabularyAssignmentPage() {
   const params = useParams()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const assignmentId = params.id as string
+  const classroomId = searchParams.get('classroomId')
 
   const [assignment, setAssignment] = useState<VocabularyAssignment | null>(null)
   const [loading, setLoading] = useState(true)
@@ -83,11 +85,13 @@ export default function VocabularyAssignmentPage() {
   }
 
   const handleStartPresentation = () => {
-    router.push(`/student/vocabulary/${assignmentId}/presentation`)
+    const query = classroomId ? `?classroomId=${classroomId}` : ''
+    router.push(`/student/vocabulary/${assignmentId}/presentation${query}`)
   }
 
   const handleStartFlashCards = () => {
-    router.push(`/student/vocabulary/${assignmentId}/flashcards`)
+    const query = classroomId ? `?classroomId=${classroomId}` : ''
+    router.push(`/student/vocabulary/${assignmentId}/flashcards${query}`)
   }
 
   const formatTimeRemaining = (endDate: string | null | undefined) => {
@@ -161,7 +165,13 @@ export default function VocabularyAssignmentPage() {
           <div className="py-4 flex items-center justify-between">
             <div className="flex items-center">
               <button
-                onClick={() => router.back()}
+                onClick={() => {
+                  if (classroomId) {
+                    router.push(`/student/classrooms/${classroomId}`)
+                  } else {
+                    router.push('/student/dashboard')
+                  }
+                }}
                 className="mr-4 text-gray-500 hover:text-gray-700"
               >
                 <ArrowLeftIcon className="h-5 w-5" />
@@ -328,7 +338,10 @@ export default function VocabularyAssignmentPage() {
               </div>
             </div>
             <button
-              onClick={() => router.push(`/student/vocabulary/${assignmentId}/practice`)}
+              onClick={() => {
+                const query = classroomId ? `?classroomId=${classroomId}` : ''
+                router.push(`/student/vocabulary/${assignmentId}/practice${query}`)
+              }}
               disabled={assignment.available_words === 0}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                 assignment.available_words > 0

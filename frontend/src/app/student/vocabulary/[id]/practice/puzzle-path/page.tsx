@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { studentApi } from '@/lib/studentApi'
 import {
   ArrowLeftIcon,
@@ -79,7 +79,9 @@ interface PuzzleSubmissionResult {
 export default function PuzzlePathPage() {
   const params = useParams()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const vocabularyId = params.id as string
+  const classroomId = searchParams.get('classroomId')
 
   const [session, setSession] = useState<PuzzleSession | null>(null)
   const [loading, setLoading] = useState(true)
@@ -373,7 +375,10 @@ export default function PuzzlePathPage() {
           <h2 className="text-xl font-semibold text-gray-900 mb-2">Error</h2>
           <p className="text-gray-600 mb-6">{error}</p>
           <button
-            onClick={() => router.back()}
+            onClick={() => {
+              const query = classroomId ? `?classroomId=${classroomId}` : ''
+              router.push(`/student/vocabulary/${vocabularyId}/practice${query}`)
+            }}
             className="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
           >
             Go Back
@@ -389,7 +394,8 @@ export default function PuzzlePathPage() {
     setConfirmingCompletion(true)
     try {
       const result = await studentApi.confirmPuzzleCompletion(session.puzzle_attempt_id)
-      router.push(`/student/vocabulary/${vocabularyId}/practice?completed=puzzle-path`)
+      const query = classroomId ? `&classroomId=${classroomId}` : ''
+      router.push(`/student/vocabulary/${vocabularyId}/practice?completed=puzzle-path${query}`)
     } catch (err: any) {
       console.error('Failed to confirm completion:', err)
       
@@ -407,7 +413,8 @@ export default function PuzzlePathPage() {
     setConfirmingCompletion(true)
     try {
       const result = await studentApi.declinePuzzleCompletion(session.puzzle_attempt_id)
-      router.push(`/student/vocabulary/${vocabularyId}/practice`)
+      const query = classroomId ? `?classroomId=${classroomId}` : ''
+      router.push(`/student/vocabulary/${vocabularyId}/practice${query}`)
     } catch (err: any) {
       console.error('Failed to decline completion:', err)
       alert('Failed to process request. Please try again.')
@@ -438,7 +445,10 @@ export default function PuzzlePathPage() {
           </p>
           <div className="space-y-3">
             <button
-              onClick={() => router.push(`/student/vocabulary/${vocabularyId}/practice`)}
+              onClick={() => {
+              const query = classroomId ? `?classroomId=${classroomId}` : ''
+              router.push(`/student/vocabulary/${vocabularyId}/practice${query}`)
+            }}
               className="w-full px-6 py-3 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
             >
               Back to Practice Activities
@@ -457,7 +467,14 @@ export default function PuzzlePathPage() {
           <div className="py-4 flex items-center justify-between">
             <div className="flex items-center">
               <button
-                onClick={() => router.back()}
+                onClick={() => {
+                  if (session && !showCompletion) {
+                    const confirmLeave = window.confirm('You have unsaved progress. Are you sure you want to leave?')
+                    if (!confirmLeave) return
+                  }
+                  const query = classroomId ? `?classroomId=${classroomId}` : ''
+      router.push(`/student/vocabulary/${vocabularyId}/practice${query}`)
+                }}
                 className="mr-4 text-gray-500 hover:text-gray-700"
               >
                 <ArrowLeftIcon className="h-5 w-5" />
