@@ -302,9 +302,28 @@ class VocabularyPracticeService:
             # Fallback: return 1 for unknown types
             return 1
         
+        # Also check for the highest attempt number in the database
+        # This handles cases where attempts were deleted but progress wasn't updated
+        max_attempt_result = await self.db.execute(
+            select(func.max(attempt_model_class.attempt_number))
+            .where(
+                and_(
+                    attempt_model_class.student_id == student_id,
+                    attempt_model_class.vocabulary_list_id == vocabulary_list_id
+                )
+            )
+        )
+        max_db_attempt = max_attempt_result.scalar() or 0
+        
         # Get current attempt number from practice_status
         assignment_status = progress.practice_status.get('assignments', {}).get(assignment_type, {})
-        return assignment_status.get('attempts', 0) + 1
+        status_attempt = assignment_status.get('attempts', 0)
+        
+        # Use the higher of the two values
+        current_max = max(max_db_attempt, status_attempt)
+        logger.info(f"Getting next attempt number for {assignment_type}: max_db={max_db_attempt}, status={status_attempt}, next={current_max + 1}")
+        
+        return current_max + 1
     
     # Concept Mapping Methods
     
@@ -972,8 +991,12 @@ class VocabularyPracticeService:
         # Check for existing active session first
         existing_session = await self.session_manager.get_current_session(student_id, vocabulary_list_id)
         if existing_session and 'puzzle_attempt_id' in existing_session:
-            # Resume existing puzzle path attempt
-            return await self._resume_puzzle_path(student_id, vocabulary_list_id, existing_session)
+            try:
+                # Resume existing puzzle path attempt
+                return await self._resume_puzzle_path(student_id, vocabulary_list_id, existing_session)
+            except ValueError:
+                # Session is stale, continue to create new attempt
+                pass
         
         # Get or create progress
         progress = await self.get_or_create_practice_progress(
@@ -1047,11 +1070,13 @@ class VocabularyPracticeService:
         max_possible_score = total_puzzles * 4  # 4 points per puzzle
         passing_score = int(max_possible_score * self.PASSING_THRESHOLD)
         
-        # Get current attempt number
-        puzzle_path_status = progress.practice_status.get('assignments', {}).get('puzzle_path', {})
-        attempt_number = puzzle_path_status.get('attempts', 0) + 1
+        # Get next attempt number using the helper method
+        attempt_number = await self._get_next_attempt_number(
+            student_id, vocabulary_list_id, VocabularyPuzzleAttempt
+        )
         
         # Create new puzzle attempt
+        logger.info(f"Creating new puzzle attempt: student={student_id}, vocab_list={vocabulary_list_id}, attempt_num={attempt_number}")
         puzzle_attempt = VocabularyPuzzleAttempt(
             student_id=student_id,
             vocabulary_list_id=vocabulary_list_id,
@@ -1064,6 +1089,7 @@ class VocabularyPracticeService:
         self.db.add(puzzle_attempt)
         await self.db.commit()
         await self.db.refresh(puzzle_attempt)
+        logger.info(f"Created puzzle attempt with id={puzzle_attempt.id}")
         
         # Update progress to mark as in progress
         practice_status = progress.practice_status.copy()
@@ -1180,6 +1206,8 @@ class VocabularyPracticeService:
     ) -> Dict[str, Any]:
         """Submit an answer for a puzzle"""
         
+        logger.info(f"submit_puzzle_answer called: attempt_id={puzzle_attempt_id}, puzzle_id={puzzle_id}, answer={student_answer}")
+        
         # Get puzzle attempt
         result = await self.db.execute(
             select(VocabularyPuzzleAttempt)
@@ -1188,7 +1216,14 @@ class VocabularyPracticeService:
         )
         puzzle_attempt = result.scalar_one_or_none()
         
-        if not puzzle_attempt or puzzle_attempt.status != 'in_progress':
+        if not puzzle_attempt:
+            logger.error(f"Puzzle attempt not found: {puzzle_attempt_id}")
+            raise ValueError("Puzzle attempt not found")
+            
+        logger.info(f"Puzzle attempt found: status={puzzle_attempt.status}, puzzles_completed={puzzle_attempt.puzzles_completed}/{puzzle_attempt.total_puzzles}, current_index={puzzle_attempt.current_puzzle_index}")
+        
+        if puzzle_attempt.status != 'in_progress':
+            logger.error(f"Puzzle attempt not in progress: status={puzzle_attempt.status}")
             raise ValueError("Invalid or completed puzzle attempt")
         
         # Get the puzzle
@@ -1252,6 +1287,7 @@ class VocabularyPracticeService:
             }
         
         # Check if puzzle response already exists (avoid duplicates)
+        logger.info(f"Checking for existing response: progress_id={puzzle_attempt.practice_progress_id}, puzzle_id={puzzle_id}, attempt_num={puzzle_attempt.attempt_number}")
         existing_response_result = await self.db.execute(
             select(VocabularyPuzzleResponse)
             .where(
@@ -1264,56 +1300,107 @@ class VocabularyPracticeService:
         )
         existing_response = existing_response_result.scalar_one_or_none()
         
-        if existing_response:
-            logger.warning(f"Puzzle response already exists for puzzle {puzzle_id}, attempt {puzzle_attempt.attempt_number}")
-            # Return existing response data instead of creating duplicate
-            return {
-                'valid': True,
-                'evaluation': existing_response.ai_evaluation,
-                'current_score': puzzle_attempt.total_score,
-                'puzzles_remaining': puzzle_attempt.total_puzzles - puzzle_attempt.puzzles_completed,
-                'is_complete': puzzle_attempt.puzzles_completed >= puzzle_attempt.total_puzzles,
-                'passed': puzzle_attempt.status == 'pending_confirmation',
-                'percentage_score': (puzzle_attempt.total_score / puzzle_attempt.max_possible_score) * 100 if puzzle_attempt.max_possible_score > 0 else 0,
-                'needs_confirmation': puzzle_attempt.status == 'pending_confirmation',
-                'next_puzzle': None,
-                'progress_percentage': (puzzle_attempt.puzzles_completed / puzzle_attempt.total_puzzles) * 100 if puzzle_attempt.total_puzzles > 0 else 0
-            }
-        
-        # Save puzzle response
-        try:
-            puzzle_response = VocabularyPuzzleResponse(
-                student_id=puzzle_attempt.student_id,
-                vocabulary_list_id=puzzle_attempt.vocabulary_list_id,
-                practice_progress_id=puzzle_attempt.practice_progress_id,
-                puzzle_id=puzzle_id,
-                student_answer=student_answer,
-                ai_evaluation=evaluation,
-                puzzle_score=evaluation['score'],
-                attempt_number=puzzle_attempt.attempt_number,
-                time_spent_seconds=time_spent_seconds
+        # Also check if there are ANY responses for this puzzle from other attempts
+        # This helps debug if old responses are interfering
+        all_responses_result = await self.db.execute(
+            select(VocabularyPuzzleResponse)
+            .where(
+                and_(
+                    VocabularyPuzzleResponse.student_id == puzzle_attempt.student_id,
+                    VocabularyPuzzleResponse.puzzle_id == puzzle_id
+                )
             )
-            self.db.add(puzzle_response)
-        except Exception as e:
-            logger.error(f"Failed to create puzzle response: {e}")
-            raise ValueError(f"Database constraint violation: {str(e)}")
+        )
+        all_responses = all_responses_result.scalars().all()
+        if all_responses:
+            logger.warning(f"Found {len(all_responses)} total responses for puzzle {puzzle_id} across all attempts")
+            for resp in all_responses:
+                logger.info(f"  - Attempt {resp.attempt_number}: score={resp.puzzle_score}, created={resp.created_at}, progress_id={resp.practice_progress_id}")
+                # Delete any response that doesn't match our current progress_id
+                # These are orphaned responses from previous attempts
+                if resp.practice_progress_id != puzzle_attempt.practice_progress_id:
+                    logger.warning(f"Deleting orphaned response from different progress: {resp.id}")
+                    await self.db.delete(resp)
+            
+            # Commit the deletions
+            if len(all_responses) > 0:
+                await self.db.commit()
+                # Re-check for existing response after cleanup
+                existing_response_result = await self.db.execute(
+                    select(VocabularyPuzzleResponse)
+                    .where(
+                        and_(
+                            VocabularyPuzzleResponse.practice_progress_id == puzzle_attempt.practice_progress_id,
+                            VocabularyPuzzleResponse.puzzle_id == puzzle_id,
+                            VocabularyPuzzleResponse.attempt_number == puzzle_attempt.attempt_number
+                        )
+                    )
+                )
+                existing_response = existing_response_result.scalar_one_or_none()
         
-        # Update puzzle attempt
-        logger.info(f"Updating puzzle attempt {puzzle_attempt.id}: current_score={puzzle_attempt.total_score}, adding={evaluation['score']}")
-        puzzle_attempt.puzzles_completed += 1
-        puzzle_attempt.current_puzzle_index += 1
-        puzzle_attempt.total_score += evaluation['score']
-        logger.info(f"After update: puzzles_completed={puzzle_attempt.puzzles_completed}/{puzzle_attempt.total_puzzles}, total_score={puzzle_attempt.total_score}")
-        
-        # Update puzzle scores tracking
-        puzzle_scores = puzzle_attempt.puzzle_scores.copy() if puzzle_attempt.puzzle_scores else {}
-        puzzle_scores[str(puzzle_id)] = {
-            'score': evaluation['score'],
-            'type': puzzle.puzzle_type,
-            'word': puzzle.word.word,
-            'completed_at': datetime.now(timezone.utc).isoformat()
-        }
-        puzzle_attempt.puzzle_scores = puzzle_scores
+        if not existing_response:
+            # Save new puzzle response
+            try:
+                puzzle_response = VocabularyPuzzleResponse(
+                    student_id=puzzle_attempt.student_id,
+                    vocabulary_list_id=puzzle_attempt.vocabulary_list_id,
+                    practice_progress_id=puzzle_attempt.practice_progress_id,
+                    puzzle_id=puzzle_id,
+                    student_answer=student_answer,
+                    ai_evaluation=evaluation,
+                    puzzle_score=evaluation['score'],
+                    attempt_number=puzzle_attempt.attempt_number,
+                    time_spent_seconds=time_spent_seconds
+                )
+                self.db.add(puzzle_response)
+            except Exception as e:
+                logger.error(f"Failed to create puzzle response: {e}")
+                raise ValueError(f"Database constraint violation: {str(e)}")
+                
+            # Update puzzle attempt only for new responses
+            logger.info(f"Updating puzzle attempt {puzzle_attempt.id}: current_score={puzzle_attempt.total_score}, adding={evaluation['score']}")
+            puzzle_attempt.puzzles_completed += 1
+            puzzle_attempt.current_puzzle_index += 1
+            puzzle_attempt.total_score += evaluation['score']
+            logger.info(f"After update: puzzles_completed={puzzle_attempt.puzzles_completed}/{puzzle_attempt.total_puzzles}, total_score={puzzle_attempt.total_score}")
+            
+            # Update puzzle scores tracking
+            puzzle_scores = puzzle_attempt.puzzle_scores.copy() if puzzle_attempt.puzzle_scores else {}
+            puzzle_scores[str(puzzle_id)] = {
+                'score': evaluation['score'],
+                'type': puzzle.puzzle_type,
+                'word': puzzle.word.word,
+                'completed_at': datetime.now(timezone.utc).isoformat()
+            }
+            puzzle_attempt.puzzle_scores = puzzle_scores
+        else:
+            logger.warning(f"Puzzle response already exists for puzzle {puzzle_id}, attempt {puzzle_attempt.attempt_number}")
+            logger.info(f"Attempt state: puzzles_completed={puzzle_attempt.puzzles_completed}, current_index={puzzle_attempt.current_puzzle_index}")
+            
+            # Use the existing evaluation
+            evaluation = existing_response.ai_evaluation
+            
+            # Check if this is a stale state - response exists but counters are not updated
+            # This can happen if there was an error after saving response but before updating counters
+            puzzle_already_counted = str(puzzle_id) in (puzzle_attempt.puzzle_scores or {})
+            
+            if not puzzle_already_counted:
+                logger.warning(f"Found stale state - response exists but not counted. Fixing...")
+                # Update the counters that should have been updated
+                puzzle_attempt.puzzles_completed += 1
+                puzzle_attempt.current_puzzle_index += 1
+                puzzle_attempt.total_score += existing_response.puzzle_score
+                
+                # Update puzzle scores tracking
+                puzzle_scores = puzzle_attempt.puzzle_scores.copy() if puzzle_attempt.puzzle_scores else {}
+                puzzle_scores[str(puzzle_id)] = {
+                    'score': existing_response.puzzle_score,
+                    'type': puzzle.puzzle_type,
+                    'word': puzzle.word.word,
+                    'completed_at': existing_response.created_at.isoformat()
+                }
+                puzzle_attempt.puzzle_scores = puzzle_scores
+                logger.info(f"Fixed stale state: puzzles_completed={puzzle_attempt.puzzles_completed}, current_index={puzzle_attempt.current_puzzle_index}")
         
         # Check if all puzzles are complete
         is_complete = puzzle_attempt.puzzles_completed >= puzzle_attempt.total_puzzles
@@ -1325,7 +1412,9 @@ class VocabularyPracticeService:
             else:
                 percentage_score = 0
                 logger.warning(f"Max possible score is 0 for puzzle attempt {puzzle_attempt.id}")
-            puzzle_attempt.status = 'pending_confirmation' if percentage_score >= 70 else 'failed'
+            # Set status to pending_confirmation for BOTH pass and fail
+            # This ensures the dialog shows for both scenarios
+            puzzle_attempt.status = 'pending_confirmation'
             puzzle_attempt.completed_at = datetime.now(timezone.utc)
             
             # Calculate total time spent
@@ -1363,6 +1452,7 @@ class VocabularyPracticeService:
         # Get next puzzle if not complete
         next_puzzle = None
         if not is_complete and puzzle_attempt.current_puzzle_index < puzzle_attempt.total_puzzles:
+            logger.info(f"Getting next puzzle: current_index={puzzle_attempt.current_puzzle_index}, total={puzzle_attempt.total_puzzles}")
             puzzles_result = await self.db.execute(
                 select(VocabularyPuzzleGame)
                 .where(VocabularyPuzzleGame.vocabulary_list_id == puzzle_attempt.vocabulary_list_id)
@@ -1370,9 +1460,11 @@ class VocabularyPracticeService:
                 .order_by(VocabularyPuzzleGame.puzzle_order)
             )
             all_puzzles = puzzles_result.scalars().all()
+            logger.info(f"Found {len(all_puzzles)} puzzles total")
             
             if puzzle_attempt.current_puzzle_index < len(all_puzzles):
                 next_puzzle = all_puzzles[puzzle_attempt.current_puzzle_index]
+                logger.info(f"Next puzzle found: puzzle_id={next_puzzle.id}, type={next_puzzle.puzzle_type}")
         
         # Calculate percentage for return
         percentage_score = None
@@ -1641,18 +1733,52 @@ class VocabularyPracticeService:
         # Calculate percentage score
         percentage_score = (puzzle_attempt.total_score / puzzle_attempt.max_possible_score) * 100
         
-        # Update puzzle attempt status
-        puzzle_attempt.status = 'declined'
+        # Store final score for return
+        final_score = puzzle_attempt.total_score
         
-        # Clear Redis session data
+        # Delete all puzzle response records for this attempt to allow retake
+        delete_result = await self.db.execute(
+            delete(VocabularyPuzzleResponse)
+            .where(
+                and_(
+                    VocabularyPuzzleResponse.practice_progress_id == puzzle_attempt.practice_progress_id,
+                    VocabularyPuzzleResponse.attempt_number == puzzle_attempt.attempt_number
+                )
+            )
+        )
+        logger.info(f"Deleted {delete_result.rowcount} puzzle responses for attempt {puzzle_attempt.attempt_number}")
+        
+        # Also delete any orphaned responses for this student and vocabulary list
+        # This handles cases where responses exist without proper attempt records
+        orphan_delete_result = await self.db.execute(
+            delete(VocabularyPuzzleResponse)
+            .where(
+                and_(
+                    VocabularyPuzzleResponse.student_id == student_id,
+                    VocabularyPuzzleResponse.vocabulary_list_id == puzzle_attempt.vocabulary_list_id
+                )
+            )
+        )
+        if orphan_delete_result.rowcount > 0:
+            logger.warning(f"Deleted {orphan_delete_result.rowcount} additional orphaned puzzle responses")
+        
+        # Delete the puzzle attempt itself
+        await self.db.delete(puzzle_attempt)
+        
+        # Clear Redis session data AFTER deleting the attempt
+        # This ensures the session is cleared and won't reference the deleted attempt
         await self.session_manager.clear_all_session_data(student_id, puzzle_attempt.vocabulary_list_id)
+        
+        # Also clear the practice progress current_game_session to ensure clean state
+        if puzzle_attempt.practice_progress:
+            puzzle_attempt.practice_progress.current_game_session = {}
         
         await self.db.commit()
         
         return {
             'success': True,
             'message': 'Assignment declined. You can retake it later.',
-            'final_score': puzzle_attempt.total_score,
+            'final_score': final_score,
             'percentage_score': percentage_score
         }
     
