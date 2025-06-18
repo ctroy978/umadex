@@ -27,7 +27,7 @@ class VocabularyWordCreate(VocabularyWordBase):
 
 
 class VocabularyListCreate(VocabularyListBase):
-    words: List[VocabularyWordCreate] = Field(..., min_length=5, max_length=50)
+    words: List[VocabularyWordCreate] = Field(..., min_length=4, max_length=8)
     
     @field_validator('words')
     def validate_unique_words(cls, v):
@@ -172,8 +172,8 @@ class VocabularyAIResponse(BaseModel):
 class VocabularyTestConfig(BaseModel):
     chain_enabled: bool = False
     weeks_to_include: int = Field(default=1, ge=1, le=10)
-    questions_per_week: int = Field(default=5, ge=3, le=8)
-    current_week_questions: int = Field(default=10, ge=8, le=15)
+    questions_per_week: int = Field(default=3, ge=2, le=4)
+    current_week_questions: int = Field(default=6, ge=4, le=8)
     max_attempts: int = Field(default=3, ge=1, le=5)
     time_limit_minutes: int = Field(default=30, ge=10, le=120)
 
