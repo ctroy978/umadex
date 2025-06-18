@@ -468,7 +468,7 @@ export default function PuzzlePathPage() {
             <div className="flex items-center">
               <button
                 onClick={() => {
-                  if (session && !showCompletion) {
+                  if (session && !showCompletionDialog) {
                     const confirmLeave = window.confirm('You have unsaved progress. Are you sure you want to leave?')
                     if (!confirmLeave) return
                   }
