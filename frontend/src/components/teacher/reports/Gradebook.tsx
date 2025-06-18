@@ -120,6 +120,16 @@ export default function Gradebook() {
     }
   };
 
+  // Filter assignments based on selected assignment types
+  const filteredAssignments = useMemo(() => {
+    if (filters.assignmentTypes.length === 0) {
+      return assignments; // Show all if no filter selected
+    }
+    return assignments.filter(assignment => 
+      filters.assignmentTypes.includes(assignment.type)
+    );
+  }, [assignments, filters.assignmentTypes]);
+
   // Load initial data
   useEffect(() => {
     fetchClassrooms();
@@ -451,7 +461,7 @@ export default function Gradebook() {
                 className="w-full border-gray-300 rounded-md shadow-sm"
                 size={4}
               >
-                {assignments.map(assignment => (
+                {filteredAssignments.map(assignment => (
                   <option key={assignment.id} value={assignment.id}>
                     {assignment.title} - {assignment.workTitle}
                   </option>
@@ -469,7 +479,8 @@ export default function Gradebook() {
                 value={filters.assignmentTypes}
                 onChange={(e) => {
                   const selected = Array.from(e.target.selectedOptions, option => option.value);
-                  setFilters({ ...filters, assignmentTypes: selected });
+                  // Clear assignments filter when assignment type changes
+                  setFilters({ ...filters, assignmentTypes: selected, assignments: [] });
                 }}
                 className="w-full border-gray-300 rounded-md shadow-sm"
                 size={2}
