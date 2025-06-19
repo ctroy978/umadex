@@ -31,6 +31,7 @@ from app.utils.deps import get_current_user
 
 # Import vocabulary router
 from . import vocabulary
+from . import vocabulary_chains
 from . import teacher_classroom_assignments
 from . import teacher_classroom_detail
 from . import teacher_settings
@@ -40,6 +41,8 @@ from . import teacher_vocabulary_settings
 router = APIRouter()
 
 # Include vocabulary routes
+# Important: Include chains router first to avoid route conflicts with vocabulary/{list_id}
+router.include_router(vocabulary_chains.router, prefix="/vocabulary", tags=["vocabulary-chains"])
 router.include_router(vocabulary.router, tags=["vocabulary"])
 
 # Include unified classroom assignment routes

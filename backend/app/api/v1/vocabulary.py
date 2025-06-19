@@ -5,7 +5,7 @@ import asyncio
 from fastapi import APIRouter, Depends, HTTPException, status, Query, BackgroundTasks
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, and_
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
@@ -633,6 +633,48 @@ async def update_test_config(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You don't have permission to update this list's test configuration"
         )
+    
+    # Validate chain configuration
+    if config_data.chain_enabled and config_data.chain_type == "specific_lists":
+        # Validate chained lists
+        if not config_data.chained_list_ids:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Must specify at least one list when using specific_lists chain type"
+            )
+        
+        # Ensure chained lists are valid and accessible
+        valid_list_ids = []
+        for chained_id in config_data.chained_list_ids:
+            # Check if the list exists and is published
+            result = await db.execute(
+                select(VocabularyList)
+                .where(
+                    and_(
+                        VocabularyList.id == chained_id,
+                        VocabularyList.status == 'published',
+                        VocabularyList.deleted_at.is_(None)
+                    )
+                )
+            )
+            if result.scalar_one_or_none():
+                valid_list_ids.append(chained_id)
+        
+        if not valid_list_ids:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No valid published vocabulary lists found for chaining"
+            )
+        
+        # Update config with only valid lists
+        config_data.chained_list_ids = valid_list_ids
+        
+        # Validate total review words
+        if not config_data.total_review_words or config_data.total_review_words < 1 or config_data.total_review_words > 4:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Total review words must be between 1 and 4"
+            )
     
     config = await VocabularyTestService.save_test_config(
         db, list_id, config_data.model_dump()

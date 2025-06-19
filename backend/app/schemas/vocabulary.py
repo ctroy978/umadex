@@ -171,8 +171,12 @@ class VocabularyAIResponse(BaseModel):
 # Vocabulary Test Schemas
 class VocabularyTestConfig(BaseModel):
     chain_enabled: bool = False
+    chain_type: str = Field(default="weeks", pattern="^(weeks|specific_lists|named_chain)$")
     weeks_to_include: int = Field(default=1, ge=1, le=10)
     questions_per_week: int = Field(default=5, ge=3, le=8)
+    chained_list_ids: List[UUID] = Field(default_factory=list)
+    chain_id: Optional[UUID] = None  # Reference to named chain
+    total_review_words: int = Field(default=3, ge=1, le=4)
     current_week_questions: int = Field(default=10, ge=8, le=15)
     max_attempts: int = Field(default=3, ge=1, le=5)
     time_limit_minutes: int = Field(default=30, ge=10, le=120)
