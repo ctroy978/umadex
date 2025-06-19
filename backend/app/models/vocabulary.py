@@ -46,6 +46,7 @@ class VocabularyList(Base):
     # Relationships
     words = relationship("VocabularyWord", back_populates="vocabulary_list", cascade="all, delete-orphan")
     teacher = relationship("User", back_populates="vocabulary_lists")
+    chain_memberships = relationship("VocabularyChainMember", back_populates="vocabulary_list", cascade="all, delete-orphan")
 
 
 class VocabularyWord(Base):

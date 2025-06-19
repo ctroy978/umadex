@@ -40,3 +40,4 @@ class User(Base):
     enrollments = relationship("ClassroomStudent", back_populates="student", foreign_keys="ClassroomStudent.student_id")
     reading_assignments = relationship("ReadingAssignment", back_populates="teacher")
     vocabulary_lists = relationship("VocabularyList", back_populates="teacher")
+    vocabulary_chains = relationship("VocabularyChain", back_populates="teacher")

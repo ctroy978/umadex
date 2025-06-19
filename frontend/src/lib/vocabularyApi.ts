@@ -124,8 +124,12 @@ export const vocabularyApi = {
 // Test Configuration Types
 export interface VocabularyTestConfig {
   chain_enabled: boolean
+  chain_type?: 'weeks' | 'specific_lists' | 'named_chain'
   weeks_to_include: number
   questions_per_week: number
+  chained_list_ids?: string[]
+  chain_id?: string
+  total_review_words?: number
   current_week_questions: number
   max_attempts: number
   time_limit_minutes: number
