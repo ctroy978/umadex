@@ -225,47 +225,50 @@ export default function VocabularyTestInterface({
           <div className="lg:col-span-3">
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center justify-between">
-                  <span>Question {state.currentQuestionIndex + 1}</span>
-                  <span className="text-sm font-normal text-gray-600 capitalize">
-                    {currentQuestion.question_type}
-                  </span>
+                <CardTitle>
+                  Question {state.currentQuestionIndex + 1} of {testData.total_questions}
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-6">
-                {/* Question */}
-                <div className="p-4 bg-blue-50 rounded-lg">
-                  <p className="text-lg leading-relaxed">
-                    {currentQuestion.question_text}
-                  </p>
-                  {currentQuestion.word && (
-                    <p className="mt-2 text-sm text-gray-600">
-                      Word: <span className="font-medium">{currentQuestion.word}</span>
-                    </p>
-                  )}
+                {/* Word Display */}
+                <div className="text-center">
+                  <h2 className="text-3xl font-bold text-gray-800">
+                    {currentQuestion.word}
+                  </h2>
                 </div>
 
-                {/* Answer Input */}
+                {/* Example Sentence */}
+                <div className="p-4 bg-blue-50 rounded-lg">
+                  <h3 className="text-sm font-semibold text-gray-700 mb-2 flex items-center">
+                    <BookOpen className="h-4 w-4 mr-2" />
+                    Example:
+                  </h3>
+                  <p className="text-lg leading-relaxed">
+                    {currentQuestion.example_sentence}
+                  </p>
+                </div>
+
+                {/* Definition Input */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Your Answer:
+                    Define this word based on how it's used in the sentence:
                   </label>
-                  {currentQuestion.question_type === 'definition' ? (
-                    <Textarea
-                      value={state.answers[currentQuestion.id] || ''}
-                      onChange={(e) => handleAnswerChange(e.target.value)}
-                      placeholder="Type your answer here..."
-                      rows={4}
-                      className="w-full"
-                    />
-                  ) : (
-                    <Input
-                      value={state.answers[currentQuestion.id] || ''}
-                      onChange={(e) => handleAnswerChange(e.target.value)}
-                      placeholder="Type your answer here..."
-                      className="w-full"
-                    />
-                  )}
+                  <Textarea
+                    value={state.answers[currentQuestion.id] || ''}
+                    onChange={(e) => handleAnswerChange(e.target.value)}
+                    placeholder="Write your definition here..."
+                    rows={4}
+                    className="w-full"
+                    minLength={10}
+                  />
+                  <p className="mt-2 text-sm text-gray-500">
+                    {state.answers[currentQuestion.id]?.length || 0} characters
+                    {state.answers[currentQuestion.id]?.length < 10 && (
+                      <span className="text-amber-600 ml-2">
+                        (minimum 10 characters required)
+                      </span>
+                    )}
+                  </p>
                 </div>
 
                 {/* Error Message */}

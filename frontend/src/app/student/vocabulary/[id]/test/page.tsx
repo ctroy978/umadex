@@ -27,12 +27,20 @@ interface TestResults {
   time_spent_seconds?: number
   detailed_results: Array<{
     question_id: string
-    question_text: string
-    correct_answer: string
+    word: string
+    example_sentence: string
     student_answer: string
     score: number
     is_correct: boolean
-    explanation: string
+    feedback: string
+    strengths: string[]
+    areas_for_growth: string[]
+    component_scores?: {
+      core_meaning: number
+      context_appropriateness: number
+      completeness: number
+      clarity: number
+    }
   }>
 }
 
@@ -361,29 +369,99 @@ export default function VocabularyTestPage() {
               {/* Detailed Results */}
               <div>
                 <h3 className="font-medium mb-3">Question by Question Results:</h3>
-                <div className="space-y-3 max-h-96 overflow-y-auto">
+                <div className="space-y-4 max-h-[600px] overflow-y-auto">
                   {results.detailed_results.map((result, index) => (
                     <div key={result.question_id} 
-                         className={`p-4 rounded-lg border ${result.is_correct ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-                      <div className="flex items-start justify-between mb-2">
-                        <span className="font-medium">Question {index + 1}</span>
+                         className={`p-5 rounded-lg border ${result.is_correct ? 'bg-green-50 border-green-200' : 'bg-yellow-50 border-yellow-200'}`}>
+                      <div className="flex items-start justify-between mb-3">
+                        <div>
+                          <span className="font-medium text-lg">Question {index + 1}: </span>
+                          <span className="text-xl font-bold">{result.word}</span>
+                        </div>
                         <div className="flex items-center gap-2">
                           {result.is_correct ? 
                             <CheckCircle className="w-5 h-5 text-green-500" /> : 
-                            <XCircle className="w-5 h-5 text-red-500" />
+                            <AlertTriangle className="w-5 h-5 text-yellow-600" />
                           }
-                          <span className="text-sm font-medium">
+                          <span className="text-lg font-bold">
                             {result.score}%
                           </span>
                         </div>
                       </div>
                       
-                      <div className="text-sm space-y-1">
-                        <p><strong>Question:</strong> {result.question_text}</p>
-                        <p><strong>Your Answer:</strong> {result.student_answer || '(No answer)'}</p>
-                        <p><strong>Correct Answer:</strong> {result.correct_answer}</p>
-                        {result.explanation && (
-                          <p className="text-gray-600"><strong>Explanation:</strong> {result.explanation}</p>
+                      <div className="space-y-3">
+                        {/* Example Sentence */}
+                        <div className="bg-white p-3 rounded border border-gray-200">
+                          <p className="text-sm text-gray-600 mb-1"><strong>Context:</strong></p>
+                          <p className="text-sm italic">{result.example_sentence}</p>
+                        </div>
+
+                        {/* Student's Definition */}
+                        <div>
+                          <p className="text-sm text-gray-600 mb-1"><strong>Your Definition:</strong></p>
+                          <p className="text-sm">{result.student_answer || '(No answer provided)'}</p>
+                        </div>
+
+                        {/* AI Feedback */}
+                        <div className="bg-blue-50 p-3 rounded">
+                          <p className="text-sm font-medium text-blue-900 mb-1">Feedback:</p>
+                          <p className="text-sm text-blue-800">{result.feedback}</p>
+                        </div>
+
+                        {/* Strengths and Areas for Growth */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          {result.strengths && result.strengths.length > 0 && (
+                            <div className="bg-green-100 p-3 rounded">
+                              <p className="text-sm font-medium text-green-900 mb-1">Strengths:</p>
+                              <ul className="text-sm text-green-800 space-y-1">
+                                {result.strengths.map((strength, idx) => (
+                                  <li key={idx} className="flex items-start">
+                                    <CheckCircle className="w-3 h-3 mr-1 mt-0.5 flex-shrink-0" />
+                                    {strength}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          
+                          {result.areas_for_growth && result.areas_for_growth.length > 0 && (
+                            <div className="bg-amber-100 p-3 rounded">
+                              <p className="text-sm font-medium text-amber-900 mb-1">Areas for Growth:</p>
+                              <ul className="text-sm text-amber-800 space-y-1">
+                                {result.areas_for_growth.map((area, idx) => (
+                                  <li key={idx} className="flex items-start">
+                                    <AlertTriangle className="w-3 h-3 mr-1 mt-0.5 flex-shrink-0" />
+                                    {area}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Component Scores */}
+                        {result.component_scores && (
+                          <div className="bg-gray-100 p-3 rounded">
+                            <p className="text-sm font-medium text-gray-700 mb-2">Score Breakdown:</p>
+                            <div className="grid grid-cols-2 gap-2 text-xs">
+                              <div className="flex justify-between">
+                                <span>Core Meaning:</span>
+                                <span className="font-medium">{result.component_scores.core_meaning}/40</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span>Context Understanding:</span>
+                                <span className="font-medium">{result.component_scores.context_appropriateness}/30</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span>Completeness:</span>
+                                <span className="font-medium">{result.component_scores.completeness}/20</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span>Clarity:</span>
+                                <span className="font-medium">{result.component_scores.clarity}/10</span>
+                              </div>
+                            </div>
+                          </div>
                         )}
                       </div>
                     </div>

@@ -299,9 +299,9 @@ export interface VocabularyTestEligibilityResponse {
 
 export interface VocabularyTestQuestion {
   id: string
-  question_text: string
-  question_type: string
   word: string
+  example_sentence: string
+  question_type: string
 }
 
 export interface VocabularyTestStartResponse {

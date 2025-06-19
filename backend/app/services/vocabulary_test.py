@@ -15,6 +15,7 @@ from sqlalchemy.orm import selectinload
 
 from app.models.vocabulary import VocabularyList, VocabularyWord
 from app.models.classroom import ClassroomAssignment
+from app.services.ai_vocabulary_evaluator import AIVocabularyEvaluator
 
 logger = logging.getLogger(__name__)
 
@@ -332,12 +333,9 @@ class VocabularyTestService:
         
         questions = []
         for word in selected_words:
-            # Generate different types of questions
-            question_types = ["definition", "example", "riddle"]
-            question_type = random.choice(question_types)
-            
+            # All questions now use the same format
             question = await VocabularyTestService._create_question(
-                word, question_type, vocabulary_list.id
+                word, "definition_from_context", vocabulary_list.id
             )
             questions.append(question)
         
@@ -349,38 +347,34 @@ class VocabularyTestService:
         question_type: str,
         vocabulary_list_id: UUID
     ) -> Dict[str, Any]:
-        """Create a single question for a vocabulary word"""
+        """Create a single question for a vocabulary word with context"""
         
-        # Use appropriate definition (teacher first, then AI)
-        definition = word.teacher_definition or word.ai_definition
+        # Get the best example sentence (teacher examples preferred)
+        example_sentence = (
+            word.teacher_example_1 or 
+            word.teacher_example_2 or 
+            word.ai_example_1 or 
+            word.ai_example_2
+        )
         
-        if question_type == "definition":
-            question_text = f"What does the word '{word.word}' mean?"
-            correct_answer = word.word
-        elif question_type == "example":
-            example = word.teacher_example_1 or word.ai_example_1
-            if example:
-                # Remove the word from the example to create a fill-in-the-blank
-                question_text = f"Fill in the blank: {example.replace(word.word, '____')}"
-                correct_answer = word.word
-            else:
-                # Fallback to definition question
-                question_text = f"What does the word '{word.word}' mean?"
-                correct_answer = word.word
-        else:  # riddle
-            # Create a riddle-style question using AI
-            question_text = f"I am a word that means '{definition}'. What am I?"
-            correct_answer = word.word
+        # Get reference definition (teacher preferred)
+        reference_definition = word.teacher_definition or word.ai_definition
+        
+        # Ensure we have both an example and definition
+        if not example_sentence:
+            # Generate a basic example if none exists
+            example_sentence = f"The student showed {word.word} when completing the assignment."
+        
+        if not reference_definition:
+            reference_definition = "No reference definition available"
         
         return {
             "id": str(word.id),
             "word": word.word,
-            "definition": definition,
-            "question_type": question_type,
-            "question_text": question_text,
-            "correct_answer": correct_answer.lower(),  # Normalize for comparison
-            "vocabulary_list_id": str(vocabulary_list_id),
-            "difficulty_level": "standard"
+            "example_sentence": example_sentence,
+            "reference_definition": reference_definition,
+            "question_type": "definition_from_context",
+            "vocabulary_list_id": str(vocabulary_list_id)
         }
 
     @staticmethod
@@ -452,10 +446,9 @@ class VocabularyTestService:
                 
                 questions = []
                 for word, list_id in selected_word_pairs:
-                    question_types = ["definition", "example", "riddle"]
-                    question_type = random.choice(question_types)
+                    # Use consistent question format
                     question = await VocabularyTestService._create_question(
-                        word, question_type, list_id
+                        word, "definition_from_context", list_id
                     )
                     questions.append(question)
                 
@@ -495,10 +488,9 @@ class VocabularyTestService:
                 
                 questions = []
                 for word, list_id in selected_word_pairs:
-                    question_types = ["definition", "example", "riddle"]
-                    question_type = random.choice(question_types)
+                    # Use consistent question format
                     question = await VocabularyTestService._create_question(
-                        word, question_type, list_id
+                        word, "definition_from_context", list_id
                     )
                     questions.append(question)
                 
@@ -675,29 +667,53 @@ class VocabularyTestService:
         detailed_results = []
         correct_count = 0
         
+        # Initialize AI evaluator
+        ai_evaluator = AIVocabularyEvaluator()
+        
+        # Get student info for grade level context
+        student_result = await db.execute(
+            text("""
+                SELECT u.grade_level FROM users u
+                JOIN vocabulary_test_attempts vta ON vta.student_id = u.id
+                WHERE vta.id = :test_attempt_id
+            """),
+            {"test_attempt_id": str(test_attempt_id)}
+        )
+        student_data = student_result.fetchone()
+        grade_level = student_data.grade_level if student_data else None
+        
         # Evaluate each question
         for question in questions:
             question_id = question["id"]
-            correct_answer = question["correct_answer"].lower().strip()
-            student_answer = responses.get(question_id, "").lower().strip()
+            word = question["word"]
+            example_sentence = question["example_sentence"]
+            reference_definition = question["reference_definition"]
+            student_answer = responses.get(question_id, "").strip()
             
-            # Evaluate answer using AI service for more nuanced scoring
-            score = await VocabularyTestService._evaluate_answer(
-                correct_answer, student_answer, question["definition"]
+            # Evaluate answer using AI service
+            evaluation = await ai_evaluator.evaluate_definition(
+                word=word,
+                example_sentence=example_sentence,
+                reference_definition=reference_definition,
+                student_definition=student_answer,
+                grade_level=grade_level
             )
             
-            is_correct = score >= 70  # 70% threshold for correct
+            is_correct = evaluation["score"] >= 70  # 70% threshold for correct
             if is_correct:
                 correct_count += 1
             
             detailed_results.append({
                 "question_id": question_id,
-                "question_text": question["question_text"],
-                "correct_answer": question["correct_answer"],
-                "student_answer": responses.get(question_id, ""),
-                "score": score,
+                "word": word,
+                "example_sentence": example_sentence,
+                "student_answer": student_answer,
+                "score": evaluation["score"],
                 "is_correct": is_correct,
-                "explanation": f"Expected: {question['correct_answer']}"
+                "feedback": evaluation["feedback"],
+                "strengths": evaluation["strengths"],
+                "areas_for_growth": evaluation["areas_for_growth"],
+                "component_scores": evaluation.get("component_scores", {})
             })
         
         # Calculate final score
@@ -750,47 +766,6 @@ class VocabularyTestService:
             "detailed_results": detailed_results
         }
 
-    @staticmethod
-    async def _evaluate_answer(
-        correct_answer: str,
-        student_answer: str,
-        definition: str
-    ) -> float:
-        """Evaluate a student answer with AI assistance"""
-        
-        if not student_answer.strip():
-            return 0.0
-        
-        # Exact match
-        if student_answer == correct_answer:
-            return 100.0
-        
-        # Close spelling (simple Levenshtein distance)
-        def levenshtein_distance(s1: str, s2: str) -> int:
-            if len(s1) > len(s2):
-                s1, s2 = s2, s1
-            
-            distances = range(len(s1) + 1)
-            for i2, c2 in enumerate(s2):
-                distances_ = [i2 + 1]
-                for i1, c1 in enumerate(s1):
-                    if c1 == c2:
-                        distances_.append(distances[i1])
-                    else:
-                        distances_.append(1 + min((distances[i1], distances[i1 + 1], distances_[-1])))
-                distances = distances_
-            return distances[-1]
-        
-        # Check for close spelling
-        distance = levenshtein_distance(student_answer, correct_answer)
-        if distance <= 2 and len(correct_answer) > 3:
-            return 90.0
-        
-        # Use AI for synonym detection (simplified for now)
-        if len(student_answer) >= 3 and any(word in correct_answer for word in student_answer.split()):
-            return 80.0
-        
-        return 0.0
 
     @staticmethod
     async def _create_gradebook_entry(
