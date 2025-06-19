@@ -193,13 +193,10 @@ class VocabularyTestConfigResponse(VocabularyTestConfig):
 
 
 class VocabularyTestQuestion(BaseModel):
+    id: str
     word: str
-    definition: str
-    question_type: str  # "definition", "example", "riddle"
-    question_text: str
-    correct_answer: str
-    vocabulary_list_id: UUID
-    difficulty_level: Optional[str] = None
+    example_sentence: str
+    question_type: str  # "definition_from_context"
 
 
 class VocabularyTestResponse(BaseModel):

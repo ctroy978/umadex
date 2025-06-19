@@ -1830,9 +1830,9 @@ class StartVocabularyTestResponse(BaseModel):
 
 class VocabularyTestQuestion(BaseModel):
     id: str
-    question_text: str
-    question_type: str
     word: str
+    example_sentence: str
+    question_type: str
 
 
 class VocabularyTestStartResponse(BaseModel):
@@ -1996,14 +1996,14 @@ async def start_vocabulary_test(
             db, test_data["test_id"], current_user.id
         )
         
-        # Format questions for frontend (hide correct answers)
+        # Format questions for frontend
         formatted_questions = []
         for question in test_data["questions"]:
             formatted_questions.append(VocabularyTestQuestion(
                 id=question["id"],
-                question_text=question["question_text"],
-                question_type=question["question_type"],
-                word=question["word"] if question["question_type"] != "definition" else ""
+                word=question["word"],
+                example_sentence=question["example_sentence"],
+                question_type=question["question_type"]
             ))
         
         return VocabularyTestStartResponse(

@@ -670,17 +670,8 @@ class VocabularyTestService:
         # Initialize AI evaluator
         ai_evaluator = AIVocabularyEvaluator()
         
-        # Get student info for grade level context
-        student_result = await db.execute(
-            text("""
-                SELECT u.grade_level FROM users u
-                JOIN vocabulary_test_attempts vta ON vta.student_id = u.id
-                WHERE vta.id = :test_attempt_id
-            """),
-            {"test_attempt_id": str(test_attempt_id)}
-        )
-        student_data = student_result.fetchone()
-        grade_level = student_data.grade_level if student_data else None
+        # For now, we'll skip grade level since it's not in the users table
+        grade_level = None
         
         # Evaluate each question
         for question in questions:
