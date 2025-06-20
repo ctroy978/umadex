@@ -64,9 +64,41 @@ class VocabularyTestService:
         # Student is eligible if they've completed 3 or more activities
         is_eligible = completed_count >= 3
         
+        # Get test attempt information
+        test_attempt_result = await db.execute(
+            text("""
+                SELECT COUNT(DISTINCT vta.id) as attempt_count,
+                       MAX(vt.max_attempts) as max_attempts
+                FROM vocabulary_tests vt
+                LEFT JOIN vocabulary_test_attempts vta ON vta.test_id = vt.id 
+                    AND vta.student_id = :student_id 
+                    AND vta.status = 'completed'
+                WHERE vt.vocabulary_list_id = :vocabulary_list_id
+                AND vt.classroom_assignment_id = :classroom_assignment_id
+                GROUP BY vt.vocabulary_list_id, vt.classroom_assignment_id
+            """),
+            {
+                "student_id": str(student_id),
+                "vocabulary_list_id": str(vocabulary_list_id),
+                "classroom_assignment_id": classroom_assignment_id
+            }
+        )
+        test_data = test_attempt_result.fetchone()
+        
+        attempts_used = test_data.attempt_count if test_data else 0
+        max_attempts = test_data.max_attempts if test_data and test_data.max_attempts else 3
+        attempts_remaining = max_attempts - attempts_used
+        
+        # Update eligibility if all attempts are used
+        if is_eligible and attempts_remaining <= 0:
+            is_eligible = False
+            reason = f"You have used all {max_attempts} test attempts."
+        else:
+            reason = None if is_eligible else f"Complete at least 3 vocabulary assignments to unlock test. You have completed {completed_count} out of 4."
+        
         return {
             "eligible": is_eligible,
-            "reason": None if is_eligible else f"Complete at least 3 vocabulary assignments to unlock test. You have completed {completed_count} out of 4.",
+            "reason": reason,
             "assignments_completed": completed_count,
             "assignments_required": 3,
             "progress_details": {
@@ -74,7 +106,10 @@ class VocabularyTestService:
                 "concept_mapping_completed": completed_assignments.get('concept_mapping', False), 
                 "puzzle_path_completed": completed_assignments.get('puzzle_path', False),
                 "fill_in_blank_completed": completed_assignments.get('fill_in_blank', False)
-            }
+            },
+            "attempts_used": attempts_used,
+            "max_attempts": max_attempts,
+            "attempts_remaining": attempts_remaining
         }
 
     @staticmethod
@@ -766,7 +801,7 @@ class VocabularyTestService:
         questions_correct: int,
         detailed_results: List[Dict[str, Any]]
     ) -> None:
-        """Create a gradebook entry for the test score"""
+        """Create or update gradebook entry for the test score - only keeping the highest score"""
         
         # Get classroom ID from the assignment
         result = await db.execute(
@@ -781,31 +816,101 @@ class VocabularyTestService:
         if not classroom:
             return
         
-        # Create gradebook entry
-        await db.execute(
+        # Check if a gradebook entry already exists for this student/assignment
+        existing_entry_result = await db.execute(
             text("""
-                INSERT INTO gradebook_entries 
-                (student_id, classroom_id, assignment_type, assignment_id, score_percentage,
-                 points_earned, points_possible, completed_at, metadata)
-                VALUES (:student_id, :classroom_id, 'umavocab_test', :assignment_id, 
-                        :score_percentage, :points_earned, :points_possible, NOW(), :metadata)
+                SELECT id, score_percentage, attempt_number 
+                FROM gradebook_entries 
+                WHERE student_id = :student_id 
+                AND classroom_id = :classroom_id 
+                AND assignment_type = 'umavocab_test' 
+                AND assignment_id = :assignment_id
+                ORDER BY score_percentage DESC
+                LIMIT 1
             """),
             {
                 "student_id": str(attempt_data.student_id),
                 "classroom_id": str(classroom.classroom_id),
-                "assignment_id": str(attempt_data.vocabulary_list_id),
-                "score_percentage": score_percentage,
-                "points_earned": questions_correct,
-                "points_possible": attempt_data.total_questions,
-                "metadata": json.dumps({
-                    "test_attempt_id": str(attempt_data.id),
-                    "questions_correct": questions_correct,
-                    "total_questions": attempt_data.total_questions,
-                    "chained_lists": attempt_data.chained_lists if hasattr(attempt_data, 'chained_lists') else [],
-                    "time_spent_seconds": None  # Will be calculated after completion
-                })
+                "assignment_id": str(attempt_data.vocabulary_list_id)
             }
         )
+        existing_entry = existing_entry_result.fetchone()
+        
+        # Calculate the attempt number
+        if existing_entry:
+            current_attempt_number = (existing_entry.attempt_number or 1) + 1
+            
+            # Only update if the new score is higher
+            if score_percentage > existing_entry.score_percentage:
+                # Update the existing entry with the higher score
+                await db.execute(
+                    text("""
+                        UPDATE gradebook_entries 
+                        SET score_percentage = :score_percentage,
+                            points_earned = :points_earned,
+                            points_possible = :points_possible,
+                            completed_at = NOW(),
+                            attempt_number = :attempt_number,
+                            metadata = :metadata,
+                            updated_at = NOW()
+                        WHERE id = :entry_id
+                    """),
+                    {
+                        "entry_id": str(existing_entry.id),
+                        "score_percentage": score_percentage,
+                        "points_earned": questions_correct,
+                        "points_possible": attempt_data.total_questions,
+                        "attempt_number": current_attempt_number,
+                        "metadata": json.dumps({
+                            "test_attempt_id": str(attempt_data.id),
+                            "questions_correct": questions_correct,
+                            "total_questions": attempt_data.total_questions,
+                            "chained_lists": attempt_data.chained_lists if hasattr(attempt_data, 'chained_lists') else [],
+                            "time_spent_seconds": None,  # Will be calculated after completion
+                            "previous_best_score": float(existing_entry.score_percentage)
+                        })
+                    }
+                )
+            else:
+                # Still update the attempt number even if score is lower
+                await db.execute(
+                    text("""
+                        UPDATE gradebook_entries 
+                        SET attempt_number = :attempt_number,
+                            updated_at = NOW()
+                        WHERE id = :entry_id
+                    """),
+                    {
+                        "entry_id": str(existing_entry.id),
+                        "attempt_number": current_attempt_number
+                    }
+                )
+        else:
+            # Create new gradebook entry for first attempt
+            await db.execute(
+                text("""
+                    INSERT INTO gradebook_entries 
+                    (student_id, classroom_id, assignment_type, assignment_id, score_percentage,
+                     points_earned, points_possible, completed_at, attempt_number, metadata)
+                    VALUES (:student_id, :classroom_id, 'umavocab_test', :assignment_id, 
+                            :score_percentage, :points_earned, :points_possible, NOW(), 1, :metadata)
+                """),
+                {
+                    "student_id": str(attempt_data.student_id),
+                    "classroom_id": str(classroom.classroom_id),
+                    "assignment_id": str(attempt_data.vocabulary_list_id),
+                    "score_percentage": score_percentage,
+                    "points_earned": questions_correct,
+                    "points_possible": attempt_data.total_questions,
+                    "metadata": json.dumps({
+                        "test_attempt_id": str(attempt_data.id),
+                        "questions_correct": questions_correct,
+                        "total_questions": attempt_data.total_questions,
+                        "chained_lists": attempt_data.chained_lists if hasattr(attempt_data, 'chained_lists') else [],
+                        "time_spent_seconds": None  # Will be calculated after completion
+                    })
+                }
+            )
 
     @staticmethod
     async def check_test_time_allowed(

@@ -426,18 +426,17 @@ async def get_gradebook(
         classroom_id_list = ','.join([f"'{str(cid)}'" for cid in classroom_ids])
         
         filters = [
-            "ge.assignment_type = 'umavocab_test'",
-            f"ge.classroom_id IN ({classroom_id_list})",
+            f"rs.classroom_id IN ({classroom_id_list})",
             "u.deleted_at IS NULL"
         ]
         
         if assignment_ids:
             assignment_id_list = ','.join([f"'{str(aid)}'" for aid in assignment_ids])
-            filters.append(f"ge.assignment_id IN ({assignment_id_list})")
+            filters.append(f"rs.assignment_id IN ({assignment_id_list})")
         if completed_after:
-            filters.append(f"ge.completed_at >= '{completed_after.isoformat()}'")
+            filters.append(f"rs.completed_at >= '{completed_after.isoformat()}'")
         if completed_before:
-            filters.append(f"ge.completed_at <= '{completed_before.isoformat()}'")
+            filters.append(f"rs.completed_at <= '{completed_before.isoformat()}'")
         if student_search:
             search_term = student_search.replace("'", "''")  # Escape single quotes
             filters.append(
@@ -446,37 +445,53 @@ async def get_gradebook(
                 f"CONCAT(u.first_name, ' ', u.last_name) ILIKE '%{search_term}%')"
             )
         if completion_status == "completed":
-            filters.append("ge.score_percentage IS NOT NULL")
+            filters.append("rs.score_percentage IS NOT NULL")
         elif completion_status == "incomplete":
-            filters.append("ge.score_percentage IS NULL")
+            filters.append("rs.score_percentage IS NULL")
         if min_score is not None:
-            filters.append(f"ge.score_percentage >= {min_score}")
+            filters.append(f"rs.score_percentage >= {min_score}")
         if max_score is not None:
-            filters.append(f"ge.score_percentage <= {max_score}")
+            filters.append(f"rs.score_percentage <= {max_score}")
         
-        # Query gradebook_entries for vocabulary test scores
+        # Query gradebook_entries for vocabulary test scores - only highest score per student/assignment
         vocab_sql = f"""
+            WITH ranked_scores AS (
+                SELECT 
+                    ge.id,
+                    ge.student_id,
+                    ge.assignment_id,
+                    ge.classroom_id,
+                    ge.score_percentage,
+                    ge.completed_at,
+                    ge.metadata,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY ge.student_id, ge.assignment_id 
+                        ORDER BY ge.score_percentage DESC, ge.completed_at DESC
+                    ) as rn
+                FROM gradebook_entries ge
+                WHERE ge.assignment_type = 'umavocab_test'
+            )
             SELECT 
-                ge.id,
-                ge.student_id,
+                rs.id,
+                rs.student_id,
                 u.first_name,
                 u.last_name,
-                ge.assignment_id,
+                rs.assignment_id,
                 vl.title as assignment_title,
                 vl.context_description,
                 ca.assigned_at,
-                ge.completed_at,
-                ge.score_percentage,
-                ge.metadata,
+                rs.completed_at,
+                rs.score_percentage,
+                rs.metadata,
                 c.name as classroom_name
-            FROM gradebook_entries ge
-            JOIN users u ON ge.student_id = u.id
-            JOIN vocabulary_lists vl ON ge.assignment_id = vl.id
-            JOIN classrooms c ON ge.classroom_id = c.id
-            LEFT JOIN classroom_assignments ca ON ca.classroom_id = ge.classroom_id 
-                AND ca.assignment_id = ge.assignment_id
+            FROM ranked_scores rs
+            JOIN users u ON rs.student_id = u.id
+            JOIN vocabulary_lists vl ON rs.assignment_id = vl.id
+            JOIN classrooms c ON rs.classroom_id = c.id
+            LEFT JOIN classroom_assignments ca ON ca.classroom_id = rs.classroom_id 
+                AND ca.assignment_id = rs.assignment_id
                 AND ca.assignment_type = 'vocabulary'
-            WHERE {' AND '.join(filters)}
+            WHERE rs.rn = 1 AND {' AND '.join(filters)}
         """
         
         vocab_result = await db.execute(text(vocab_sql))

@@ -203,7 +203,7 @@ class VocabularyPracticeService:
         best_test_score = test_completion_data.best_score if test_completion_data else None
         last_test_completed_at = test_completion_data.last_completed if test_completion_data else None
         max_test_attempts = test_completion_data.max_attempts if test_completion_data and test_completion_data.max_attempts else 3
-        test_completed = test_attempts_count > 0
+        test_completed = test_attempts_count >= max_test_attempts  # Test is completed when all attempts are used
         
         # Format assignment statuses
         assignments = []

@@ -128,7 +128,7 @@ class AIVocabularyEvaluator:
         grade_context = f"Grade Level: {grade_level}" if grade_level else "Grade Level: Not specified"
         subject_context = f"Subject Area: {subject_area}" if subject_area else ""
         
-        prompt = f"""You are evaluating a student's vocabulary definition. The student was given a word in context and asked to define it.
+        prompt = f"""You are an encouraging educational evaluator assessing a student's vocabulary understanding. Your goal is to reward understanding over perfection.
 
 Word: {word}
 Context Sentence: {example_sentence}
@@ -138,27 +138,52 @@ Reference Definition: {reference_definition}
 
 Student's Definition: {student_definition}
 
-Evaluate on a 0-100 scale considering:
-1. Core meaning understanding (40 points) - Does the student grasp the essential meaning?
-2. Context appropriateness (30 points) - Does the definition fit how the word is used in the sentence?
-3. Completeness (20 points) - Is the definition thorough without being overly wordy?
-4. Communication clarity (10 points) - Is the definition clearly expressed?
+SCORING PHILOSOPHY:
+- Students who demonstrate understanding deserve high scores (75%+)
+- Simple language that shows comprehension is EXCELLENT
+- Academic language is NOT required - clarity of understanding matters most
+- Focus on what the student got RIGHT, not what they missed
+- If the core concept is understood, be generous with points
 
-Important guidelines:
-- Be encouraging and constructive in feedback
-- Give partial credit generously for approximate understanding
-- Consider age-appropriate vocabulary and expression
-- Focus on what the student understood correctly
-- Recognize effort and partial understanding
-- For younger students, simpler definitions that capture the essence are acceptable
-- Accept definitions that may use simpler language but show understanding
+SCORING EXAMPLES:
+- "spurious → fake or false" should score 35-40/40 for core meaning (captures essence perfectly)
+- "skeptical → doesn't trust something" should score 30-35/40 for core meaning (shows clear understanding)
+- "pragmatic → practical, focused on results" should score 35-40/40 for core meaning (excellent grasp)
+- Even partial understanding deserves 20-25/40 for core meaning
+
+Evaluate on a 0-100 scale:
+1. Core meaning understanding (40 points) - Does the student grasp the essential concept?
+   - Full understanding = 35-40 points
+   - Good understanding = 30-35 points  
+   - Partial understanding = 20-30 points
+   - Minimal understanding = 10-20 points
+   - No understanding = 0-10 points
+
+2. Context appropriateness (30 points) - Does it fit the example?
+   - Start at 20 points for any reasonable attempt
+   - Add points for matching the contextual usage
+
+3. Completeness (20 points) - Is enough detail provided?
+   - Start at 15 points for any complete thought
+   - Simple but complete definitions deserve full points
+
+4. Communication clarity (10 points) - Is it clearly expressed?
+   - Start at 7 points for any coherent response
+   - Simple, clear language deserves full points
+
+CRITICAL REMINDERS:
+- A student showing they understand "spurious = fake" deserves 85-95% total
+- Don't penalize informal language or simple explanations
+- Grade-appropriate expectations: younger students need less sophistication
+- Minimum 50% total score for genuine effort (answers >10 characters)
+- Always start feedback with what the student did WELL
 
 Return your evaluation as JSON with this exact structure:
 {{
     "score": [total score 0-100],
-    "feedback": "[Encouraging feedback about what the student understood and suggestions for improvement]",
-    "strengths": ["strength 1", "strength 2"],
-    "areas_for_growth": ["suggestion 1", "suggestion 2"],
+    "feedback": "[Start with praise for what they understood, then gentle suggestions]",
+    "strengths": ["What they got right", "Evidence of understanding"],
+    "areas_for_growth": ["Gentle suggestion 1", "Encouraging tip 2"],
     "component_scores": {{
         "core_meaning": [0-40],
         "context_appropriateness": [0-30],
@@ -248,16 +273,16 @@ Return your evaluation as JSON with this exact structure:
             
         except (json.JSONDecodeError, ValueError) as e:
             logger.error(f"Failed to parse AI response: {e}")
-            # Return a default evaluation
+            # Return a generous default evaluation
             return {
-                "score": 70,
-                "feedback": "Good effort! Your definition shows understanding of the word.",
-                "strengths": ["Shows effort", "Attempted to explain the meaning"],
-                "areas_for_growth": ["Try to be more specific", "Consider the context"],
+                "score": 75,
+                "feedback": "Good job! Your definition shows solid understanding of the word.",
+                "strengths": ["Shows good effort", "Demonstrates understanding"],
+                "areas_for_growth": ["You could add a bit more detail", "Keep practicing with new words"],
                 "component_scores": {
-                    "core_meaning": 28,
-                    "context_appropriateness": 21,
-                    "completeness": 14,
+                    "core_meaning": 30,
+                    "context_appropriateness": 23,
+                    "completeness": 15,
                     "clarity": 7
                 }
             }
@@ -269,66 +294,104 @@ Return your evaluation as JSON with this exact structure:
         reference_definition: str,
         student_definition: str
     ) -> Dict[str, Any]:
-        """Rule-based fallback evaluation"""
+        """Rule-based fallback evaluation - generous and encouraging"""
         
         student_def_lower = student_definition.lower()
         reference_def_lower = reference_definition.lower()
         word_lower = word.lower()
         
-        score = 0
         strengths = []
         areas_for_growth = []
         
-        # Check for core meaning (40 points)
-        core_meaning_score = 0
+        # Check for core meaning (40 points) - START GENEROUS
+        core_meaning_score = 20  # Base score for any genuine attempt
         
         # Extract key words from reference definition
-        reference_words = set(re.findall(r'\b\w{4,}\b', reference_def_lower))
-        student_words = set(re.findall(r'\b\w{4,}\b', student_def_lower))
+        reference_words = set(re.findall(r'\b\w{3,}\b', reference_def_lower))  # Include 3+ letter words
+        student_words = set(re.findall(r'\b\w{3,}\b', student_def_lower))
+        
+        # Remove common words that don't carry meaning
+        common_stop_words = {'the', 'and', 'for', 'with', 'that', 'this', 'are', 'was', 'were', 'been'}
+        reference_words -= common_stop_words
+        student_words -= common_stop_words
         
         # Calculate overlap
         common_words = reference_words & student_words
         if common_words:
-            overlap_ratio = len(common_words) / len(reference_words)
-            core_meaning_score = int(40 * overlap_ratio)
-            strengths.append("Captures key aspects of the meaning")
+            overlap_ratio = len(common_words) / max(len(reference_words), 1)
+            # Generous scoring: even 20% overlap gets good points
+            if overlap_ratio >= 0.3:
+                core_meaning_score = 35  # Excellent understanding
+                strengths.append("Excellent grasp of the core meaning")
+            elif overlap_ratio >= 0.2:
+                core_meaning_score = 30  # Good understanding
+                strengths.append("Good understanding of the word")
+            else:
+                core_meaning_score = 25  # Partial understanding
+                strengths.append("Shows understanding of key concepts")
         else:
-            core_meaning_score = 10  # Minimal points for effort
-            areas_for_growth.append("Try to identify the main meaning of the word")
+            # Check for synonyms or related concepts
+            if any(word in student_def_lower for word in ['similar', 'like', 'type', 'kind', 'means']):
+                core_meaning_score = 25
+                strengths.append("Attempts to explain the meaning")
+            areas_for_growth.append("Try to capture more of the word's specific meaning")
         
-        # Context appropriateness (30 points)
-        context_score = 20  # Default middle score
+        # Context appropriateness (30 points) - START HIGH
+        context_score = 20  # Base score for any attempt
         if len(student_definition) > 10:
-            context_score = 25
-            strengths.append("Provides a complete response")
+            context_score = 25  # Good effort
+            strengths.append("Provides a thoughtful response")
+        if len(student_definition) > 20:
+            context_score = 28  # Excellent effort
         
-        # Completeness (20 points)
-        completeness_score = 10
-        if len(student_def_lower.split()) >= 5:
-            completeness_score = 15
-            strengths.append("Good level of detail")
+        # Completeness (20 points) - GENEROUS
+        completeness_score = 15  # Base score
+        word_count = len(student_def_lower.split())
+        if word_count >= 3:
+            completeness_score = 17
+            if "Complete thought" not in str(strengths):
+                strengths.append("Complete thought provided")
+        if word_count >= 6:
+            completeness_score = 19
         
-        # Clarity (10 points)
-        clarity_score = 7  # Default good clarity
+        # Clarity (10 points) - ASSUME GOOD CLARITY
+        clarity_score = 8  # Default high clarity
+        if len(student_definition) > 15:
+            clarity_score = 9  # Very clear
         
-        # Calculate total
+        # Calculate total - ENSURE MINIMUM 50% FOR GENUINE EFFORT
         total_score = core_meaning_score + context_score + completeness_score + clarity_score
         
-        # Generate feedback
+        # Ensure minimum 50% for any genuine effort (>10 characters)
+        if len(student_definition) > 10 and total_score < 50:
+            total_score = 50
+            # Adjust component scores proportionally
+            adjustment_ratio = 50 / (core_meaning_score + context_score + completeness_score + clarity_score)
+            core_meaning_score = int(core_meaning_score * adjustment_ratio)
+            context_score = int(context_score * adjustment_ratio)
+            completeness_score = int(completeness_score * adjustment_ratio)
+            clarity_score = int(clarity_score * adjustment_ratio)
+        
+        # Generate ENCOURAGING feedback
         if total_score >= 80:
-            feedback = f"Great job defining '{word}'! You show strong understanding of the word's meaning."
+            feedback = f"Excellent work with '{word}'! You clearly understand what this word means."
         elif total_score >= 70:
-            feedback = f"Good effort defining '{word}'! You understand the basic meaning."
+            feedback = f"Good job with '{word}'! You show solid understanding of its meaning."
         elif total_score >= 60:
-            feedback = f"Nice try with '{word}'! You're on the right track."
+            feedback = f"Nice effort with '{word}'! You're demonstrating good comprehension."
         else:
-            feedback = f"Keep working on understanding '{word}'. Think about how it's used in the sentence."
+            feedback = f"Good try with '{word}'! You're on the right path to understanding this word."
         
+        # Always have positive strengths
         if not strengths:
-            strengths = ["Shows effort", "Attempted to provide a definition"]
+            strengths = ["Shows effort and engagement", "Attempts to explain the meaning"]
         
+        # Gentle, encouraging growth areas
         if not areas_for_growth:
-            areas_for_growth = ["Consider adding more detail", "Think about the context"]
+            if total_score < 80:
+                areas_for_growth = ["Consider how the word is used in the example", "You might add a bit more detail"]
+            else:
+                areas_for_growth = ["Keep up the great work", "Continue building your vocabulary"]
         
         return {
             "score": total_score,

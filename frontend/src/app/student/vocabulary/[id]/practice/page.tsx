@@ -353,7 +353,9 @@ export default function VocabularyPracticePage() {
                       ? `Complete ${practiceStatus.required_count - practiceStatus.completed_count} more activities to unlock`
                       : practiceStatus.test_completed
                         ? `Test completed! Score: ${practiceStatus.best_test_score?.toFixed(1)}% (${practiceStatus.test_attempts_count}/${practiceStatus.max_test_attempts} attempts used)`
-                        : 'Ready to test your vocabulary mastery!'
+                        : practiceStatus.test_attempts_count > 0
+                          ? `Ready to test your vocabulary mastery! (${practiceStatus.max_test_attempts - practiceStatus.test_attempts_count} attempt${practiceStatus.max_test_attempts - practiceStatus.test_attempts_count !== 1 ? 's' : ''} remaining)`
+                          : `Ready to test your vocabulary mastery! (${practiceStatus.max_test_attempts} attempt${practiceStatus.max_test_attempts !== 1 ? 's' : ''} available)`
                     }
                   </p>
                 </div>
@@ -378,7 +380,9 @@ export default function VocabularyPracticePage() {
                   ? 'Locked'
                   : practiceStatus.test_completed
                     ? 'Test Completed'
-                    : 'Take Test'
+                    : practiceStatus.test_attempts_count > 0
+                      ? `Retake Test (${practiceStatus.max_test_attempts - practiceStatus.test_attempts_count} left)`
+                      : 'Take Test'
                 }
               </button>
             </div>
