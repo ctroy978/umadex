@@ -15,7 +15,6 @@ import {
   ShieldExclamationIcon,
   ClockIcon,
   XMarkIcon,
-  Cog6ToothIcon
 } from '@heroicons/react/24/outline'
 import type {
   ClassroomDetail,
@@ -23,7 +22,6 @@ import type {
   AssignmentInClassroom
 } from '@/types/classroom'
 import TestScheduleManager from '@/components/teacher/TestScheduleManager'
-import VocabularySettingsModal from '@/components/teacher/VocabularySettingsModal'
 
 export default function ClassroomDetailPage() {
   const params = useParams()
@@ -37,15 +35,6 @@ export default function ClassroomDetailPage() {
   const [securityIncidents, setSecurityIncidents] = useState<any[]>([])
   const [lockedTests, setLockedTests] = useState<any[]>([])
   const [loadingSecurity, setLoadingSecurity] = useState(false)
-  const [vocabSettingsModal, setVocabSettingsModal] = useState<{
-    isOpen: boolean
-    assignmentId: number | null
-    assignmentTitle: string
-  }>({
-    isOpen: false,
-    assignmentId: null,
-    assignmentTitle: ''
-  })
 
   useEffect(() => {
     fetchClassroomDetails()
@@ -331,19 +320,6 @@ export default function ClassroomDetailPage() {
                           )}
                         </div>
                       </div>
-                      {assignment.assignment_type === 'UMAVocab' && (
-                        <button
-                          onClick={() => setVocabSettingsModal({
-                            isOpen: true,
-                            assignmentId: assignment.id,
-                            assignmentTitle: assignment.title
-                          })}
-                          className="ml-4 inline-flex items-center px-3 py-1.5 border border-gray-300 text-xs font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
-                        >
-                          <Cog6ToothIcon className="h-4 w-4 mr-1" />
-                          Manage Vocabulary Settings
-                        </button>
-                      )}
                     </div>
                   </li>
                 ))}
@@ -503,20 +479,6 @@ export default function ClassroomDetailPage() {
         <TestScheduleManager classroomId={classroomId} />
       )}
 
-      {/* Vocabulary Settings Modal */}
-      {vocabSettingsModal.assignmentId && (
-        <VocabularySettingsModal
-          isOpen={vocabSettingsModal.isOpen}
-          onClose={() => setVocabSettingsModal({
-            isOpen: false,
-            assignmentId: null,
-            assignmentTitle: ''
-          })}
-          classroomId={classroomId}
-          assignmentId={vocabSettingsModal.assignmentId}
-          assignmentTitle={vocabSettingsModal.assignmentTitle}
-        />
-      )}
 
     </div>
   )
