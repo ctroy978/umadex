@@ -136,6 +136,11 @@ export default function StudentClassroomPage() {
                 </div>
               </div>
               <div className="flex items-center space-x-3">
+                {user && (
+                  <span className="text-gray-700 font-medium">
+                    {user.first_name} {user.last_name}
+                  </span>
+                )}
                 <button
                   onClick={handleLogout}
                   className="flex items-center px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"

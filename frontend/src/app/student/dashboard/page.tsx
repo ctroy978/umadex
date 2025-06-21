@@ -17,7 +17,7 @@ import {
 export default function StudentDashboard() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const { logout } = useAuth()
+  const { logout, user } = useAuth()
   const [classrooms, setClassrooms] = useState<StudentClassroom[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -87,6 +87,11 @@ export default function StudentDashboard() {
                   </p>
                 </div>
                 <div className="flex items-center space-x-3">
+                  {user && (
+                    <span className="text-gray-700 font-medium">
+                      {user.first_name} {user.last_name}
+                    </span>
+                  )}
                   <button
                     onClick={handleJoinClassroom}
                     className="flex items-center px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
