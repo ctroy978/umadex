@@ -265,16 +265,6 @@ export default function QuestionFlow({
             
             {!result.is_correct && (
               <>
-                <button
-                  onClick={() => {
-                    setResult(null);
-                    setAnswer('');
-                    setStartTime(Date.now());
-                  }}
-                  className="px-4 py-2 bg-gray-600 text-white font-medium rounded-lg hover:bg-gray-700 transition-colors"
-                >
-                  Try Again
-                </button>
                 {onRequestSimpler && question.question_type === 'comprehension' && question.difficulty_level && question.difficulty_level > 1 && (
                   <button
                     onClick={() => {
