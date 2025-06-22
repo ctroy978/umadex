@@ -16,6 +16,7 @@ from app.models.user import User, UserRole
 from app.models.classroom import Classroom, ClassroomAssignment, StudentAssignment
 from app.models.reading import ReadingAssignment as ReadingAssignmentModel
 from app.models.vocabulary import VocabularyList
+from app.models.debate import DebateAssignment
 
 router = APIRouter()
 
@@ -31,7 +32,7 @@ def require_teacher(current_user: User = Depends(get_current_user)) -> User:
 
 class AssignmentSchedule(BaseModel):
     assignment_id: UUID
-    assignment_type: str = "reading"  # "reading" or "vocabulary"
+    assignment_type: str = "reading"  # "reading", "vocabulary", or "debate"
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
 
@@ -210,11 +211,14 @@ async def get_all_available_assignments(
     # Separate by type
     assigned_reading = {}
     assigned_vocabulary = {}
+    assigned_debate = {}
     for ca in assigned_items:
         if ca.assignment_type == "reading" and ca.assignment_id:
             assigned_reading[ca.assignment_id] = ca
         elif ca.assignment_type == "vocabulary" and ca.vocabulary_list_id:
             assigned_vocabulary[ca.vocabulary_list_id] = ca
+        elif ca.assignment_type == "debate" and ca.assignment_id:
+            assigned_debate[ca.assignment_id] = ca
     
     all_assignments = []
     
@@ -355,6 +359,70 @@ async def get_all_available_assignments(
             
             all_assignments.append(vocab_dict)
     
+    # Handle debate assignments
+    if not assignment_type or assignment_type in ["all", "UMADebate"]:
+        # Build query for debate assignments
+        debate_query = select(DebateAssignment).where(
+            and_(
+                DebateAssignment.teacher_id == teacher.id,
+                DebateAssignment.deleted_at.is_(None)  # Filter out archived assignments
+            )
+        )
+        
+        # Apply filters
+        if search:
+            debate_query = debate_query.where(
+                or_(
+                    DebateAssignment.title.ilike(f"%{search}%"),
+                    DebateAssignment.topic.ilike(f"%{search}%"),
+                    DebateAssignment.description.ilike(f"%{search}%")
+                )
+            )
+        
+        if grade_level and grade_level != "all":
+            debate_query = debate_query.where(DebateAssignment.grade_level == grade_level)
+        
+        if status:
+            if status == "assigned":
+                debate_query = debate_query.where(DebateAssignment.id.in_(assigned_debate.keys()))
+            elif status == "unassigned":
+                debate_query = debate_query.where(DebateAssignment.id.notin_(assigned_debate.keys()))
+        
+        # Execute query
+        debate_result = await db.execute(debate_query)
+        debate_assignments = debate_result.scalars().all()
+        
+        # Format debate assignments
+        for assignment in debate_assignments:
+            debate_dict = {
+                "id": str(assignment.id),
+                "assignment_title": assignment.title,
+                "work_title": assignment.topic,
+                "author": "",  # No author for debates
+                "assignment_type": "UMADebate",
+                "grade_level": assignment.grade_level,
+                "work_type": assignment.subject,
+                "status": "published",  # Debates don't have draft status
+                "created_at": assignment.created_at,
+                "is_assigned": assignment.id in assigned_debate,
+                "debate_config": {
+                    "rounds_per_debate": assignment.rounds_per_debate,
+                    "debate_count": assignment.debate_count,
+                    "time_limit_hours": assignment.time_limit_hours
+                },
+                "item_type": "debate"
+            }
+            
+            # Add schedule info if assigned
+            if assignment.id in assigned_debate:
+                ca = assigned_debate[assignment.id]
+                debate_dict["current_schedule"] = {
+                    "start_date": ca.start_date,
+                    "end_date": ca.end_date
+                }
+            
+            all_assignments.append(debate_dict)
+    
     # Sort all assignments by created_at desc
     # Handle both offset-naive and offset-aware datetimes
     all_assignments.sort(key=lambda x: x["created_at"].replace(tzinfo=None) if x["created_at"] else datetime.min, reverse=True)
@@ -409,18 +477,24 @@ async def update_all_classroom_assignments(
     # Build lookup maps
     current_reading = {}
     current_vocabulary = {}
+    current_debate = {}
     for ca in current_assignments:
         if ca.assignment_type == "reading" and ca.assignment_id:
             current_reading[ca.assignment_id] = ca
         elif ca.assignment_type == "vocabulary" and ca.vocabulary_list_id:
             current_vocabulary[ca.vocabulary_list_id] = ca
+        elif ca.assignment_type == "debate" and ca.assignment_id:
+            current_debate[ca.assignment_id] = ca
     
     # Process requested assignments
     requested_reading = {}
     requested_vocabulary = {}
+    requested_debate = {}
     for sched in request.assignments:
         if sched.assignment_type == "vocabulary":
             requested_vocabulary[sched.assignment_id] = sched
+        elif sched.assignment_type == "debate":
+            requested_debate[sched.assignment_id] = sched
         else:  # Default to reading
             requested_reading[sched.assignment_id] = sched
     
@@ -432,6 +506,10 @@ async def update_all_classroom_assignments(
     vocabulary_to_add = set(requested_vocabulary.keys()) - set(current_vocabulary.keys())
     vocabulary_to_remove = set(current_vocabulary.keys()) - set(requested_vocabulary.keys())
     vocabulary_to_update = set(requested_vocabulary.keys()) & set(current_vocabulary.keys())
+    
+    debate_to_add = set(requested_debate.keys()) - set(current_debate.keys())
+    debate_to_remove = set(current_debate.keys()) - set(requested_debate.keys())
+    debate_to_update = set(requested_debate.keys()) & set(current_debate.keys())
     
     # Count students affected by removals
     students_affected = 0
@@ -517,6 +595,46 @@ async def update_all_classroom_assignments(
             )
         )
     
+    if debate_to_remove:
+        # Get classroom assignment IDs that will be removed
+        ca_ids_result = await db.execute(
+            select(ClassroomAssignment.id).where(
+                and_(
+                    ClassroomAssignment.classroom_id == classroom_id,
+                    ClassroomAssignment.assignment_type == "debate",
+                    ClassroomAssignment.assignment_id.in_(debate_to_remove)
+                )
+            )
+        )
+        ca_ids = [row[0] for row in ca_ids_result]
+        
+        if ca_ids:
+            # Count affected students
+            count_result = await db.execute(
+                select(func.count(StudentAssignment.id)).where(
+                    StudentAssignment.classroom_assignment_id.in_(ca_ids)
+                )
+            )
+            students_affected += count_result.scalar() or 0
+            
+            # Delete student assignments first
+            await db.execute(
+                delete(StudentAssignment).where(
+                    StudentAssignment.classroom_assignment_id.in_(ca_ids)
+                )
+            )
+        
+        # Then delete classroom assignments
+        await db.execute(
+            delete(ClassroomAssignment).where(
+                and_(
+                    ClassroomAssignment.classroom_id == classroom_id,
+                    ClassroomAssignment.assignment_type == "debate",
+                    ClassroomAssignment.assignment_id.in_(debate_to_remove)
+                )
+            )
+        )
+    
     # Update existing assignments
     for assignment_id in reading_to_update:
         ca = current_reading[assignment_id]
@@ -527,6 +645,12 @@ async def update_all_classroom_assignments(
     for list_id in vocabulary_to_update:
         ca = current_vocabulary[list_id]
         schedule = requested_vocabulary[list_id]
+        ca.start_date = schedule.start_date
+        ca.end_date = schedule.end_date
+    
+    for assignment_id in debate_to_update:
+        ca = current_debate[assignment_id]
+        schedule = requested_debate[assignment_id]
         ca.start_date = schedule.start_date
         ca.end_date = schedule.end_date
     
@@ -602,6 +726,42 @@ async def update_all_classroom_assignments(
                 db.add(ca)
                 display_order += 1
     
+    # Add new debate assignments
+    for assignment_id in debate_to_add:
+        # Verify debate assignment exists and belongs to teacher
+        debate_result = await db.execute(
+            select(DebateAssignment).where(
+                and_(
+                    DebateAssignment.id == assignment_id,
+                    DebateAssignment.teacher_id == teacher.id,
+                    DebateAssignment.deleted_at.is_(None)
+                )
+            )
+        )
+        if debate_result.scalar_one_or_none():
+            # Check if debate assignment already exists for this classroom
+            existing_result = await db.execute(
+                select(ClassroomAssignment).where(
+                    and_(
+                        ClassroomAssignment.classroom_id == classroom_id,
+                        ClassroomAssignment.assignment_id == assignment_id,
+                        ClassroomAssignment.assignment_type == "debate"
+                    )
+                )
+            )
+            if not existing_result.scalar_one_or_none():
+                schedule = requested_debate[assignment_id]
+                ca = ClassroomAssignment(
+                    classroom_id=classroom_id,
+                    assignment_id=assignment_id,
+                    assignment_type="debate",
+                    display_order=display_order,
+                    start_date=schedule.start_date,
+                    end_date=schedule.end_date
+                )
+                db.add(ca)
+                display_order += 1
+    
     try:
         await db.commit()
     except IntegrityError as e:
@@ -616,12 +776,12 @@ async def update_all_classroom_assignments(
             detail="Database constraint violation"
         )
     
-    total_added = len(reading_to_add) + len(vocabulary_to_add)
-    total_removed = len(reading_to_remove) + len(vocabulary_to_remove)
+    total_added = len(reading_to_add) + len(vocabulary_to_add) + len(debate_to_add)
+    total_removed = len(reading_to_remove) + len(vocabulary_to_remove) + len(debate_to_remove)
     
     return UpdateClassroomAssignmentsResponse(
-        added=[str(id) for id in list(reading_to_add) + list(vocabulary_to_add)],
-        removed=[str(id) for id in list(reading_to_remove) + list(vocabulary_to_remove)],
-        total=len(requested_reading) + len(requested_vocabulary),
+        added=[str(id) for id in list(reading_to_add) + list(vocabulary_to_add) + list(debate_to_add)],
+        removed=[str(id) for id in list(reading_to_remove) + list(vocabulary_to_remove) + list(debate_to_remove)],
+        total=len(requested_reading) + len(requested_vocabulary) + len(requested_debate),
         students_affected=students_affected
     )

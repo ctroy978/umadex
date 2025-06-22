@@ -37,6 +37,7 @@ from . import teacher_classroom_detail
 from . import teacher_settings
 from . import teacher_reports
 from . import teacher_vocabulary_settings
+from . import debate
 
 router = APIRouter()
 
@@ -44,6 +45,9 @@ router = APIRouter()
 # Important: Include chains router first to avoid route conflicts with vocabulary/{list_id}
 router.include_router(vocabulary_chains.router, prefix="/vocabulary", tags=["vocabulary-chains"])
 router.include_router(vocabulary.router, tags=["vocabulary"])
+
+# Include debate routes
+router.include_router(debate.router, tags=["debate"])
 
 # Include unified classroom assignment routes
 router.include_router(teacher_classroom_assignments.router, tags=["classroom-assignments"])

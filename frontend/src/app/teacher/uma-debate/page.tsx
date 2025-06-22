@@ -1,15 +1,8 @@
 'use client'
 
-import ComingSoon from '@/components/ComingSoon'
-import { ChatBubbleLeftRightIcon } from '@heroicons/react/24/outline'
+import { redirect } from 'next/navigation'
 
 export default function UmaDebatePage() {
-  return (
-    <ComingSoon 
-      title="uMaDebate Module"
-      description="Create structured debate activities where students can engage in thoughtful discussions, present arguments, and develop critical thinking skills."
-      icon={ChatBubbleLeftRightIcon}
-      color="bg-green-500"
-    />
-  )
+  // Redirect to the new debate page location
+  redirect('/teacher/debate')
 }

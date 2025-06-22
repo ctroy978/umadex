@@ -41,3 +41,4 @@ class User(Base):
     reading_assignments = relationship("ReadingAssignment", back_populates="teacher")
     vocabulary_lists = relationship("VocabularyList", back_populates="teacher")
     vocabulary_chains = relationship("VocabularyChain", back_populates="teacher")
+    debate_assignments = relationship("DebateAssignment", back_populates="teacher")
