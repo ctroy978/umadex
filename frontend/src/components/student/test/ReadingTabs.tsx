@@ -29,6 +29,44 @@ export default function ReadingTabs({ chunks }: ReadingTabsProps) {
     return acc
   }, {} as Record<string, ChunkImage>)
 
+  // Helper function to render text with important tags highlighted
+  const renderTextWithImportant = (text: string, baseKey: number) => {
+    const segments: React.ReactNode[] = []
+    const importantRegex = /<important>(.*?)<\/important>/g
+    let lastIndex = 0
+    let match
+    let keyIndex = 0
+    
+    while ((match = importantRegex.exec(text)) !== null) {
+      // Add text before the important tag
+      if (match.index > lastIndex) {
+        const textBefore = text.substring(lastIndex, match.index)
+        if (textBefore) {
+          segments.push(textBefore)
+        }
+      }
+      
+      // Add the highlighted important text
+      segments.push(
+        <span key={`important-${baseKey}-${keyIndex++}`} className="bg-yellow-200 font-semibold px-1">
+          {match[1]}
+        </span>
+      )
+      
+      lastIndex = match.index + match[0].length
+    }
+    
+    // Add any remaining text after the last important tag
+    if (lastIndex < text.length) {
+      const remainingText = text.substring(lastIndex)
+      if (remainingText) {
+        segments.push(remainingText)
+      }
+    }
+    
+    return segments.length > 0 ? segments : text
+  }
+
   // Render content with embedded images
   const renderContent = () => {
     const segments: React.ReactNode[] = []
@@ -47,7 +85,7 @@ export default function ReadingTabs({ chunks }: ReadingTabsProps) {
         if (textBefore.trim()) {
           segments.push(
             <span key={`text-${keyIndex++}`}>
-              {textBefore}
+              {renderTextWithImportant(textBefore, keyIndex)}
             </span>
           )
         }
@@ -89,7 +127,7 @@ export default function ReadingTabs({ chunks }: ReadingTabsProps) {
       if (remainingText.trim()) {
         segments.push(
           <span key={`text-${keyIndex++}`}>
-            {remainingText}
+            {renderTextWithImportant(remainingText, keyIndex)}
           </span>
         )
       }

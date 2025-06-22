@@ -5,6 +5,11 @@ interface TableProps {
   className?: string;
 }
 
+interface TableCellProps extends React.TdHTMLAttributes<HTMLTableCellElement> {
+  children: ReactNode;
+  className?: string;
+}
+
 export function Table({ children, className = '' }: TableProps) {
   return (
     <div className="overflow-x-auto">
@@ -50,9 +55,9 @@ export function TableHead({ children, className = '' }: TableProps) {
   );
 }
 
-export function TableCell({ children, className = '' }: TableProps) {
+export function TableCell({ children, className = '', ...props }: TableCellProps) {
   return (
-    <td className={`px-6 py-4 whitespace-nowrap text-sm text-gray-900 ${className}`}>
+    <td className={`px-6 py-4 whitespace-nowrap text-sm text-gray-900 ${className}`} {...props}>
       {children}
     </td>
   );

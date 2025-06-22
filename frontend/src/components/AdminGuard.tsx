@@ -9,7 +9,7 @@ interface AdminGuardProps {
 }
 
 export default function AdminGuard({ children }: AdminGuardProps) {
-  const { user, loading } = useAuth();
+  const { user, isLoading: loading } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
