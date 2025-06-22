@@ -30,7 +30,7 @@ class BypassUsageItem(BaseModel):
     student_email: str
     classroom_id: UUID
     classroom_name: str
-    assignment_id: UUID
+    assignment_id: Optional[UUID]
     assignment_title: str
     chunk_number: int
     question_type: str
@@ -227,8 +227,8 @@ async def get_bypass_code_usage_report(
                     classroom_name=teacher_classrooms.get(event.classroom_id, "Unknown"),
                     assignment_id=event.assignment_id,
                     assignment_title=assignment_title,
-                    chunk_number=event.event_data.get("chunk_number", 0),
-                    question_type=event.event_data.get("question_type", "unknown"),
+                    chunk_number=(event.event_data or {}).get("chunk_number", 0),
+                    question_type=(event.event_data or {}).get("question_type", "unknown"),
                     timestamp=event.created_at,
                     success=is_success
                 ))
