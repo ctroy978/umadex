@@ -42,3 +42,4 @@ class User(Base):
     vocabulary_lists = relationship("VocabularyList", back_populates="teacher")
     vocabulary_chains = relationship("VocabularyChain", back_populates="teacher")
     debate_assignments = relationship("DebateAssignment", back_populates="teacher")
+    student_debates = relationship("StudentDebate", back_populates="student", foreign_keys="StudentDebate.student_id")

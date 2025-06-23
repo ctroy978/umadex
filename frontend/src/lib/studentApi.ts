@@ -19,7 +19,7 @@ export interface StudentAssignment {
   author?: string
   grade_level?: string
   type: string
-  item_type: 'reading' | 'vocabulary'
+  item_type: 'reading' | 'vocabulary' | 'debate'
   assigned_at: string
   start_date?: string
   end_date?: string
@@ -93,7 +93,7 @@ export const studentApi = {
   },
 
   // Validate assignment access
-  async validateAssignmentAccess(assignmentType: 'reading' | 'vocabulary', assignmentId: string): Promise<{
+  async validateAssignmentAccess(assignmentType: 'reading' | 'vocabulary' | 'debate', assignmentId: string): Promise<{
     access_granted: boolean
     classroom_id: string
     classroom_name: string

@@ -14,6 +14,7 @@ from app.models.user import User, UserRole
 from app.models.classroom import Classroom, ClassroomAssignment
 from app.models.reading import ReadingAssignment as ReadingAssignmentModel
 from app.models.vocabulary import VocabularyList
+from app.models.debate import DebateAssignment
 from app.schemas.classroom import AssignmentInClassroom
 
 router = APIRouter()
@@ -97,6 +98,30 @@ async def list_all_classroom_assignments(
             assignment_id=vocab_list.id,
             title=vocab_list.title,
             assignment_type="UMAVocab",
+            assigned_at=ca.assigned_at,
+            display_order=ca.display_order,
+            start_date=ca.start_date,
+            end_date=ca.end_date
+        ))
+    
+    # Get debate assignments
+    debate_result = await db.execute(
+        select(DebateAssignment, ClassroomAssignment)
+        .join(ClassroomAssignment,
+              and_(
+                  ClassroomAssignment.assignment_id == DebateAssignment.id,
+                  ClassroomAssignment.assignment_type == "debate"
+              ))
+        .where(ClassroomAssignment.classroom_id == classroom_id)
+        .order_by(ClassroomAssignment.display_order.nullsfirst(), ClassroomAssignment.assigned_at)
+    )
+    
+    for debate, ca in debate_result:
+        assignment_list.append(AssignmentInClassroom(
+            id=ca.id,
+            assignment_id=debate.id,
+            title=debate.title,
+            assignment_type="UMADebate",
             assigned_at=ca.assigned_at,
             display_order=ca.display_order,
             start_date=ca.start_date,

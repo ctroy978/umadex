@@ -33,7 +33,10 @@ export default function AssignmentCard({ assignment, classroomId }: AssignmentCa
 
   const handleAssignmentClick = () => {
     if (assignment.status === 'active') {
-      if (assignment.is_completed && assignment.has_test) {
+      if (assignment.type === 'UMADebate') {
+        // Navigate to debate assignment page
+        router.push(`/student/debate/${assignment.id}`)
+      } else if (assignment.is_completed && assignment.has_test) {
         if (assignment.test_completed && assignment.test_attempt_id) {
           // Navigate to test results for completed tests
           router.push(`/student/test/results/${assignment.test_attempt_id}`)
@@ -65,6 +68,8 @@ export default function AssignmentCard({ assignment, classroomId }: AssignmentCa
         return <BookOpenIcon className="h-5 w-5 text-blue-600" />
       case 'vocabulary':
         return <LanguageIcon className="h-5 w-5 text-purple-600" />
+      case 'debate':
+        return <UserIcon className="h-5 w-5 text-green-600" />
       default:
         return <BookOpenIcon className="h-5 w-5 text-gray-600" />
     }
@@ -75,6 +80,12 @@ export default function AssignmentCard({ assignment, classroomId }: AssignmentCa
       case 'not_started':
         return 'Not Available Yet'
       case 'active':
+        if (assignment.type === 'UMADebate') {
+          if (assignment.is_completed) {
+            return 'View Debate Results'
+          }
+          return 'Continue Debate'
+        }
         if (assignment.is_completed) {
           if (assignment.has_test) {
             if (assignment.test_completed) {
@@ -109,7 +120,12 @@ export default function AssignmentCard({ assignment, classroomId }: AssignmentCa
         {/* Header */}
         <div className="flex items-start justify-between mb-4">
           <div className="flex items-start space-x-3 flex-1">
-            <div className={`p-2 rounded-lg ${assignment.item_type === 'reading' ? 'bg-blue-100' : 'bg-purple-100'}`}>
+            <div className={`p-2 rounded-lg ${
+              assignment.item_type === 'reading' ? 'bg-blue-100' : 
+              assignment.item_type === 'vocabulary' ? 'bg-purple-100' :
+              assignment.item_type === 'debate' ? 'bg-green-100' :
+              'bg-gray-100'
+            }`}>
               {getTypeIcon()}
             </div>
             <div className="flex-1">
@@ -161,6 +177,13 @@ export default function AssignmentCard({ assignment, classroomId }: AssignmentCa
             <div className="flex items-center text-sm text-gray-500">
               <span className="mr-2">Grade Level:</span>
               <span>{assignment.grade_level}</span>
+            </div>
+          )}
+          
+          {assignment.type === 'UMADebate' && assignment.is_completed && (
+            <div className="flex items-center text-sm text-green-600">
+              <CheckCircleIcon className="h-4 w-4 mr-2" />
+              <span>All debates completed</span>
             </div>
           )}
         </div>

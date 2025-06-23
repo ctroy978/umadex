@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, ForeignKey, DateTime, Integer, UniqueConstraint, Text, Index
+from sqlalchemy import Column, String, ForeignKey, DateTime, Integer, UniqueConstraint, Text, Index, and_
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -71,6 +71,7 @@ class ClassroomAssignment(Base):
     classroom = relationship("Classroom", back_populates="assignments")
     assignment = relationship("ReadingAssignment")
     vocabulary_list = relationship("VocabularyList")
+    # Note: debate_assignment relationship is handled at runtime based on assignment_type
 
 
 class StudentAssignment(Base):

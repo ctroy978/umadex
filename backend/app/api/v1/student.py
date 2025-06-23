@@ -13,6 +13,7 @@ from app.models.user import User, UserRole
 from app.models.classroom import Classroom, ClassroomStudent, ClassroomAssignment, StudentAssignment
 from app.models.reading import ReadingAssignment
 from app.models.vocabulary import VocabularyList
+from app.models.debate import DebateAssignment
 from app.models.vocabulary_practice import VocabularyPuzzleAttempt, VocabularyFillInBlankAttempt
 from app.models.umaread import UmareadAssignmentProgress
 from app.models.tests import AssignmentTest, StudentTestAttempt
@@ -619,6 +620,44 @@ async def get_classroom_detail(
             test_attempt_id=None
         ))
     
+    # Get debate assignments
+    debate_query = await db.execute(
+        select(DebateAssignment, ClassroomAssignment)
+        .join(ClassroomAssignment,
+              and_(
+                  ClassroomAssignment.assignment_id == DebateAssignment.id,
+                  ClassroomAssignment.assignment_type == "debate"
+              ))
+        .where(
+            and_(
+                ClassroomAssignment.classroom_id == classroom_id,
+                DebateAssignment.deleted_at.is_(None)
+            )
+        )
+        .order_by(ClassroomAssignment.start_date, ClassroomAssignment.display_order, ClassroomAssignment.assigned_at)
+    )
+    
+    for debate, ca in debate_query:
+        status = calculate_assignment_status(ca.start_date, ca.end_date)
+        assignments.append(StudentAssignmentResponse(
+            id=str(debate.id),
+            title=debate.title,
+            work_title=debate.topic,
+            author=None,
+            grade_level=debate.grade_level,
+            type="UMADebate",
+            item_type="debate",
+            assigned_at=ca.assigned_at,
+            start_date=ca.start_date,
+            end_date=ca.end_date,
+            display_order=ca.display_order,
+            status=status,
+            is_completed=False,  # Will be updated when student debate tracking is implemented
+            has_test=False,  # Debates don't have tests
+            test_completed=False,
+            test_attempt_id=None
+        ))
+    
     # Sort assignments by start date (earliest first), then display order
     assignments.sort(key=lambda x: (
         x.start_date or datetime.min.replace(tzinfo=timezone.utc),
@@ -646,7 +685,7 @@ async def _validate_assignment_access_helper(
 ):
     """Helper function to validate if a student can access a specific assignment"""
     # Check assignment type
-    if assignment_type not in ["reading", "vocabulary"]:
+    if assignment_type not in ["reading", "vocabulary", "debate"]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid assignment type"
@@ -663,11 +702,18 @@ async def _validate_assignment_access_helper(
                 ClassroomAssignment.assignment_type == "reading"
             )
         )
-    else:
+    elif assignment_type == "vocabulary":
         ca_query = ca_query.where(
             and_(
                 ClassroomAssignment.vocabulary_list_id == assignment_id,
                 ClassroomAssignment.assignment_type == "vocabulary"
+            )
+        )
+    else:  # debate
+        ca_query = ca_query.where(
+            and_(
+                ClassroomAssignment.assignment_id == assignment_id,
+                ClassroomAssignment.assignment_type == "debate"
             )
         )
     
@@ -731,7 +777,7 @@ async def _validate_assignment_access_helper(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Assignment is not available"
             )
-    else:
+    elif assignment_type == "vocabulary":
         vocab_check = await db.execute(
             select(VocabularyList)
             .where(
@@ -742,6 +788,21 @@ async def _validate_assignment_access_helper(
             )
         )
         if not vocab_check.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Assignment is not available"
+            )
+    else:  # debate
+        debate_check = await db.execute(
+            select(DebateAssignment)
+            .where(
+                and_(
+                    DebateAssignment.id == assignment_id,
+                    DebateAssignment.deleted_at.is_(None)
+                )
+            )
+        )
+        if not debate_check.scalar_one_or_none():
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Assignment is not available"

@@ -291,3 +291,60 @@ class ContentModerationService:
         await db.refresh(flag)
         
         return flag
+    
+    async def check_student_post(
+        self,
+        content: str,
+        assignment_id: UUID
+    ) -> Dict[str, Any]:
+        """Quick check for student post moderation"""
+        # This is a simplified version for the student debate API
+        # Returns a result compatible with ModerationResult schema
+        
+        analysis = await self.analyze_content(
+            content,
+            "",  # Will get debate topic from assignment in production
+            assignment_id
+        )
+        
+        if analysis["should_flag"]:
+            highest_flag = max(analysis["flags"], key=lambda x: x["confidence"])
+            return {
+                "flagged": True,
+                "flag_type": highest_flag["type"].value if hasattr(highest_flag["type"], 'value') else str(highest_flag["type"]),
+                "confidence": highest_flag["confidence"],
+                "requires_review": highest_flag["confidence"] > 0.7,
+                "suggested_revision": highest_flag.get("reason", "Please revise your content")
+            }
+        
+        return {
+            "flagged": False,
+            "flag_type": None,
+            "confidence": 0.0,
+            "requires_review": False,
+            "suggested_revision": None
+        }
+        
+    async def _ai_content_check(self, content: str) -> Dict[str, Any]:
+        """Basic AI content check - placeholder for now"""
+        # In production, this would use actual AI
+        return {
+            'appropriate': True,
+            'confidence': 0.0,
+            'reason': '',
+            'suggestion': ''
+        }
+    
+    async def _check_topic_relevance_ai(self, content: str, assignment_id: UUID) -> float:
+        """Check topic relevance using AI - placeholder for now"""
+        # In production, would check actual topic relevance using AI
+        return 0.9
+    
+    def _contains_profanity(self, content: str) -> bool:
+        """Basic profanity check - placeholder"""
+        # In production, would have actual profanity list
+        return False
+    
+    def _suggest_revision(self, content: str) -> str:
+        """Suggest revision - placeholder"""
+        return "Please revise your content"
