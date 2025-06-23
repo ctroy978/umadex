@@ -315,7 +315,7 @@ class StudentDebateService:
         classroom_assignment = await db.get(ClassroomAssignment, student_debate.classroom_assignment_id)
         debate_assignment = await db.get(DebateAssignment, student_debate.assignment_id)
         
-        total_rounds = debate_assignment.debate_format.get('rounds_per_debate', 4)
+        total_rounds = debate_assignment.rounds_per_debate
         
         # Check if we need to advance round or debate
         posts_in_round = await db.execute(
@@ -329,7 +329,11 @@ class StudentDebateService:
             )
         )
         
-        if posts_in_round.scalar() >= 2:  # Both student and AI posted
+        # Check if round is complete (2 posts) OR if it's the final round and student posted
+        posts_count = posts_in_round.scalar()
+        is_final_round = student_debate.current_round >= total_rounds
+        
+        if posts_count >= 2 or (is_final_round and posts_count >= 1):  
             if student_debate.current_round < total_rounds:
                 # Advance to next round
                 student_debate.current_round += 1
@@ -396,7 +400,7 @@ class StudentDebateService:
         else:
             # Check if debate is complete
             debate_assignment = await db.get(DebateAssignment, student_debate.assignment_id)
-            total_rounds = debate_assignment.debate_format.get('rounds_per_debate', 4)
+            total_rounds = debate_assignment.rounds_per_debate
             
             if student_debate.current_round > total_rounds:
                 return 'debate_complete'

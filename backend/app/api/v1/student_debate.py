@@ -79,7 +79,11 @@ async def get_student_debate_assignments(
             title=debate_assignment.title,
             topic=debate_assignment.topic[:100] + "..." if len(debate_assignment.topic) > 100 else debate_assignment.topic,
             difficulty_level=debate_assignment.difficulty_level,
-            debate_format=debate_assignment.debate_format,
+            debate_format={
+                "rounds_per_debate": debate_assignment.rounds_per_debate,
+                "debate_count": debate_assignment.debate_count,
+                "time_limit_hours": debate_assignment.time_limit_hours
+            },
             status=student_debate.status if student_debate else 'not_started',
             debates_completed=student_debate.current_debate - 1 if student_debate and student_debate.status != 'not_started' else 0,
             current_debate_position=getattr(student_debate, f'debate_{student_debate.current_debate}_position', None) if student_debate else None,
@@ -350,18 +354,28 @@ async def submit_student_post(
         )
     
     # Score the post
+    student_position = getattr(student_debate, f'debate_{student_debate.current_debate}_position', 'pro')
     post_score = await scoring_service.score_student_post(
         post.content,
         student_debate.current_round,
         debate_assignment.topic,
         debate_assignment.difficulty_level,
-        current_user.grade_level
+        debate_assignment.grade_level,
+        student_position
     )
     
     # Update post with scores
     student_post = await debate_service.update_post_scores(
         db, student_post.id, post_score
     )
+    
+    # Check if this is the final round of the debate
+    # If student just posted their final response, we shouldn't generate an AI response
+    if student_debate.current_round >= debate_assignment.rounds_per_debate:
+        # This was the student's final post in this debate
+        # Advance to next debate or complete the assignment
+        await debate_service.advance_debate_progress(db, student_debate)
+        return student_post
     
     # Load AI personalities and fallacy templates
     await ai_service.load_personalities(db)
@@ -381,7 +395,7 @@ async def submit_student_post(
                 'round_number': student_debate.current_round,
                 'total_rounds': debate_assignment.rounds_per_debate,
                 'difficulty': debate_assignment.difficulty_level,
-                'grade_level': current_user.grade_level,
+                'grade_level': debate_assignment.grade_level,
                 'previous_posts': current_posts
             },
             should_include_fallacy=should_include_fallacy

@@ -58,7 +58,7 @@ export default function DebatePostComponent({
   const getScoreBadge = () => {
     if (!isStudent || !post.finalPercentage) return null
 
-    const percentage = post.finalPercentage
+    const percentage = Number(post.finalPercentage)
     let colorClass = 'bg-gray-100 text-gray-800'
     
     if (percentage >= 80) colorClass = 'bg-green-100 text-green-800'

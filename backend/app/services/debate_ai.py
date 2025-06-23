@@ -51,7 +51,7 @@ class DebateAIService:
         
         appropriate_personalities = [
             p for p in self._personalities_cache.values()
-            if difficulty in p.difficulty_levels
+            if p.difficulty_levels and difficulty in p.difficulty_levels
         ]
         return random.choice(appropriate_personalities) if appropriate_personalities else list(self._personalities_cache.values())[0]
     
@@ -71,14 +71,14 @@ class DebateAIService:
         # Filter by difficulty
         appropriate_fallacies = [
             f for f in self._fallacy_templates_cache.values()
-            if difficulty in f.difficulty_levels
+            if f.difficulty_levels and difficulty in f.difficulty_levels
         ]
         
         # Try to find topic-relevant fallacies
         topic_words = topic.lower().split()
         topic_relevant = [
             f for f in appropriate_fallacies
-            if any(keyword in topic_words for keyword in f.topic_keywords)
+            if f.topic_keywords and any(keyword in topic_words for keyword in f.topic_keywords)
         ]
         
         if topic_relevant:
@@ -240,8 +240,9 @@ FEEDBACK: [2-3 sentences focusing on strengths and one area for improvement. Be 
         # Parse response
         scores = self._parse_evaluation_response(response)
         
-        # Calculate percentages
-        total_score = sum(scores.values())
+        # Calculate percentages - only sum numeric scores
+        numeric_scores = {k: v for k, v in scores.items() if k != 'feedback'}
+        total_score = sum(numeric_scores.values())
         base_percentage = Decimal(str((total_score / 25.0) * 70.0))
         
         return PostScore(
