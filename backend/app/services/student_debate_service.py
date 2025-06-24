@@ -11,7 +11,7 @@ from sqlalchemy.orm import selectinload
 
 from app.models.debate import (
     DebateAssignment, StudentDebate, DebatePost, DebateChallenge,
-    AIPersonality, FallacyTemplate
+    AIPersonality, FallacyTemplate, DebateRoundFeedback, AIDebatePoint
 )
 from app.models.classroom import ClassroomAssignment, ClassroomStudent
 from app.models.user import User
@@ -182,10 +182,14 @@ class StudentDebateService:
     ) -> DebatePost:
         """Create a student post."""
         
+        # Calculate statement number based on existing posts
+        statement_number = await self._get_next_statement_number(db, student_debate_id, debate_number)
+        
         post = DebatePost(
             student_debate_id=student_debate_id,
             debate_number=debate_number,
             round_number=round_number,
+            statement_number=statement_number,
             post_type='student',
             content=content,
             word_count=word_count,
@@ -212,10 +216,14 @@ class StudentDebateService:
     ) -> DebatePost:
         """Create an AI post."""
         
+        # Calculate statement number based on existing posts
+        statement_number = await self._get_next_statement_number(db, student_debate_id, debate_number)
+        
         post = DebatePost(
             student_debate_id=student_debate_id,
             debate_number=debate_number,
             round_number=round_number,
+            statement_number=statement_number,
             post_type='ai',
             content=content,
             word_count=word_count,
@@ -315,59 +323,55 @@ class StudentDebateService:
         classroom_assignment = await db.get(ClassroomAssignment, student_debate.classroom_assignment_id)
         debate_assignment = await db.get(DebateAssignment, student_debate.assignment_id)
         
-        total_rounds = debate_assignment.rounds_per_debate
-        
-        # Check if we need to advance round or debate
+        # Check if current round is complete (5 statements)
         posts_in_round = await db.execute(
             select(func.count(DebatePost.id))
             .where(
                 and_(
                     DebatePost.student_debate_id == student_debate.id,
-                    DebatePost.debate_number == student_debate.current_debate,
-                    DebatePost.round_number == student_debate.current_round
+                    DebatePost.debate_number == student_debate.current_debate
                 )
             )
         )
         
-        # Check if round is complete (2 posts) OR if it's the final round and student posted
         posts_count = posts_in_round.scalar()
-        is_final_round = student_debate.current_round >= total_rounds
         
-        if posts_count >= 2 or (is_final_round and posts_count >= 1):  
-            if student_debate.current_round < total_rounds:
-                # Advance to next round
-                student_debate.current_round += 1
-            else:
-                # Debate complete, move to next debate
-                if student_debate.current_debate < 3:
-                    student_debate.current_debate += 1
-                    student_debate.current_round = 1
-                    student_debate.status = f'debate_{student_debate.current_debate}'
-                    student_debate.current_debate_started_at = datetime.now(timezone.utc)
-                    student_debate.current_debate_deadline = datetime.now(timezone.utc) + timedelta(hours=8)
-                    
-                    # Update debate percentage
-                    from app.services.debate_scoring import DebateScoringService
-                    scoring_service = DebateScoringService()
-                    await scoring_service.update_debate_percentage(
-                        db, student_debate.id, student_debate.current_debate - 1
-                    )
-                else:
-                    # All debates complete
-                    student_debate.status = 'completed'
-                    
-                    # Calculate final grade
-                    from app.services.debate_scoring import DebateScoringService
-                    scoring_service = DebateScoringService()
-                    await scoring_service.update_debate_percentage(
-                        db, student_debate.id, 3
-                    )
-                    await scoring_service.calculate_final_grade(db, student_debate.id)
+        # Round is complete when we have 5 statements
+        if posts_count >= 5:
+            # Generate coaching feedback for this round
+            if debate_assignment.coaching_enabled:
+                await self._generate_round_feedback(db, student_debate.id, student_debate.current_debate)
+            
+            # Move to next debate
+            if student_debate.current_debate < 3:
+                student_debate.current_debate += 1
+                student_debate.current_round = 1  # Always 1 round per debate now
+                student_debate.status = f'debate_{student_debate.current_debate}'
+                student_debate.current_debate_started_at = datetime.now(timezone.utc)
+                student_debate.current_debate_deadline = datetime.now(timezone.utc) + timedelta(hours=debate_assignment.time_limit_hours)
                 
-                # Increment fallacy counter after each debate
-                student_debate.fallacy_counter += 1
-                if student_debate.fallacy_counter >= 3:
-                    student_debate.fallacy_counter = 0
+                # Update debate percentage
+                from app.services.debate_scoring import DebateScoringService
+                scoring_service = DebateScoringService()
+                await scoring_service.update_debate_percentage(
+                    db, student_debate.id, student_debate.current_debate - 1
+                )
+            else:
+                # All debates complete
+                student_debate.status = 'completed'
+                
+                # Calculate final grade
+                from app.services.debate_scoring import DebateScoringService
+                scoring_service = DebateScoringService()
+                await scoring_service.update_debate_percentage(
+                    db, student_debate.id, 3
+                )
+                await scoring_service.calculate_final_grade(db, student_debate.id)
+            
+            # Increment fallacy counter after each debate
+            student_debate.fallacy_counter += 1
+            if student_debate.fallacy_counter >= 3:
+                student_debate.fallacy_counter = 0
         
         await db.commit()
     
@@ -389,23 +393,26 @@ class StudentDebateService:
         if student_debate.current_debate == 3 and not student_debate.debate_3_position:
             return 'choose_position'
         
-        # Check last post type
-        if not current_posts:
+        # Count posts in current debate
+        posts_count = len([p for p in current_posts if p.debate_number == student_debate.current_debate])
+        
+        # Check if round is complete (5 statements)
+        if posts_count >= 5:
+            return 'debate_complete'
+        
+        # Determine based on statement pattern (student: 1,3,5; AI: 2,4)
+        if posts_count == 0:  # No posts yet
             return 'submit_post'
-        
-        last_post = current_posts[-1]
-        
-        if last_post.post_type == 'student':
+        elif posts_count == 1:  # Student posted 1st
             return 'await_ai'
+        elif posts_count == 2:  # AI posted 2nd
+            return 'submit_post'
+        elif posts_count == 3:  # Student posted 3rd
+            return 'await_ai'
+        elif posts_count == 4:  # AI posted 4th
+            return 'submit_post'
         else:
-            # Check if debate is complete
-            debate_assignment = await db.get(DebateAssignment, student_debate.assignment_id)
-            total_rounds = debate_assignment.rounds_per_debate
-            
-            if student_debate.current_round > total_rounds:
-                return 'debate_complete'
-            else:
-                return 'submit_post'
+            return 'debate_complete'
     
     def calculate_time_remaining(self, student_debate: Optional[StudentDebate]) -> Optional[int]:
         """Calculate seconds remaining in current debate."""
@@ -498,3 +505,125 @@ class StudentDebateService:
             post.bonus_points = post.bonus_points + points
             post.final_percentage = post.base_percentage + post.bonus_points
             await db.commit()
+    
+    async def _get_next_statement_number(
+        self,
+        db: AsyncSession,
+        student_debate_id: UUID,
+        debate_number: int
+    ) -> int:
+        """Get the next statement number for a debate."""
+        result = await db.execute(
+            select(func.count(DebatePost.id))
+            .where(
+                and_(
+                    DebatePost.student_debate_id == student_debate_id,
+                    DebatePost.debate_number == debate_number
+                )
+            )
+        )
+        count = result.scalar() or 0
+        return count + 1
+    
+    async def _generate_round_feedback(
+        self,
+        db: AsyncSession,
+        student_debate_id: UUID,
+        debate_number: int
+    ):
+        """Generate AI coaching feedback after a round."""
+        # Get all posts from this round
+        posts = await self.get_debate_posts(db, student_debate_id, debate_number)
+        
+        # Get the student debate and assignment info
+        student_debate = await db.get(StudentDebate, student_debate_id)
+        debate_assignment = await db.get(DebateAssignment, student_debate.assignment_id)
+        
+        # Analyze student performance
+        student_posts = [p for p in posts if p.post_type == 'student']
+        
+        # Generate coaching feedback using AI
+        from app.services.debate_ai import DebateAIService
+        ai_service = DebateAIService()
+        
+        # Calculate average scores
+        avg_clarity = sum(p.clarity_score for p in student_posts if p.clarity_score) / len(student_posts)
+        avg_evidence = sum(p.evidence_score for p in student_posts if p.evidence_score) / len(student_posts)
+        avg_logic = sum(p.logic_score for p in student_posts if p.logic_score) / len(student_posts)
+        
+        # Generate feedback based on performance
+        strengths = []
+        improvements = []
+        suggestions = []
+        
+        if avg_clarity >= Decimal('4.0'):
+            strengths.append("Clear and well-structured arguments")
+        else:
+            improvements.append("Organize arguments more clearly")
+            suggestions.append("Start each response with a clear thesis statement")
+        
+        if avg_evidence >= Decimal('4.0'):
+            strengths.append("Strong use of evidence and examples")
+        elif avg_evidence < Decimal('3.0'):
+            improvements.append("Include more specific evidence")
+            suggestions.append("Cite specific facts, statistics, or examples to support your points")
+        
+        if avg_logic >= Decimal('4.0'):
+            strengths.append("Logical and coherent reasoning")
+        else:
+            improvements.append("Strengthen logical connections")
+            suggestions.append("Use transitional phrases to connect your ideas")
+        
+        # Create feedback record
+        feedback = DebateRoundFeedback(
+            student_debate_id=student_debate_id,
+            debate_number=debate_number,
+            coaching_feedback=f"Round {debate_number} complete! You demonstrated {', '.join(strengths) if strengths else 'good effort'}. Focus on: {', '.join(improvements) if improvements else 'maintaining consistency'}.",
+            strengths='; '.join(strengths) if strengths else None,
+            improvement_areas='; '.join(improvements) if improvements else None,
+            specific_suggestions='; '.join(suggestions) if suggestions else None
+        )
+        
+        db.add(feedback)
+        await db.commit()
+    
+    async def get_or_create_debate_point(
+        self,
+        db: AsyncSession,
+        assignment_id: UUID,
+        debate_number: int,
+        position: str
+    ) -> str:
+        """Get or create a debate point for the AI."""
+        # Check if we have a pre-generated point
+        result = await db.execute(
+            select(AIDebatePoint)
+            .where(
+                and_(
+                    AIDebatePoint.assignment_id == assignment_id,
+                    AIDebatePoint.debate_number == debate_number,
+                    AIDebatePoint.position == position
+                )
+            )
+            .limit(1)
+        )
+        
+        existing_point = result.scalar_one_or_none()
+        
+        if existing_point:
+            return existing_point.debate_point
+        
+        # Generate a new point based on the topic
+        debate_assignment = await db.get(DebateAssignment, assignment_id)
+        
+        # Default points based on position
+        if position == 'pro':
+            if debate_number == 1:
+                return f"A key benefit of {debate_assignment.topic} is increased efficiency and effectiveness in achieving stated goals."
+            else:
+                return f"Supporting {debate_assignment.topic} leads to positive long-term outcomes for all stakeholders involved."
+        else:
+            if debate_number == 2:
+                return f"The primary concern with {debate_assignment.topic} is the significant resource allocation required without guaranteed results."
+            else:
+                return f"Opposing {debate_assignment.topic} protects against unintended negative consequences and preserves existing systems."

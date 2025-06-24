@@ -8,6 +8,7 @@ import DebatePostComponent from '@/components/debate/DebatePost'
 import PostComposer from '@/components/debate/PostComposer'
 import DebateHeader from '@/components/debate/DebateHeader'
 import PositionSelector from '@/components/debate/PositionSelector'
+import RoundComplete from '@/components/debate/RoundComplete'
 import { ExclamationCircleIcon } from '@heroicons/react/24/outline'
 
 export default function DebateInterfacePage() {
@@ -177,26 +178,19 @@ export default function DebateInterfacePage() {
     )
   }
 
-  // Handle completed states
+  // Handle round completion
   if (progress.nextAction === 'debate_complete') {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
-        <div className="text-center max-w-md">
-          <div className="bg-green-100 rounded-full p-4 w-16 h-16 mx-auto mb-4 flex items-center justify-center">
-            <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-            </svg>
+      <div className="min-h-screen bg-gray-50 flex flex-col">
+        <DebateHeader progress={progress} />
+        <div className="flex-1 flex items-center justify-center p-6">
+          <div className="max-w-3xl w-full">
+            <RoundComplete
+              assignmentId={assignmentId}
+              debateNumber={progress.studentDebate?.currentDebate || 1}
+              onContinue={handleDebateComplete}
+            />
           </div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Debate {progress.studentDebate?.currentDebate || progress.student_debate?.current_debate} Complete!</h2>
-          <p className="text-gray-600 mb-6">
-            Great job! You've completed this debate. Ready for the next one?
-          </p>
-          <button
-            onClick={handleDebateComplete}
-            className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-          >
-            Continue to Next Debate
-          </button>
         </div>
       </div>
     )
@@ -272,7 +266,7 @@ export default function DebateInterfacePage() {
           {progress?.currentPosts && progress.currentPosts.length === 0 && (
             <div className="text-center py-12">
               <p className="text-gray-500 mb-2">
-                Start the debate by presenting your opening argument
+                Start Round {progress.studentDebate?.currentDebate || 1} by presenting your opening argument on a single, focused point
                 {(() => {
                   const studentDebate = progress.studentDebate
                   if (!studentDebate) return '.'
@@ -297,7 +291,7 @@ export default function DebateInterfacePage() {
                 })()}
               </p>
               <p className="text-sm text-gray-400">
-                Remember to support your position with evidence and logical reasoning.
+                This round will have 5 statements total. Focus on one specific argument throughout the round.
               </p>
             </div>
           )}
@@ -355,7 +349,7 @@ export default function DebateInterfacePage() {
               onSubmit={handleSubmitPost}
               disabled={submitting || progress.nextAction !== 'submit_post'}
               minWords={75}
-              maxWords={300}
+              maxWords={150}
             />
           </div>
         )}

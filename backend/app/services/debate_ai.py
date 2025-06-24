@@ -105,16 +105,23 @@ class DebateAIService:
         student_position = debate_context['position']
         ai_position = 'con' if student_position == 'pro' else 'pro'
         
+        # Get the debate point for this round
+        debate_point = debate_context.get('debate_point', '')
+        statement_number = debate_context.get('statement_number', 2)
+        
         if should_include_fallacy:
             fallacy = self._select_fallacy(debate_context['topic'], debate_context['difficulty'])
             
             prompt = f"""You are {personality.display_name} engaging in a structured debate about: {debate_context['topic']}
 
+This round focuses on a SINGLE DEBATE POINT: {debate_point}
+
 You are arguing the {ai_position.upper()} position.
-The student just posted: {student_post}
+The student just posted (Statement #{statement_number - 1}): {student_post}
 
 Debate Context:
-- Round {debate_context['round_number']} of {debate_context['total_rounds']}
+- This is statement #{statement_number} of 5 in Round {debate_context['round_number']}
+- You must focus ONLY on the single debate point for this round
 - Difficulty level: {debate_context['difficulty']}
 - Grade level: {debate_context['grade_level']}
 
@@ -130,14 +137,15 @@ The fallacy should be:
 - Naturally integrated into your argument
 
 Generate a {ai_position.upper()} response that:
-1. Directly addresses the student's points
-2. Introduces new evidence or perspectives
+1. Directly counters the student's argument about the single debate point
+2. Introduces new evidence or perspectives ONLY related to this point
 3. Contains the specified fallacy
-4. Stays within 150-250 words
+4. Stays within 100-150 words (this is statement {statement_number} of 5)
 5. Remains appropriate for {debate_context['grade_level']} students
+6. Does NOT introduce new debate points or change the topic
 
-Previous arguments to avoid repeating:
-{self._summarize_previous_posts(debate_context.get('previous_posts', []))}"""
+Previous statements in this round:
+{self._summarize_round_posts(debate_context.get('previous_posts', []), debate_context['round_number'])}"""
             
             logger.info(f"Calling get_ai_response with prompt length: {len(prompt)}")
             response = await get_ai_response(prompt, max_tokens=400)
@@ -154,25 +162,29 @@ Previous arguments to avoid repeating:
         else:
             prompt = f"""You are {personality.display_name} engaging in a structured debate about: {debate_context['topic']}
 
+This round focuses on a SINGLE DEBATE POINT: {debate_point}
+
 You are arguing the {ai_position.upper()} position.
-The student just posted: {student_post}
+The student just posted (Statement #{statement_number - 1}): {student_post}
 
 Debate Context:
-- Round {debate_context['round_number']} of {debate_context['total_rounds']}
+- This is statement #{statement_number} of 5 in Round {debate_context['round_number']}
+- You must focus ONLY on the single debate point for this round
 - Difficulty level: {debate_context['difficulty']}
 - Grade level: {debate_context['grade_level']}
 
 {personality.prompt_template}
 
 Generate a {ai_position.upper()} response that:
-1. Directly addresses the student's points
-2. Introduces new evidence or perspectives
-3. Stays within 150-250 words
+1. Directly counters the student's argument about the single debate point
+2. Introduces new evidence or perspectives ONLY related to this point
+3. Stays within 100-150 words (this is statement {statement_number} of 5)
 4. Remains appropriate for {debate_context['grade_level']} students
 5. Uses strong, valid arguments without logical fallacies
+6. Does NOT introduce new debate points or change the topic
 
-Previous arguments to avoid repeating:
-{self._summarize_previous_posts(debate_context.get('previous_posts', []))}"""
+Previous statements in this round:
+{self._summarize_round_posts(debate_context.get('previous_posts', []), debate_context['round_number'])}"""
             
             logger.info(f"Calling get_ai_response with prompt length: {len(prompt)}")
             response = await get_ai_response(prompt, max_tokens=400)
@@ -197,6 +209,21 @@ Previous arguments to avoid repeating:
             # Extract first sentence or key point
             first_sentence = post.content.split('.')[0] + '.'
             summaries.append(f"- Round {post.round_number}: {first_sentence}")
+        
+        return '\n'.join(summaries)
+    
+    def _summarize_round_posts(self, posts: List, current_round: int) -> str:
+        """Summarize posts from the current round only."""
+        round_posts = [p for p in posts if p.debate_number == current_round]
+        if not round_posts:
+            return "This is the first statement"
+        
+        summaries = []
+        for post in round_posts:
+            # Show who said what in sequence
+            speaker = "Student" if post.post_type == 'student' else "AI"
+            first_point = post.content.split('.')[0]
+            summaries.append(f"- Statement {post.statement_number} ({speaker}): {first_point}")
         
         return '\n'.join(summaries)
     
@@ -240,10 +267,17 @@ FEEDBACK: [2-3 sentences focusing on strengths and one area for improvement. Be 
         # Parse response
         scores = self._parse_evaluation_response(response)
         
-        # Calculate percentages - only sum numeric scores
+        # Calculate percentages with lenient baseline
+        # New formula: 70 baseline + (score/25 * 30)
+        # This gives 70% for minimal effort, up to 100% for perfect scores
         numeric_scores = {k: v for k, v in scores.items() if k != 'feedback'}
         total_score = sum(numeric_scores.values())
-        base_percentage = Decimal(str((total_score / 25.0) * 70.0))
+        
+        # Lenient grading: 70% baseline + up to 30% based on performance
+        baseline = 70  # Can be made configurable per assignment
+        score_ratio = total_score / 25.0
+        remaining_points = 100 - baseline
+        base_percentage = Decimal(str(baseline + (score_ratio * remaining_points)))
         
         return PostScore(
             clarity=Decimal(str(scores['clarity'])),

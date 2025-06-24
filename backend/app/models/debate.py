@@ -56,6 +56,12 @@ class DebateAssignment(Base):
     time_limit_hours = Column(Integer, nullable=False, default=8)
     difficulty_level = Column(String(20), nullable=False, default="intermediate")
     
+    # New fields for single-point structure
+    statements_per_round = Column(Integer, default=5)
+    coaching_enabled = Column(Boolean, default=True)
+    grading_baseline = Column(Integer, default=70)
+    grading_scale = Column(String(20), default='lenient')
+    
     # AI configuration
     fallacy_frequency = Column(String(20), default="every_2_3")
     ai_personalities_enabled = Column(Boolean, default=True)
@@ -120,6 +126,11 @@ class StudentDebate(Base):
     debate_2_position = Column(String(10))
     debate_3_position = Column(String(10))
     
+    # Single point per round
+    debate_1_point = Column(Text)
+    debate_2_point = Column(Text)
+    debate_3_point = Column(Text)
+    
     # Fallacy tracking
     fallacy_counter = Column(Integer, default=0)
     fallacy_scheduled_debate = Column(Integer)
@@ -155,6 +166,7 @@ class DebatePost(Base):
     # Post identification
     debate_number = Column(Integer, nullable=False)
     round_number = Column(Integer, nullable=False)
+    statement_number = Column(Integer, nullable=False)  # 1-5 for the debate flow
     post_type = Column(String(20), nullable=False)  # 'student' or 'ai'
     
     # Content
@@ -239,3 +251,43 @@ class FallacyTemplate(Base):
     topic_keywords = Column(JSON)  # Array of keywords for topic matching
     active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class DebateRoundFeedback(Base):
+    __tablename__ = "debate_round_feedback"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    student_debate_id = Column(UUID(as_uuid=True), ForeignKey("student_debates.id", ondelete="CASCADE"), nullable=False)
+    debate_number = Column(Integer, nullable=False)
+    
+    # Coaching feedback after the round
+    coaching_feedback = Column(Text, nullable=False)
+    strengths = Column(Text)
+    improvement_areas = Column(Text)
+    specific_suggestions = Column(Text)
+    
+    # Round completion tracking
+    round_completed_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    student_debate = relationship("StudentDebate")
+
+
+class AIDebatePoint(Base):
+    __tablename__ = "ai_debate_points"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    assignment_id = Column(UUID(as_uuid=True), ForeignKey("debate_assignments.id", ondelete="CASCADE"), nullable=False)
+    debate_number = Column(Integer, nullable=False)
+    position = Column(String(10), nullable=False)  # 'pro' or 'con'
+    
+    # The single point for this round
+    debate_point = Column(Text, nullable=False)
+    supporting_evidence = Column(JSON)  # Array of evidence points
+    
+    # Metadata
+    difficulty_appropriate = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    assignment = relationship("DebateAssignment")

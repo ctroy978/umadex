@@ -181,6 +181,7 @@ export interface DebatePost {
   student_debate_id: string;
   debate_number: number;
   round_number: number;
+  statement_number?: number;
   post_type: PostType;
   
   content: string;
@@ -204,6 +205,25 @@ export interface DebatePost {
   ai_feedback?: string;
   
   created_at: string;
+  
+  // Frontend conversions
+  postType?: PostType;
+  aiPersonality?: string;
+  statementNumber?: number;
+  isFallacy?: boolean;
+  fallacyType?: string;
+  clarityScore?: number;
+  evidenceScore?: number;
+  logicScore?: number;
+  persuasivenessScore?: number;
+  rebuttalScore?: number;
+  basePercentage?: number;
+  bonusPoints?: number;
+  finalPercentage?: number;
+  contentFlagged?: boolean;
+  moderationStatus?: ModerationStatus;
+  aiFeedback?: string;
+  createdAt?: string;
 }
 
 // Challenge System
@@ -277,6 +297,18 @@ export interface PositionSelection {
 export interface StudentPostCreate {
   content: string;
   word_count: number;
+}
+
+// Round Feedback
+export interface RoundFeedback {
+  id: string;
+  student_debate_id: string;
+  debate_number: number;
+  coaching_feedback: string;
+  strengths?: string;
+  improvement_areas?: string;
+  specific_suggestions?: string;
+  round_completed_at: string;
 }
 
 // Available challenge options

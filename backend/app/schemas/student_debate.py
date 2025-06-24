@@ -90,6 +90,7 @@ class DebatePost(DebatePostBase):
     student_debate_id: UUID
     debate_number: int
     round_number: int
+    statement_number: int  # 1-5 for the debate flow
     post_type: PostType
     
     ai_personality: Optional[str]
@@ -233,6 +234,30 @@ class FallacyTemplate(BaseModel):
 class PositionSelection(BaseModel):
     position: Literal['pro', 'con']
     reason: Optional[str] = Field(None, max_length=200)
+
+
+# Round Feedback Models
+class RoundFeedback(BaseModel):
+    id: UUID
+    student_debate_id: UUID
+    debate_number: int
+    coaching_feedback: str
+    strengths: Optional[str]
+    improvement_areas: Optional[str]
+    specific_suggestions: Optional[str]
+    round_completed_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# AI Debate Point Models
+class AIDebatePointCreate(BaseModel):
+    assignment_id: UUID
+    debate_number: int = Field(..., ge=1, le=3)
+    position: Literal['pro', 'con']
+    debate_point: str
+    supporting_evidence: List[str]
 
 
 # Content Moderation

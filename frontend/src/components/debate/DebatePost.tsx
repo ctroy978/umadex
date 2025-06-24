@@ -89,6 +89,11 @@ export default function DebatePostComponent({
                 <span className="font-medium text-sm">
                   {isStudent ? 'You' : post.aiPersonality || 'AI Opponent'}
                 </span>
+                {post.statementNumber && (
+                  <span className="ml-2 text-xs bg-gray-200 text-gray-700 px-2 py-0.5 rounded">
+                    Statement {post.statementNumber} of 5
+                  </span>
+                )}
                 {getScoreBadge()}
               </div>
               <span className="text-xs text-gray-500">

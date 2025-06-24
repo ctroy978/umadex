@@ -14,8 +14,8 @@ interface PostComposerProps {
 export default function PostComposer({ 
   onSubmit, 
   disabled = false,
-  minWords = 150,
-  maxWords = 300
+  minWords = 75,
+  maxWords = 150
 }: PostComposerProps) {
   const [content, setContent] = useState('')
   const [wordCount, setWordCount] = useState(0)
