@@ -79,9 +79,9 @@ export default function DebateInterfacePage() {
         throw new Error('Invalid response format')
       }
       
-      // Ensure current_posts is an array
-      if (!data.current_posts) {
-        data.current_posts = []
+      // Ensure currentPosts is an array
+      if (!data.currentPosts) {
+        data.currentPosts = []
       }
       
       setProgress(data)
@@ -119,6 +119,8 @@ export default function DebateInterfacePage() {
       
       if (err.message === 'Post submitted for review') {
         setError('Your post has been flagged for teacher review.')
+      } else if (err.response?.data?.detail) {
+        setError(`Failed to submit post: ${err.response.data.detail}`)
       } else {
         setError('Failed to submit post. Please try again.')
       }
@@ -140,8 +142,16 @@ export default function DebateInterfacePage() {
     }
   }
 
-  const handleDebateComplete = () => {
-    router.push(`/student/debate/${assignmentId}`)
+  const handleDebateComplete = async () => {
+    try {
+      // Call the advance endpoint to move to next debate
+      await studentDebateApi.advanceDebate(assignmentId)
+      // Navigate back to assignment overview
+      router.push(`/student/debate/${assignmentId}`)
+    } catch (err) {
+      console.error('Failed to advance debate:', err)
+      setError('Failed to continue to next debate. Please try again.')
+    }
   }
 
   if (loading) {
@@ -223,6 +233,7 @@ export default function DebateInterfacePage() {
               <h2 className="text-lg font-semibold text-blue-900 mb-1">Debate Topic:</h2>
               <p className="text-blue-800 text-base mb-3">{assignment.topic}</p>
               
+              
               {/* Position Indicator */}
               {(() => {
                 const studentDebate = progress.studentDebate
@@ -230,6 +241,13 @@ export default function DebateInterfacePage() {
                 
                 const currentDebate = studentDebate.currentDebate
                 let position = null
+                
+                // Debug logging
+                console.log('StudentDebate object:', studentDebate)
+                console.log('Current debate:', currentDebate)
+                console.log('debate_1Position:', studentDebate.debate_1Position)
+                console.log('debate_2Position:', studentDebate.debate_2Position)
+                console.log('debate_3Position:', studentDebate.debate_3Position)
                 
                 // Access position fields directly based on current debate
                 // The API returns them as debate_1Position, debate_2Position, etc.
@@ -241,6 +259,7 @@ export default function DebateInterfacePage() {
                   position = studentDebate.debate_3Position
                 }
                 
+                console.log('Selected position:', position)
                 
                 if (!position) return null
                 
@@ -309,12 +328,7 @@ export default function DebateInterfacePage() {
               }
               onChallenge={async (challenge) => {
                 try {
-                  const result = await studentDebateApi.submitChallenge(assignmentId, {
-                    postId: post.id,
-                    challengeType: challenge.type,
-                    challengeValue: challenge.value,
-                    explanation: challenge.explanation
-                  })
+                  const result = await studentDebateApi.submitChallenge(assignmentId, challenge)
                   
                   // Challenge result will be shown in the UI update
                   
@@ -349,7 +363,7 @@ export default function DebateInterfacePage() {
               onSubmit={handleSubmitPost}
               disabled={submitting || progress.nextAction !== 'submit_post'}
               minWords={75}
-              maxWords={150}
+              maxWords={300}
             />
           </div>
         )}

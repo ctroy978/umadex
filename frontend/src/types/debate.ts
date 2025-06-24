@@ -127,52 +127,53 @@ export type ModerationStatus = 'pending' | 'approved' | 'rejected' | 'revision_r
 
 // Assignment Overview for Students
 export interface DebateAssignmentCard {
-  assignment_id: string;
+  assignmentId: string;
   title: string;
   topic: string;
-  difficulty_level: string;
-  debate_format: {
-    rounds_per_debate: number;
-    time_limit_hours: number;
+  difficultyLevel: string;
+  debateFormat: {
+    roundsPerDebate: number;
+    timeLimitHours: number;
+    debateCount: number;
   };
   status: DebateStatus;
-  debates_completed: number;
-  current_debate_position: DebatePosition | null;
-  time_remaining: number | null; // seconds
-  can_start: boolean;
-  access_date: string;
-  due_date: string;
+  debatesCompleted: number;
+  currentDebatePosition: DebatePosition | null;
+  timeRemaining: number | null; // seconds
+  canStart: boolean;
+  accessDate: string;
+  dueDate: string;
 }
 
 // Student Debate Progress
 export interface StudentDebate {
   id: string;
-  student_id: string;
-  assignment_id: string;
-  classroom_assignment_id: string;
+  studentId: string;
+  assignmentId: string;
+  classroomAssignmentId: string;
   status: DebateStatus;
-  current_debate: number;
-  current_round: number;
+  currentDebate: number;
+  currentRound: number;
   
-  debate_1_position: DebatePosition | null;
-  debate_2_position: DebatePosition | null;
-  debate_3_position: DebatePosition | null;
+  debate_1Position: DebatePosition | null;
+  debate_2Position: DebatePosition | null;
+  debate_3Position: DebatePosition | null;
   
-  fallacy_counter: number;
-  fallacy_scheduled_debate: number | null;
-  fallacy_scheduled_round: number | null;
+  fallacyCounter: number;
+  fallacyScheduledDebate: number | null;
+  fallacyScheduledRound: number | null;
   
-  assignment_started_at: string | null;
-  current_debate_started_at: string | null;
-  current_debate_deadline: string | null;
+  assignmentStartedAt: string | null;
+  currentDebateStartedAt: string | null;
+  currentDebateDeadline: string | null;
   
-  debate_1_percentage: number | null;
-  debate_2_percentage: number | null;
-  debate_3_percentage: number | null;
-  final_percentage: number | null;
+  debate_1Percentage: number | null;
+  debate_2Percentage: number | null;
+  debate_3Percentage: number | null;
+  finalPercentage: number | null;
   
-  created_at: string;
-  updated_at: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 // Debate Post
@@ -235,9 +236,9 @@ export interface ChallengeOption {
 }
 
 export interface ChallengeCreate {
-  post_id: string;
-  challenge_type: ChallengeType;
-  challenge_value: string;
+  postId: string;
+  challengeType: ChallengeType;
+  challengeValue: string;
   explanation?: string;
 }
 
@@ -275,16 +276,17 @@ export interface AssignmentScore {
   improvement_bonus: number;
   consistency_bonus: number;
   final_grade: number;
+  finalGrade?: number; // Support both snake_case and camelCase
 }
 
 // Progress State
 export interface DebateProgress {
-  student_debate: StudentDebate;
-  current_posts: DebatePost[];
-  available_challenges: ChallengeOption[];
-  time_remaining: number | null;
-  can_submit_post: boolean;
-  next_action: 'submit_post' | 'await_ai' | 'choose_position' | 'debate_complete' | 'assignment_complete';
+  studentDebate: StudentDebate;
+  currentPosts: DebatePost[];
+  availableChallenges: ChallengeOption[];
+  timeRemaining: number | null;
+  canSubmitPost: boolean;
+  nextAction: 'submit_post' | 'await_ai' | 'choose_position' | 'debate_complete' | 'assignment_complete';
 }
 
 // Position Selection

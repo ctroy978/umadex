@@ -102,8 +102,13 @@ class DebateAIService:
         logger.info(f"Selected personality: {personality.name}")
         
         # Determine AI position (opposite of student)
-        student_position = debate_context['position']
+        student_position = debate_context.get('position')
+        if not student_position:
+            logger.error(f"No student position provided in debate context")
+            raise ValueError("Student position is required but not provided")
+        
         ai_position = 'con' if student_position == 'pro' else 'pro'
+        logger.info(f"Positions - Student: {student_position}, AI: {ai_position}")
         
         # Get the debate point for this round
         debate_point = debate_context.get('debate_point', '')

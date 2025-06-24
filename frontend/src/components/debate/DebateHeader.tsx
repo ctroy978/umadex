@@ -2,7 +2,7 @@
 
 import { DebateProgress } from '@/types/debate'
 import { studentDebateApi } from '@/lib/studentDebateApi'
-import { ArrowLeftIcon, ClockIcon, ChatBubbleLeftRightIcon, UserGroupIcon } from '@heroicons/react/24/outline'
+import { ArrowLeftIcon, ChatBubbleLeftRightIcon, UserGroupIcon } from '@heroicons/react/24/outline'
 import { useRouter } from 'next/navigation'
 
 interface DebateHeaderProps {
@@ -17,7 +17,7 @@ export default function DebateHeader({ progress }: DebateHeaderProps) {
   }
   
   const studentDebate = progress.studentDebate
-  const currentDebateKey = `debate${studentDebate.currentDebate}Position` as keyof typeof studentDebate
+  const currentDebateKey = `debate_${studentDebate.currentDebate}Position` as keyof typeof studentDebate
   const currentPosition = studentDebate[currentDebateKey] as string | null
 
   return (
@@ -56,19 +56,6 @@ export default function DebateHeader({ progress }: DebateHeaderProps) {
           </div>
           
           <div className="flex items-center space-x-3">
-            {progress?.timeRemaining && (
-              <div className="flex items-center text-sm">
-                <ClockIcon className={`h-4 w-4 mr-1 ${
-                  progress.timeRemaining < 3600 ? 'text-orange-600' : 'text-gray-500'
-                }`} />
-                <span className={
-                  progress.timeRemaining < 3600 ? 'text-orange-600 font-medium' : 'text-gray-600'
-                }>
-                  {studentDebateApi.formatTimeRemaining(progress.timeRemaining)}
-                </span>
-              </div>
-            )}
-            
             <div className="flex items-center text-sm text-gray-600">
               <ChatBubbleLeftRightIcon className="h-4 w-4 mr-1" />
               <span>{progress?.currentPosts?.length || 0} posts</span>

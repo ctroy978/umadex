@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
+import logging
 
 from app.core.database import get_db
 from app.utils.deps import get_current_user
@@ -19,6 +20,7 @@ from app.models.vocabulary import VocabularyList
 from app.models.debate import DebateAssignment
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 def require_teacher(current_user: User = Depends(get_current_user)) -> User:
     """Require the current user to be a teacher"""
@@ -272,6 +274,7 @@ async def get_all_available_assignments(
                 "status": assignment.status,
                 "created_at": assignment.created_at,
                 "is_assigned": assignment.id in assigned_reading,
+                "is_archived": assignment.deleted_at is not None,
                 "item_type": "reading"
             }
             
@@ -345,6 +348,7 @@ async def get_all_available_assignments(
                 "status": vocab_list.status,
                 "created_at": vocab_list.created_at,
                 "is_assigned": vocab_list.id in assigned_vocabulary,
+                "is_archived": vocab_list.deleted_at is not None,
                 "word_count": word_counts.get(vocab_list.id, 0),
                 "item_type": "vocabulary"
             }
@@ -405,6 +409,7 @@ async def get_all_available_assignments(
                 "status": "published",  # Debates don't have draft status
                 "created_at": assignment.created_at,
                 "is_assigned": assignment.id in assigned_debate,
+                "is_archived": assignment.deleted_at is not None,
                 "debate_config": {
                     "rounds_per_debate": assignment.rounds_per_debate,
                     "debate_count": assignment.debate_count,
@@ -449,6 +454,9 @@ async def update_all_classroom_assignments(
     db: AsyncSession = Depends(get_db)
 ):
     """Update assignments in a classroom (supports both reading and vocabulary)"""
+    logger.info(f"Updating assignments for classroom {classroom_id}")
+    logger.info(f"Request assignments count: {len(request.assignments)}")
+    
     # Verify classroom exists and belongs to teacher
     result = await db.execute(
         select(Classroom).where(
@@ -491,12 +499,21 @@ async def update_all_classroom_assignments(
     requested_vocabulary = {}
     requested_debate = {}
     for sched in request.assignments:
-        if sched.assignment_type == "vocabulary":
-            requested_vocabulary[sched.assignment_id] = sched
-        elif sched.assignment_type == "debate":
-            requested_debate[sched.assignment_id] = sched
-        else:  # Default to reading
-            requested_reading[sched.assignment_id] = sched
+        try:
+            # Ensure assignment_id is a valid UUID
+            assignment_id = sched.assignment_id
+            if sched.assignment_type == "vocabulary":
+                requested_vocabulary[assignment_id] = sched
+            elif sched.assignment_type == "debate":
+                requested_debate[assignment_id] = sched
+            else:  # Default to reading
+                requested_reading[assignment_id] = sched
+        except Exception as e:
+            logger.error(f"Error processing assignment schedule: {str(e)}, schedule: {sched}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid assignment data: {str(e)}"
+            )
     
     # Calculate changes
     reading_to_add = set(requested_reading.keys()) - set(current_reading.keys())
@@ -617,7 +634,42 @@ async def update_all_classroom_assignments(
             )
             students_affected += count_result.scalar() or 0
             
-            # Delete student assignments first
+            # Import debate models
+            from app.models.debate import StudentDebate, DebatePost, DebateRoundFeedback
+            
+            # Get student debate IDs that will be deleted
+            debate_ids_result = await db.execute(
+                select(StudentDebate.id).where(
+                    StudentDebate.classroom_assignment_id.in_(ca_ids)
+                )
+            )
+            debate_ids = [row[0] for row in debate_ids_result]
+            
+            if debate_ids:
+                logger.info(f"Deleting {len(debate_ids)} student debates for classroom assignments: {ca_ids}")
+                
+                # Delete debate posts first
+                await db.execute(
+                    delete(DebatePost).where(
+                        DebatePost.student_debate_id.in_(debate_ids)
+                    )
+                )
+                
+                # Delete debate round feedback
+                await db.execute(
+                    delete(DebateRoundFeedback).where(
+                        DebateRoundFeedback.student_debate_id.in_(debate_ids)
+                    )
+                )
+                
+                # Now delete student debates
+                await db.execute(
+                    delete(StudentDebate).where(
+                        StudentDebate.classroom_assignment_id.in_(ca_ids)
+                    )
+                )
+            
+            # Delete student assignments
             await db.execute(
                 delete(StudentAssignment).where(
                     StudentAssignment.classroom_assignment_id.in_(ca_ids)
@@ -641,6 +693,7 @@ async def update_all_classroom_assignments(
         schedule = requested_reading[assignment_id]
         ca.start_date = schedule.start_date
         ca.end_date = schedule.end_date
+        logger.debug(f"Updating reading assignment {assignment_id}: start_date={schedule.start_date}, end_date={schedule.end_date}")
     
     for list_id in vocabulary_to_update:
         ca = current_vocabulary[list_id]
@@ -655,7 +708,7 @@ async def update_all_classroom_assignments(
         ca.end_date = schedule.end_date
     
     # Add new reading assignments
-    display_order = len(current_assignments) - len(reading_to_remove) - len(vocabulary_to_remove)
+    display_order = len(current_assignments) - len(reading_to_remove) - len(vocabulary_to_remove) - len(debate_to_remove)
     for assignment_id in reading_to_add:
         # Verify assignment exists and belongs to teacher
         assignment_result = await db.execute(
@@ -667,28 +720,32 @@ async def update_all_classroom_assignments(
                 )
             )
         )
-        if assignment_result.scalar_one_or_none():
-            # Check if assignment already exists for this classroom
-            existing_result = await db.execute(
-                select(ClassroomAssignment).where(
-                    and_(
-                        ClassroomAssignment.classroom_id == classroom_id,
-                        ClassroomAssignment.assignment_id == assignment_id
-                    )
+        assignment = assignment_result.scalar_one_or_none()
+        if not assignment:
+            logger.warning(f"Reading assignment {assignment_id} not found or archived, skipping")
+            continue
+        
+        # Check if assignment already exists for this classroom
+        existing_result = await db.execute(
+            select(ClassroomAssignment).where(
+                and_(
+                    ClassroomAssignment.classroom_id == classroom_id,
+                    ClassroomAssignment.assignment_id == assignment_id
                 )
             )
-            if not existing_result.scalar_one_or_none():
-                schedule = requested_reading[assignment_id]
-                ca = ClassroomAssignment(
-                    classroom_id=classroom_id,
-                    assignment_id=assignment_id,
-                    assignment_type="reading",
-                    display_order=display_order,
-                    start_date=schedule.start_date,
-                    end_date=schedule.end_date
-                )
-                db.add(ca)
-                display_order += 1
+        )
+        if not existing_result.scalar_one_or_none():
+            schedule = requested_reading[assignment_id]
+            ca = ClassroomAssignment(
+                classroom_id=classroom_id,
+                assignment_id=assignment_id,
+                assignment_type="reading",
+                display_order=display_order,
+                start_date=schedule.start_date,
+                end_date=schedule.end_date
+            )
+            db.add(ca)
+            display_order += 1
     
     # Add new vocabulary assignments
     for list_id in vocabulary_to_add:
@@ -702,29 +759,33 @@ async def update_all_classroom_assignments(
                 )
             )
         )
-        if vocab_result.scalar_one_or_none():
-            # Check if vocabulary assignment already exists for this classroom
-            existing_result = await db.execute(
-                select(ClassroomAssignment).where(
-                    and_(
-                        ClassroomAssignment.classroom_id == classroom_id,
-                        ClassroomAssignment.vocabulary_list_id == list_id,
-                        ClassroomAssignment.assignment_type == "vocabulary"
-                    )
+        vocab_list = vocab_result.scalar_one_or_none()
+        if not vocab_list:
+            logger.warning(f"Vocabulary list {list_id} not found or archived, skipping")
+            continue
+        
+        # Check if vocabulary assignment already exists for this classroom
+        existing_result = await db.execute(
+            select(ClassroomAssignment).where(
+                and_(
+                    ClassroomAssignment.classroom_id == classroom_id,
+                    ClassroomAssignment.vocabulary_list_id == list_id,
+                    ClassroomAssignment.assignment_type == "vocabulary"
                 )
             )
-            if not existing_result.scalar_one_or_none():
-                schedule = requested_vocabulary[list_id]
-                ca = ClassroomAssignment(
-                    classroom_id=classroom_id,
-                    vocabulary_list_id=list_id,
-                    assignment_type="vocabulary",
-                    display_order=display_order,
-                    start_date=schedule.start_date,
-                    end_date=schedule.end_date
-                )
-                db.add(ca)
-                display_order += 1
+        )
+        if not existing_result.scalar_one_or_none():
+            schedule = requested_vocabulary[list_id]
+            ca = ClassroomAssignment(
+                classroom_id=classroom_id,
+                vocabulary_list_id=list_id,
+                assignment_type="vocabulary",
+                display_order=display_order,
+                start_date=schedule.start_date,
+                end_date=schedule.end_date
+            )
+            db.add(ca)
+            display_order += 1
     
     # Add new debate assignments
     for assignment_id in debate_to_add:
@@ -738,35 +799,40 @@ async def update_all_classroom_assignments(
                 )
             )
         )
-        if debate_result.scalar_one_or_none():
-            # Check if debate assignment already exists for this classroom
-            existing_result = await db.execute(
-                select(ClassroomAssignment).where(
-                    and_(
-                        ClassroomAssignment.classroom_id == classroom_id,
-                        ClassroomAssignment.assignment_id == assignment_id,
-                        ClassroomAssignment.assignment_type == "debate"
-                    )
+        debate_assignment = debate_result.scalar_one_or_none()
+        if not debate_assignment:
+            logger.warning(f"Debate assignment {assignment_id} not found or archived, skipping")
+            continue
+        
+        # Check if debate assignment already exists for this classroom
+        existing_result = await db.execute(
+            select(ClassroomAssignment).where(
+                and_(
+                    ClassroomAssignment.classroom_id == classroom_id,
+                    ClassroomAssignment.assignment_id == assignment_id,
+                    ClassroomAssignment.assignment_type == "debate"
                 )
             )
-            if not existing_result.scalar_one_or_none():
-                schedule = requested_debate[assignment_id]
-                ca = ClassroomAssignment(
-                    classroom_id=classroom_id,
-                    assignment_id=assignment_id,
-                    assignment_type="debate",
-                    display_order=display_order,
-                    start_date=schedule.start_date,
-                    end_date=schedule.end_date
-                )
-                db.add(ca)
-                display_order += 1
+        )
+        if not existing_result.scalar_one_or_none():
+            schedule = requested_debate[assignment_id]
+            ca = ClassroomAssignment(
+                classroom_id=classroom_id,
+                assignment_id=assignment_id,
+                assignment_type="debate",
+                display_order=display_order,
+                start_date=schedule.start_date,
+                end_date=schedule.end_date
+            )
+            db.add(ca)
+            display_order += 1
     
     try:
         await db.commit()
     except IntegrityError as e:
         await db.rollback()
-        if "classroom_reading_assignment_uc" in str(e) or "classroom_vocab_assignment_uc" in str(e):
+        logger.error(f"IntegrityError in update_all_classroom_assignments: {str(e)}")
+        if "_classroom_reading_assignment_uc" in str(e) or "_classroom_vocab_assignment_uc" in str(e):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="One or more assignments are already assigned to this classroom"
@@ -774,6 +840,21 @@ async def update_all_classroom_assignments(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Database constraint violation"
+        )
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Unexpected error in update_all_classroom_assignments: {str(e)}", exc_info=True)
+        
+        # Check for specific foreign key violations
+        if "student_debates_classroom_assignment_id_fkey" in str(e):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Cannot remove debate assignment: students have active debates. Please have students complete or abandon their debates first."
+            )
+        
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update assignments: {str(e)}"
         )
     
     total_added = len(reading_to_add) + len(vocabulary_to_add) + len(debate_to_add)

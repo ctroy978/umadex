@@ -87,7 +87,7 @@ async def get_student_debate_assignments(
             status=student_debate.status if student_debate else 'not_started',
             debates_completed=student_debate.current_debate - 1 if student_debate and student_debate.status != 'not_started' else 0,
             current_debate_position=getattr(student_debate, f'debate_{student_debate.current_debate}_position', None) if student_debate else None,
-            time_remaining=debate_service.calculate_time_remaining(student_debate) if student_debate else None,
+            time_remaining=None,  # Deprecated - use classroom assignment deadline
             can_start=ca.access_date <= datetime.now(timezone.utc) < ca.due_date,
             access_date=ca.access_date,
             due_date=ca.due_date
@@ -149,7 +149,7 @@ async def get_debate_assignment_details(
         status=student_debate.status if student_debate else 'not_started',
         debates_completed=student_debate.current_debate - 1 if student_debate and student_debate.status != 'not_started' else 0,
         current_debate_position=getattr(student_debate, f'debate_{student_debate.current_debate}_position', None) if student_debate else None,
-        time_remaining=debate_service.calculate_time_remaining(student_debate) if student_debate else None,
+        time_remaining=None,  # Deprecated - use classroom assignment deadline
         can_start=access_date <= now < due_date,
         access_date=access_date,
         due_date=due_date
@@ -244,17 +244,13 @@ async def get_current_debate_state(
     if current_posts and current_posts[-1].post_type == 'ai':
         available_challenges = debate_service.get_available_challenges()
     
-    # Calculate time remaining
-    time_remaining = None
-    if student_debate.current_debate_deadline:
-        time_remaining = int((student_debate.current_debate_deadline - datetime.now(timezone.utc)).total_seconds())
-        time_remaining = max(0, time_remaining)
+    # Time remaining removed - using classroom assignment deadline instead
     
     return DebateProgress(
         student_debate=student_debate,
         current_posts=current_posts,
         available_challenges=available_challenges,
-        time_remaining=time_remaining,
+        time_remaining=None,  # Deprecated - use classroom assignment deadline
         can_submit_post=next_action == 'submit_post',
         next_action=next_action
     )
@@ -290,17 +286,16 @@ async def submit_student_post(
             detail="Assignment already completed"
         )
     
-    # Check time limit
-    if student_debate.current_debate_deadline and datetime.now(timezone.utc) > student_debate.current_debate_deadline:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Time limit exceeded for current debate"
-        )
+    # Time limit check removed - using classroom assignment deadline instead
     
     # Verify it's student's turn
     current_posts = await debate_service.get_debate_posts(
         db, student_debate.id, student_debate.current_debate
     )
+    
+    logger.info(f"Current posts in debate {student_debate.current_debate}: {len(current_posts)}")
+    if current_posts:
+        logger.info(f"Last post type: {current_posts[-1].post_type}, statement: {current_posts[-1].statement_number}")
     
     if current_posts and current_posts[-1].post_type == 'student':
         raise HTTPException(
@@ -313,23 +308,9 @@ async def submit_student_post(
         post.content, assignment_id
     )
     
-    if moderation_result["flagged"] and moderation_result["requires_review"]:
-        # Create post but mark as pending moderation
-        student_post = await debate_service.create_student_post(
-            db,
-            student_debate_id=student_debate.id,
-            debate_number=student_debate.current_debate,
-            round_number=student_debate.current_round,
-            content=post.content,
-            word_count=post.word_count,
-            moderation_status='pending'
-        )
-        
-        raise HTTPException(
-            status_code=status.HTTP_202_ACCEPTED,
-            detail="Post submitted for review",
-            headers={"X-Moderation-Status": "pending"}
-        )
+    # Determine moderation status
+    is_flagged = moderation_result["flagged"] and moderation_result["requires_review"]
+    moderation_status = 'pending' if is_flagged else 'approved'
     
     # Create the student post
     student_post = await debate_service.create_student_post(
@@ -338,7 +319,8 @@ async def submit_student_post(
         debate_number=student_debate.current_debate,
         round_number=student_debate.current_round,
         content=post.content,
-        word_count=post.word_count
+        word_count=post.word_count,
+        moderation_status=moderation_status
     )
     
     # Get debate assignment for scoring
@@ -371,15 +353,17 @@ async def submit_student_post(
     
     # Get current statement count for this debate
     posts_in_debate = await db.execute(
-        select(func.count(DebatePost.id))
+        select(func.count(DebatePostModel.id))
         .where(
             and_(
-                DebatePost.student_debate_id == student_debate.id,
-                DebatePost.debate_number == student_debate.current_debate
+                DebatePostModel.student_debate_id == student_debate.id,
+                DebatePostModel.debate_number == student_debate.current_debate
             )
         )
     )
     statement_count = posts_in_debate.scalar() or 0
+    
+    logger.info(f"After student post: debate {student_debate.current_debate}, total posts: {statement_count}")
     
     # Check if AI should respond (only after statements 1 and 3)
     if statement_count in [1, 3]:  # Just posted statement 1 or 3
@@ -396,23 +380,40 @@ async def submit_student_post(
             logger.info(f"Should include fallacy: {should_include_fallacy}")
             
             # Get or create the debate point for this round
+            # Student is PRO in debate 1, so AI is CON
             if student_debate.current_debate == 1:
                 debate_point = student_debate.debate_1_point or await debate_service.get_or_create_debate_point(
-                    db, assignment_id, 1, 'pro'
+                    db, assignment_id, 1, 'con'
                 )
+            # Student is CON in debate 2, so AI is PRO
             elif student_debate.current_debate == 2:
                 debate_point = student_debate.debate_2_point or await debate_service.get_or_create_debate_point(
-                    db, assignment_id, 2, 'con'
+                    db, assignment_id, 2, 'pro'
                 )
             else:
                 debate_point = student_debate.debate_3_point or "The main point being debated in this round"
+            
+            # Get the position for the current debate
+            position_field = f'debate_{student_debate.current_debate}_position'
+            position = getattr(student_debate, position_field, None)
+            logger.info(f"Student position for debate {student_debate.current_debate}: {position} (field: {position_field})")
+            
+            if not position:
+                logger.error(f"No position set for debate {student_debate.current_debate}")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Position not set for debate {student_debate.current_debate}"
+                )
+            
+            # AI takes the opposite position from the student
+            ai_position = 'con' if position == 'pro' else 'pro'
             
             ai_response = await ai_service.generate_ai_response(
                 student_post=post.content,
                 debate_context={
                     'topic': debate_assignment.topic,
                     'debate_point': debate_point,
-                    'position': getattr(student_debate, f'debate_{student_debate.current_debate}_position'),
+                    'position': ai_position,
                     'round_number': student_debate.current_debate,
                     'statement_number': statement_count + 1,
                     'difficulty': debate_assignment.difficulty_level,
@@ -424,7 +425,9 @@ async def submit_student_post(
             logger.info(f"AI response generated successfully: {len(ai_response.get('content', ''))} chars")
         except Exception as e:
             logger.error(f"Error generating AI response: {str(e)}", exc_info=True)
-            raise
+            # Don't let AI generation failure prevent student post from being saved
+            # Just return the student post
+            return student_post
         
         # Create AI post
         ai_post = await debate_service.create_ai_post(
@@ -439,10 +442,30 @@ async def submit_student_post(
             fallacy_type=ai_response['fallacy_type']
         )
     elif statement_count == 5:  # Just posted statement 5 (final)
-        # Round complete - generate coaching feedback and advance
-        await debate_service.advance_debate_progress(db, student_debate)
+        # Round complete - generate coaching feedback but DON'T advance yet
+        # The frontend will show completion screen and user will decide when to continue
+        logger.info(f"Round {student_debate.current_debate} complete - generating feedback")
+        
+        # Generate coaching feedback for this round
+        result = await db.execute(
+            select(DebateAssignment).where(DebateAssignment.id == assignment_id)
+        )
+        debate_assignment_for_feedback = result.scalar_one_or_none()
+        
+        if debate_assignment_for_feedback and debate_assignment_for_feedback.coaching_enabled:
+            await debate_service._generate_round_feedback(
+                db, student_debate.id, student_debate.current_debate
+            )
     
     # For statements 2 and 4, no AI response needed
+    
+    # If the post was flagged, return 202 instead of 200
+    if is_flagged:
+        raise HTTPException(
+            status_code=status.HTTP_202_ACCEPTED,
+            detail="Post submitted for review",
+            headers={"X-Moderation-Status": "pending"}
+        )
     
     return student_post
 
@@ -622,3 +645,46 @@ async def get_round_feedback(
         )
     
     return feedback
+
+
+@router.post("/{assignment_id}/advance", response_model=StudentDebate)
+async def advance_to_next_debate(
+    assignment_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Advance to the next debate after viewing round feedback."""
+    
+    # Get student debate
+    classroom_assignment = await debate_service.verify_student_access(
+        db, current_user.id, assignment_id
+    )
+    
+    student_debate = await debate_service.get_student_debate(
+        db, current_user.id, assignment_id, classroom_assignment.id
+    )
+    
+    if not student_debate:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Debate not found"
+        )
+    
+    # Verify current round is complete
+    current_posts = await debate_service.get_debate_posts(
+        db, student_debate.id, student_debate.current_debate
+    )
+    
+    if len(current_posts) < 5:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current debate round is not complete"
+        )
+    
+    # Advance to next debate
+    await debate_service.advance_debate_progress(db, student_debate)
+    
+    # Refresh the student_debate object to get the updated status
+    await db.refresh(student_debate)
+    
+    return student_debate

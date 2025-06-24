@@ -292,9 +292,10 @@ export default function AssignmentManagementPage() {
         assignments: assignmentsToSave
       })
       router.push(`/teacher/classrooms/${classroomId}`)
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to save assignments:', error)
-      alert('Failed to save assignments. Please try again.')
+      const errorMessage = error?.response?.data?.detail || error?.message || 'Failed to save assignments'
+      alert(`Error: ${errorMessage}. Please try again.`)
     } finally {
       setSaving(false)
     }
@@ -317,9 +318,10 @@ export default function AssignmentManagementPage() {
         assignments: assignmentsToSave
       })
       router.push(`/teacher/classrooms/${classroomId}`)
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to save assignments:', error)
-      alert('Failed to save assignments. Please try again.')
+      const errorMessage = error?.response?.data?.detail || error?.message || 'Failed to save assignments'
+      alert(`Error: ${errorMessage}. Please try again.`)
     } finally {
       setSaving(false)
     }

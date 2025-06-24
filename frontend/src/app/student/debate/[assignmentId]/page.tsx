@@ -146,7 +146,7 @@ export default function DebateAssignmentPage() {
                 <ChatBubbleLeftRightIcon className="h-5 w-5 text-gray-400 mr-2" />
                 <div>
                   <p className="text-sm text-gray-500">Debates</p>
-                  <p className="font-medium">{assignment.debate_count} debates</p>
+                  <p className="font-medium">{assignment.debateCount} debates</p>
                 </div>
               </div>
               
@@ -154,7 +154,7 @@ export default function DebateAssignmentPage() {
                 <ClockIcon className="h-5 w-5 text-gray-400 mr-2" />
                 <div>
                   <p className="text-sm text-gray-500">Time Limit</p>
-                  <p className="font-medium">{assignment.time_limit_hours} hours per debate</p>
+                  <p className="font-medium">{assignment.timeLimitHours} hours per debate</p>
                 </div>
               </div>
               
@@ -162,7 +162,7 @@ export default function DebateAssignmentPage() {
                 <UserGroupIcon className="h-5 w-5 text-gray-400 mr-2" />
                 <div>
                   <p className="text-sm text-gray-500">Rounds</p>
-                  <p className="font-medium">{assignment.rounds_per_debate} rounds per debate</p>
+                  <p className="font-medium">{assignment.roundsPerDebate} rounds per debate</p>
                 </div>
               </div>
             </div>
@@ -181,11 +181,27 @@ export default function DebateAssignmentPage() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm text-gray-500">Current Debate</p>
-                    <p className="font-medium">Debate {progress.current_debate} of {assignment.debate_count}</p>
+                    <p className="font-medium">Debate {progress?.studentDebate?.currentDebate || 1} of {assignment.debateCount}</p>
                   </div>
                   <div className="text-right">
                     <p className="text-sm text-gray-500">Position</p>
-                    <p className="font-medium capitalize">{progress.position}</p>
+                    <p className="font-medium capitalize">
+                      {(() => {
+                        const currentDebate = progress?.studentDebate?.currentDebate
+                        if (!currentDebate || !progress?.studentDebate) return 'Not set'
+                        
+                        let position = null
+                        if (currentDebate === 1) {
+                          position = progress.studentDebate.debate_1Position
+                        } else if (currentDebate === 2) {
+                          position = progress.studentDebate.debate_2Position
+                        } else if (currentDebate === 3) {
+                          position = progress.studentDebate.debate_3Position
+                        }
+                        
+                        return position ? position.toUpperCase() : 'Not set'
+                      })()}
+                    </p>
                   </div>
                 </div>
 
@@ -195,22 +211,22 @@ export default function DebateAssignmentPage() {
                     <div key={debateNum}>
                       <div className="flex justify-between text-sm mb-1">
                         <span className="text-gray-600">Debate {debateNum}</span>
-                        {progress?.student_debate?.[`debate_${debateNum}_percentage`] !== null && (
+                        {progress?.studentDebate?.[`debate_${debateNum}Percentage`] !== null && (
                           <span className="text-gray-900 font-medium">
-                            {progress?.student_debate?.[`debate_${debateNum}_percentage`]}%
+                            {progress?.studentDebate?.[`debate_${debateNum}Percentage`]}%
                           </span>
                         )}
                       </div>
                       <div className="w-full bg-gray-200 rounded-full h-2">
                         <div 
                           className={`h-2 rounded-full ${
-                            debateNum < (progress?.student_debate?.current_debate || 1) ? 'bg-green-600' :
-                            debateNum === (progress?.student_debate?.current_debate || 1) ? 'bg-blue-600' :
+                            debateNum < (progress?.studentDebate?.currentDebate || 1) ? 'bg-green-600' :
+                            debateNum === (progress?.studentDebate?.currentDebate || 1) ? 'bg-blue-600' :
                             'bg-gray-300'
                           }`}
                           style={{
-                            width: debateNum < (progress?.student_debate?.current_debate || 1) ? '100%' :
-                                   debateNum === (progress?.student_debate?.current_debate || 1) ? `${((progress?.student_debate?.current_round || 1) / (assignment?.rounds_per_debate || 3)) * 100}%` :
+                            width: debateNum < (progress?.studentDebate?.currentDebate || 1) ? '100%' :
+                                   debateNum === (progress?.studentDebate?.currentDebate || 1) ? `${((progress?.studentDebate?.currentRound || 1) / (assignment?.debateFormat?.roundsPerDebate || 3)) * 100}%` :
                                    '0%'
                           }}
                         />
@@ -220,12 +236,12 @@ export default function DebateAssignmentPage() {
                 </div>
 
                 {/* Time Remaining */}
-                {progress.time_remaining && (
+                {progress.timeRemaining && (
                   <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
                     <div className="flex items-center">
                       <ClockIcon className="h-5 w-5 text-amber-600 mr-2" />
                       <p className="text-sm text-amber-800">
-                        Time remaining for current debate: {Math.floor(progress.time_remaining / 3600)} hours {Math.floor((progress.time_remaining % 3600) / 60)} minutes
+                        Time remaining for current debate: {Math.floor(progress.timeRemaining / 3600)} hours {Math.floor((progress.timeRemaining % 3600) / 60)} minutes
                       </p>
                     </div>
                   </div>
@@ -244,15 +260,15 @@ export default function DebateAssignmentPage() {
             <ul className="space-y-2 text-gray-700">
               <li className="flex">
                 <span className="text-green-500 mr-2">•</span>
-                You will participate in {assignment.debate_count} debates on this topic
+                You will participate in {assignment.debateFormat.debateCount} debates on this topic
               </li>
               <li className="flex">
                 <span className="text-green-500 mr-2">•</span>
-                Each debate consists of {assignment.rounds_per_debate} rounds of exchanges
+                Each debate consists of {assignment.debateFormat.roundsPerDebate} rounds of exchanges
               </li>
               <li className="flex">
                 <span className="text-green-500 mr-2">•</span>
-                You have {assignment.time_limit_hours} hours to complete each debate
+                You have {assignment.debateFormat.timeLimitHours} hours to complete each debate
               </li>
               <li className="flex">
                 <span className="text-green-500 mr-2">•</span>

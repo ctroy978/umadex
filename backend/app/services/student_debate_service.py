@@ -88,9 +88,9 @@ class StudentDebateService:
     ) -> StudentDebate:
         """Create initial student debate record."""
         
-        # Randomly assign positions for debates 1 and 2
-        debate_1_position = random.choice(['pro', 'con'])
-        debate_2_position = 'con' if debate_1_position == 'pro' else 'pro'
+        # Fixed positions: Debate 1 = PRO, Debate 2 = CON, Debate 3 = student choice
+        debate_1_position = 'pro'
+        debate_2_position = 'con'
         
         # Initialize fallacy scheduling (will appear in one of the 3 debates)
         fallacy_debate = random.randint(1, 3)
@@ -338,9 +338,22 @@ class StudentDebateService:
         
         # Round is complete when we have 5 statements
         if posts_count >= 5:
-            # Generate coaching feedback for this round
+            # Check if feedback already exists for this round
             if debate_assignment.coaching_enabled:
-                await self._generate_round_feedback(db, student_debate.id, student_debate.current_debate)
+                # Check if feedback already exists
+                existing_feedback = await db.execute(
+                    select(DebateRoundFeedback)
+                    .where(
+                        and_(
+                            DebateRoundFeedback.student_debate_id == student_debate.id,
+                            DebateRoundFeedback.debate_number == student_debate.current_debate
+                        )
+                    )
+                )
+                
+                # Only generate feedback if it doesn't exist yet
+                if not existing_feedback.scalar_one_or_none():
+                    await self._generate_round_feedback(db, student_debate.id, student_debate.current_debate)
             
             # Move to next debate
             if student_debate.current_debate < 3:
@@ -615,6 +628,13 @@ class StudentDebateService:
         
         # Generate a new point based on the topic
         debate_assignment = await db.get(DebateAssignment, assignment_id)
+        
+        if not debate_assignment:
+            # Return a generic point if assignment not found
+            if position == 'pro':
+                return "The primary argument in favor is the potential for positive change and improvement."
+            else:
+                return "The main concern is the risk of unintended negative consequences."
         
         # Default points based on position
         if position == 'pro':

@@ -17,7 +17,7 @@ export default function DebateAssignmentCard({ assignment }: DebateAssignmentCar
   const router = useRouter()
 
   const handleClick = () => {
-    router.push(`/student/debate/${assignment.assignment_id}`)
+    router.push(`/student/debate/${assignment.assignmentId}`)
   }
 
   const getStatusBadge = () => {
@@ -29,7 +29,7 @@ export default function DebateAssignmentCard({ assignment }: DebateAssignmentCar
       default:
         return (
           <Badge variant="secondary">
-            Debate {assignment.current_debate_position ? assignment.debates_completed + 1 : assignment.debates_completed}/3
+            Debate {assignment.currentDebatePosition ? assignment.debatesCompleted + 1 : assignment.debatesCompleted}/3
           </Badge>
         )
     }
@@ -41,17 +41,17 @@ export default function DebateAssignmentCard({ assignment }: DebateAssignmentCar
     } else if (assignment.status === 'completed') {
       return 'All debates completed'
     } else {
-      const currentDebate = assignment.debates_completed + 1
-      return `Round ${assignment.current_debate_position ? '1' : '0'}/${assignment.debate_format.rounds_per_debate}`
+      const currentDebate = assignment.debatesCompleted + 1
+      return `Round ${assignment.currentDebatePosition ? '1' : '0'}/${assignment.debateFormat.roundsPerDebate}`
     }
   }
 
   const getTimeDisplay = () => {
-    if (assignment.time_remaining) {
-      return studentDebateApi.formatTimeRemaining(assignment.time_remaining)
+    if (assignment.timeRemaining) {
+      return studentDebateApi.formatTimeRemaining(assignment.timeRemaining)
     }
     
-    const dueDate = new Date(assignment.due_date)
+    const dueDate = new Date(assignment.dueDate)
     const now = new Date()
     
     if (now > dueDate) {
@@ -80,11 +80,11 @@ export default function DebateAssignmentCard({ assignment }: DebateAssignmentCar
       <CardContent>
         <div className="space-y-3">
           {/* Current Position */}
-          {assignment.current_debate_position && (
+          {assignment.currentDebatePosition && (
             <div className="flex items-center text-sm text-muted-foreground">
               <Users className="mr-2 h-4 w-4" />
               <span>
-                Current Position: <strong>{studentDebateApi.getPositionText(assignment.current_debate_position)}</strong>
+                Current Position: <strong>{studentDebateApi.getPositionText(assignment.currentDebatePosition)}</strong>
               </span>
             </div>
           )}
@@ -98,13 +98,13 @@ export default function DebateAssignmentCard({ assignment }: DebateAssignmentCar
           {/* Time */}
           <div className="flex items-center text-sm">
             <Clock className="mr-2 h-4 w-4" />
-            <span className={assignment.time_remaining && assignment.time_remaining < 3600 ? 'text-orange-600' : 'text-muted-foreground'}>
+            <span className={assignment.timeRemaining && assignment.timeRemaining < 3600 ? 'text-orange-600' : 'text-muted-foreground'}>
               {getTimeDisplay()}
             </span>
           </div>
         </div>
         
-        {assignment.can_start && assignment.status === 'not_started' && (
+        {assignment.canStart && assignment.status === 'not_started' && (
           <Button 
             className="w-full mt-4" 
             onClick={(e) => {

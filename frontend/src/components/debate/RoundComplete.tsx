@@ -21,10 +21,10 @@ export default function RoundComplete({ assignmentId, debateNumber, onContinue }
 
   const fetchFeedback = async () => {
     try {
-      const response = await fetch(`/api/v1/student-debate/${assignmentId}/feedback/${debateNumber}`)
-      if (!response.ok) throw new Error('Failed to fetch feedback')
-      const data = await response.json()
-      setFeedback(data)
+      // Import the api client for proper auth
+      const { api } = await import('@/lib/api')
+      const response = await api.get(`/v1/student/debate/${assignmentId}/feedback/${debateNumber}`)
+      setFeedback(response.data)
     } catch (err) {
       setError('Could not load feedback')
     } finally {

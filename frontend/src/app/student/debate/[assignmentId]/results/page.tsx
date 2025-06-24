@@ -36,6 +36,7 @@ export default function DebateResultsPage() {
         studentDebateApi.getScores(assignmentId)
       ])
       setAssignment(assignmentData)
+      console.log('Scores data:', scoresData)
       setScores(scoresData)
     } catch (err) {
       console.error('Failed to fetch results:', err)
@@ -111,11 +112,11 @@ export default function DebateResultsPage() {
           <div className="text-center">
             <TrophyIcon className="h-12 w-12 text-yellow-500 mx-auto mb-4" />
             <h2 className="text-3xl font-bold mb-2">Assignment Complete!</h2>
-            <div className={`text-5xl font-bold ${getGradeColor(scores.final_grade)}`}>
-              {scores.final_grade.toFixed(1)}%
+            <div className={`text-5xl font-bold ${getGradeColor(Number(scores.final_grade || scores.finalGrade) || 0)}`}>
+              {(Number(scores.final_grade || scores.finalGrade) || 0).toFixed(1)}%
             </div>
-            <div className={`text-2xl font-semibold mt-2 ${getGradeColor(scores.final_grade)}`}>
-              Grade: {getGradeLetter(scores.final_grade)}
+            <div className={`text-2xl font-semibold mt-2 ${getGradeColor(Number(scores.final_grade || scores.finalGrade) || 0)}`}>
+              Grade: {getGradeLetter(Number(scores.final_grade || scores.finalGrade) || 0)}
             </div>
           </div>
         </div>
@@ -167,7 +168,7 @@ export default function DebateResultsPage() {
         </div>
 
         {/* Bonuses */}
-        {(scores.improvement_bonus > 0 || scores.consistency_bonus > 0) && (
+        {(Number(scores.improvement_bonus) > 0 || Number(scores.consistency_bonus) > 0) && (
           <div className="mb-6 bg-white rounded-lg shadow">
             <div className="px-6 py-4 border-b border-gray-200">
               <h3 className="text-lg font-medium flex items-center">
@@ -177,7 +178,7 @@ export default function DebateResultsPage() {
             </div>
             <div className="p-6">
               <div className="space-y-3">
-                {scores.improvement_bonus > 0 && (
+                {Number(scores.improvement_bonus) > 0 && (
                   <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
                     <div className="flex items-center">
                       <ArrowTrendingUpIcon className="h-5 w-5 text-green-600 mr-2" />
@@ -188,11 +189,11 @@ export default function DebateResultsPage() {
                         </p>
                       </div>
                     </div>
-                    <span className="text-green-600 font-bold">+{scores.improvement_bonus}%</span>
+                    <span className="text-green-600 font-bold">+{Number(scores.improvement_bonus)}%</span>
                   </div>
                 )}
                 
-                {scores.consistency_bonus > 0 && (
+                {Number(scores.consistency_bonus) > 0 && (
                   <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
                     <div className="flex items-center">
                       <CheckCircleIcon className="h-5 w-5 text-blue-600 mr-2" />
@@ -203,7 +204,7 @@ export default function DebateResultsPage() {
                         </p>
                       </div>
                     </div>
-                    <span className="text-blue-600 font-bold">+{scores.consistency_bonus}%</span>
+                    <span className="text-blue-600 font-bold">+{Number(scores.consistency_bonus)}%</span>
                   </div>
                 )}
               </div>
@@ -237,22 +238,22 @@ export default function DebateResultsPage() {
                           (scores.debate_2_score?.total_bonus_points || 0) + 
                           (scores.debate_3_score?.total_bonus_points || 0)}</span>
                 </div>
-                {scores.improvement_bonus > 0 && (
+                {Number(scores.improvement_bonus) > 0 && (
                   <div className="flex justify-between text-sm">
                     <span>Improvement Bonus</span>
-                    <span className="text-green-600">+{scores.improvement_bonus}%</span>
+                    <span className="text-green-600">+{Number(scores.improvement_bonus)}%</span>
                   </div>
                 )}
-                {scores.consistency_bonus > 0 && (
+                {Number(scores.consistency_bonus) > 0 && (
                   <div className="flex justify-between text-sm">
                     <span>Consistency Bonus</span>
-                    <span className="text-blue-600">+{scores.consistency_bonus}%</span>
+                    <span className="text-blue-600">+{Number(scores.consistency_bonus)}%</span>
                   </div>
                 )}
                 <div className="flex justify-between font-bold border-t pt-2">
                   <span>Final Grade</span>
-                  <span className={getGradeColor(scores.final_grade)}>
-                    {scores.final_grade.toFixed(1)}%
+                  <span className={getGradeColor(Number(scores.final_grade || scores.finalGrade) || 0)}>
+                    {(Number(scores.final_grade || scores.finalGrade) || 0).toFixed(1)}%
                   </span>
                 </div>
               </div>
