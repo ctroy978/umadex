@@ -264,6 +264,10 @@ class StudentDebateService:
         post.final_percentage = scores.final_percentage
         post.ai_feedback = scores.feedback
         
+        # Update technique bonus if present
+        if hasattr(scores, 'technique_bonus') and scores.technique_bonus is not None:
+            post.technique_bonus_awarded = scores.technique_bonus
+        
         await db.commit()
         await db.refresh(post)
         

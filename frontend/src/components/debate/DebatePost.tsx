@@ -59,6 +59,9 @@ export default function DebatePostComponent({
     if (!isStudent || !post.finalPercentage) return null
 
     const percentage = Number(post.finalPercentage)
+    const basePercentage = Number(post.basePercentage || post.finalPercentage)
+    const techniqueBonus = Number(post.techniqueBonusAwarded || 0)
+    
     let colorClass = 'bg-gray-100 text-gray-800'
     
     if (percentage >= 80) colorClass = 'bg-green-100 text-green-800'
@@ -67,6 +70,9 @@ export default function DebatePostComponent({
     return (
       <span className={`ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${colorClass}`}>
         {percentage.toFixed(0)}%
+        {techniqueBonus > 0 && (
+          <span className="ml-1 text-purple-700">(+{techniqueBonus})</span>
+        )}
       </span>
     )
   }
@@ -110,6 +116,20 @@ export default function DebatePostComponent({
             {isStudent && post.aiFeedback && (
               <div className="mt-3 p-3 bg-blue-100 rounded-lg">
                 <p className="text-sm text-blue-800">{post.aiFeedback}</p>
+              </div>
+            )}
+
+            {/* Technique bonus display */}
+            {isStudent && post.selectedTechnique && post.techniqueBonusAwarded !== undefined && (
+              <div className="mt-3 p-3 bg-purple-100 rounded-lg">
+                <p className="text-sm text-purple-800">
+                  <span className="font-medium">Rhetorical Technique:</span> {post.selectedTechnique}
+                  {post.techniqueBonusAwarded > 0 && (
+                    <span className="ml-2 font-medium text-purple-900">
+                      +{post.techniqueBonusAwarded}% bonus
+                    </span>
+                  )}
+                </p>
               </div>
             )}
 

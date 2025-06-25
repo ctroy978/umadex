@@ -344,7 +344,8 @@ async def submit_student_post(
         debate_assignment.topic,
         debate_assignment.difficulty_level,
         debate_assignment.grade_level,
-        student_position
+        student_position,
+        post.selected_technique
     )
     
     # Update post with scores

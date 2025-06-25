@@ -198,6 +198,9 @@ class DebatePost(Base):
     # Rhetorical technique selection (Phase 1)
     selected_technique = Column(String(100))
     
+    # Rhetorical technique bonus (Phase 2)
+    technique_bonus_awarded = Column(Numeric(3, 1))
+    
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     # Relationships

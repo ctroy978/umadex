@@ -21,7 +21,8 @@ class DebateScoringService:
         topic: str,
         difficulty: str,
         grade_level: str,
-        student_position: str = 'pro'
+        student_position: str = 'pro',
+        selected_technique: Optional[str] = None
     ) -> PostScore:
         """Score a student post using AI evaluation."""
         return await self.ai_service.evaluate_student_post(
@@ -30,7 +31,8 @@ class DebateScoringService:
             topic,
             difficulty,
             grade_level,
-            student_position
+            student_position,
+            selected_technique
         )
     
     async def calculate_debate_average(

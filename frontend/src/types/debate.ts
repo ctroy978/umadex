@@ -205,6 +205,7 @@ export interface DebatePost {
   moderation_status: ModerationStatus;
   ai_feedback?: string;
   selected_technique?: string;
+  technique_bonus_awarded?: number;
   
   created_at: string;
   
@@ -226,6 +227,7 @@ export interface DebatePost {
   moderationStatus?: ModerationStatus;
   aiFeedback?: string;
   selectedTechnique?: string;
+  techniqueBonusAwarded?: number;
   createdAt?: string;
 }
 

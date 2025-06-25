@@ -113,6 +113,7 @@ class DebatePost(DebatePostBase):
     ai_feedback: Optional[str]
     
     selected_technique: Optional[str]
+    technique_bonus_awarded: Optional[Decimal]
     
     created_at: datetime
 
@@ -161,6 +162,8 @@ class PostScore(BaseModel):
     bonus_points: Decimal = Decimal('0.0')
     final_percentage: Decimal
     feedback: str
+    technique_bonus: Optional[Decimal] = None
+    technique_feedback: Optional[str] = None
 
 
 class DebateScore(BaseModel):

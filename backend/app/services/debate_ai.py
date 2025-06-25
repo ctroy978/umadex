@@ -239,10 +239,46 @@ Previous statements in this round:
         topic: str,
         difficulty: str,
         grade_level: str,
-        student_position: str
+        student_position: str,
+        selected_technique: Optional[str] = None
     ) -> PostScore:
         """Evaluate student post using rubric."""
         
+        # Include technique evaluation if selected
+        technique_section = ""
+        if selected_technique:
+            technique_section = f"""
+
+RHETORICAL TECHNIQUE EVALUATION:
+The student selected technique: {selected_technique}
+
+If a technique was selected, evaluate whether the student used it correctly:
+1. Check if the argument demonstrates the selected technique
+2. Award 2-5 bonus percentage points based on execution:
+   - 5 points: Excellent use, clear demonstration of technique
+   - 3-4 points: Good use, technique is present but could be stronger  
+   - 2 points: Attempted use, technique is barely visible but shows understanding
+   - 0 points: No evidence of the selected technique being used
+
+3. Do NOT penalize students for poor technique use - only reward good use
+4. Include brief feedback about their technique usage
+
+TECHNIQUE DEFINITIONS FOR REFERENCE:
+- ethos: Building trust by showing knowledge and trustworthiness through credible sources, confident speech
+- pathos: Connecting with audience feelings through vivid stories, powerful words, or relatable examples
+- logos: Persuading with clear reasoning, facts, statistics, and evidence
+- kairos: Showing why the argument matters right now by tying to current events or urgent issues
+- repetition: Repeating key words or phrases to emphasize the main point and make it memorable
+- rhetorical_question: Asking a question that doesn't need an answer to provoke thought
+- antithesis: Contrasting two opposing ideas in a sentence to create a striking effect
+- refutation: Countering the opponent's argument with evidence or logic to weaken their position
+- metaphor: Comparing two unlike things to make a point vivid and relatable
+- concession: Admitting a valid point from the opponent before countering it to show fairness
+
+Provide technique evaluation as:
+TECHNIQUE_BONUS: [0-5]
+TECHNIQUE_FEEDBACK: [1-2 sentences about their technique use]"""
+
         prompt = f"""Evaluate this student debate post on a 1-5 scale for each category:
 
 Student Post: {post_content}
@@ -258,6 +294,7 @@ Scoring Criteria:
 - Logic (1-5): Sound reasoning, avoids contradictions. Arguments follow logically.
 - Persuasiveness (1-5): Compelling use of ethos/pathos/logos. Engaging and convincing.
 - Rebuttal (1-5): Addresses opponent's previous points. Shows understanding and counters effectively.
+{technique_section}
 
 Provide your evaluation in this exact format:
 CLARITY: [score]
@@ -265,17 +302,19 @@ EVIDENCE: [score]
 LOGIC: [score]
 PERSUASIVENESS: [score]
 REBUTTAL: [score]
-FEEDBACK: [2-3 sentences focusing on strengths and one area for improvement. Be encouraging and educational.]"""
+FEEDBACK: [2-3 sentences focusing on strengths and one area for improvement. Be encouraging and educational.]
+{f"TECHNIQUE_BONUS: [score]" if selected_technique else ""}
+{f"TECHNIQUE_FEEDBACK: [feedback]" if selected_technique else ""}"""
         
-        response = await get_ai_response(prompt, max_tokens=300)
+        response = await get_ai_response(prompt, max_tokens=400 if selected_technique else 300)
         
         # Parse response
-        scores = self._parse_evaluation_response(response)
+        scores = self._parse_evaluation_response(response, selected_technique is not None)
         
         # Calculate percentages with lenient baseline
         # New formula: 70 baseline + (score/25 * 30)
         # This gives 70% for minimal effort, up to 100% for perfect scores
-        numeric_scores = {k: v for k, v in scores.items() if k != 'feedback'}
+        numeric_scores = {k: v for k, v in scores.items() if k not in ['feedback', 'technique_bonus', 'technique_feedback']}
         total_score = sum(numeric_scores.values())
         
         # Lenient grading: 70% baseline + up to 30% based on performance
@@ -284,6 +323,15 @@ FEEDBACK: [2-3 sentences focusing on strengths and one area for improvement. Be 
         remaining_points = 100 - baseline
         base_percentage = Decimal(str(baseline + (score_ratio * remaining_points)))
         
+        # Add technique bonus if applicable
+        technique_bonus = Decimal(str(scores.get('technique_bonus', 0)))
+        final_percentage = base_percentage + technique_bonus
+        
+        # Combine feedback
+        feedback = scores['feedback']
+        if selected_technique and 'technique_feedback' in scores:
+            feedback += f" {scores['technique_feedback']}"
+        
         return PostScore(
             clarity=Decimal(str(scores['clarity'])),
             evidence=Decimal(str(scores['evidence'])),
@@ -291,12 +339,14 @@ FEEDBACK: [2-3 sentences focusing on strengths and one area for improvement. Be 
             persuasiveness=Decimal(str(scores['persuasiveness'])),
             rebuttal=Decimal(str(scores['rebuttal'])),
             base_percentage=base_percentage,
-            bonus_points=Decimal('0'),
-            final_percentage=base_percentage,
-            feedback=scores['feedback']
+            bonus_points=technique_bonus,
+            final_percentage=final_percentage,
+            feedback=feedback,
+            technique_bonus=technique_bonus,
+            technique_feedback=scores.get('technique_feedback', '')
         )
     
-    def _parse_evaluation_response(self, response: str) -> Dict:
+    def _parse_evaluation_response(self, response: str, includes_technique: bool = False) -> Dict:
         """Parse the AI evaluation response."""
         lines = response.strip().split('\n')
         scores = {}
@@ -314,6 +364,13 @@ FEEDBACK: [2-3 sentences focusing on strengths and one area for improvement. Be 
                 scores['rebuttal'] = int(line.split(':')[1].strip())
             elif line.startswith('FEEDBACK:'):
                 scores['feedback'] = ':'.join(line.split(':')[1:]).strip()
+            elif line.startswith('TECHNIQUE_BONUS:'):
+                try:
+                    scores['technique_bonus'] = float(line.split(':')[1].strip())
+                except:
+                    scores['technique_bonus'] = 0
+            elif line.startswith('TECHNIQUE_FEEDBACK:'):
+                scores['technique_feedback'] = ':'.join(line.split(':')[1:]).strip()
         
         # Ensure all scores are present and valid
         for category in ['clarity', 'evidence', 'logic', 'persuasiveness', 'rebuttal']:
