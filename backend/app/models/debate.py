@@ -195,6 +195,9 @@ class DebatePost(Base):
     # AI feedback
     ai_feedback = Column(Text)
     
+    # Rhetorical technique selection (Phase 1)
+    selected_technique = Column(String(100))
+    
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     # Relationships
@@ -291,3 +294,18 @@ class AIDebatePoint(Base):
     
     # Relationships
     assignment = relationship("DebateAssignment")
+
+
+class RhetoricalTechnique(Base):
+    __tablename__ = "rhetorical_techniques"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    technique_type = Column(String(20), nullable=False)  # 'proper' or 'improper'
+    name = Column(String(100), nullable=False, unique=True)
+    display_name = Column(String(200), nullable=False)
+    description = Column(Text, nullable=False)
+    example = Column(Text, nullable=False)
+    tip_or_reason = Column(Text, nullable=False)  # 'tip' for proper, 'why it's unfair' for improper
+    sort_order = Column(Integer, nullable=False)
+    active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

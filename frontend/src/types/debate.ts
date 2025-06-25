@@ -204,6 +204,7 @@ export interface DebatePost {
   content_flagged: boolean;
   moderation_status: ModerationStatus;
   ai_feedback?: string;
+  selected_technique?: string;
   
   created_at: string;
   
@@ -224,6 +225,7 @@ export interface DebatePost {
   contentFlagged?: boolean;
   moderationStatus?: ModerationStatus;
   aiFeedback?: string;
+  selectedTechnique?: string;
   createdAt?: string;
 }
 
@@ -299,6 +301,7 @@ export interface PositionSelection {
 export interface StudentPostCreate {
   content: string;
   word_count: number;
+  selectedTechnique?: string;
 }
 
 // Round Feedback
@@ -324,3 +327,17 @@ export const CHALLENGE_OPTIONS: ChallengeOption[] = [
   { type: 'appeal', value: 'pathos', displayName: 'Pathos (Emotion)', description: 'Appeals to emotions' },
   { type: 'appeal', value: 'logos', displayName: 'Logos (Logic)', description: 'Uses logical reasoning' }
 ];
+
+// Rhetorical Techniques
+export interface RhetoricalTechnique {
+  name: string;
+  displayName: string;
+  description: string;
+  example: string;
+  tipOrReason: string;
+}
+
+export interface RhetoricalTechniques {
+  proper: RhetoricalTechnique[];
+  improper: RhetoricalTechnique[];
+}

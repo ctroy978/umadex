@@ -320,7 +320,8 @@ async def submit_student_post(
         round_number=student_debate.current_round,
         content=post.content,
         word_count=post.word_count,
-        moderation_status=moderation_status
+        moderation_status=moderation_status,
+        selected_technique=post.selected_technique
     )
     
     # Get debate assignment for scoring
@@ -688,3 +689,45 @@ async def advance_to_next_debate(
     await db.refresh(student_debate)
     
     return student_debate
+
+
+@router.get("/techniques/list", response_model=dict)
+async def get_rhetorical_techniques(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get all rhetorical techniques for reference."""
+    
+    from app.models.debate import RhetoricalTechnique
+    
+    # Get all active techniques
+    result = await db.execute(
+        select(RhetoricalTechnique)
+        .where(RhetoricalTechnique.active == True)
+        .order_by(RhetoricalTechnique.technique_type, RhetoricalTechnique.sort_order)
+    )
+    
+    techniques = result.scalars().all()
+    
+    # Group by type
+    proper_techniques = []
+    improper_techniques = []
+    
+    for technique in techniques:
+        technique_data = {
+            "name": technique.name,
+            "display_name": technique.display_name,
+            "description": technique.description,
+            "example": technique.example,
+            "tip_or_reason": technique.tip_or_reason
+        }
+        
+        if technique.technique_type == 'proper':
+            proper_techniques.append(technique_data)
+        else:
+            improper_techniques.append(technique_data)
+    
+    return {
+        "proper": proper_techniques,
+        "improper": improper_techniques
+    }

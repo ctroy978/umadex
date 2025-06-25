@@ -3,9 +3,10 @@
 import { useState, useRef, useEffect } from 'react'
 import { studentDebateApi } from '@/lib/studentDebateApi'
 import { PaperAirplaneIcon, ExclamationCircleIcon } from '@heroicons/react/24/outline'
+import { RhetoricalTechnique } from '@/types/debate'
 
 interface PostComposerProps {
-  onSubmit: (content: string) => Promise<void>
+  onSubmit: (content: string, selectedTechnique?: string) => Promise<void>
   disabled?: boolean
   minWords?: number
   maxWords?: number
@@ -20,11 +21,27 @@ export default function PostComposer({
   const [content, setContent] = useState('')
   const [wordCount, setWordCount] = useState(0)
   const [submitting, setSubmitting] = useState(false)
+  const [selectedTechnique, setSelectedTechnique] = useState<string>('')
+  const [techniques, setTechniques] = useState<RhetoricalTechnique[]>([])
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
     setWordCount(studentDebateApi.countWords(content))
   }, [content])
+
+  useEffect(() => {
+    // Load rhetorical techniques for dropdown
+    loadTechniques()
+  }, [])
+
+  const loadTechniques = async () => {
+    try {
+      const data = await studentDebateApi.getTechniques()
+      setTechniques(data.proper)
+    } catch (err) {
+      console.error('Failed to load techniques:', err)
+    }
+  }
 
   const handleSubmit = async () => {
     if (wordCount < minWords || wordCount > maxWords || disabled || submitting) {
@@ -33,9 +50,10 @@ export default function PostComposer({
 
     try {
       setSubmitting(true)
-      await onSubmit(content)
+      await onSubmit(content, selectedTechnique || undefined)
       setContent('')
       setWordCount(0)
+      setSelectedTechnique('')
     } catch (err) {
       // Error handled by parent
     } finally {
@@ -78,6 +96,27 @@ export default function PostComposer({
           className="w-full min-h-[120px] px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm resize-none"
           disabled={disabled || submitting}
         />
+        
+        {/* Rhetorical Technique Dropdown */}
+        <div className="flex items-center">
+          <label htmlFor="technique-select" className="text-sm font-medium text-gray-700 mr-2">
+            Rhetorical Technique (Optional):
+          </label>
+          <select
+            id="technique-select"
+            value={selectedTechnique}
+            onChange={(e) => setSelectedTechnique(e.target.value)}
+            className="flex-1 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm"
+            disabled={disabled || submitting}
+          >
+            <option value="">No specific technique selected</option>
+            {techniques.map((technique) => (
+              <option key={technique.name} value={technique.name}>
+                {technique.displayName}
+              </option>
+            ))}
+          </select>
+        </div>
         
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">

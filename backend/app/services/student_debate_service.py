@@ -178,7 +178,8 @@ class StudentDebateService:
         round_number: int,
         content: str,
         word_count: int,
-        moderation_status: str = 'approved'
+        moderation_status: str = 'approved',
+        selected_technique: Optional[str] = None
     ) -> DebatePost:
         """Create a student post."""
         
@@ -193,7 +194,8 @@ class StudentDebateService:
             post_type='student',
             content=content,
             word_count=word_count,
-            moderation_status=moderation_status
+            moderation_status=moderation_status,
+            selected_technique=selected_technique
         )
         
         db.add(post)

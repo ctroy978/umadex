@@ -71,6 +71,8 @@ class DebatePostBase(BaseModel):
 
 
 class StudentPostCreate(DebatePostBase):
+    selected_technique: Optional[str] = None
+    
     @validator('word_count')
     def validate_word_count(cls, v, values):
         # Validate word count is within assignment limits (75-300 for high school)
@@ -109,6 +111,8 @@ class DebatePost(DebatePostBase):
     content_flagged: bool
     moderation_status: ModerationStatus
     ai_feedback: Optional[str]
+    
+    selected_technique: Optional[str]
     
     created_at: datetime
 

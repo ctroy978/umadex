@@ -108,6 +108,12 @@ export const studentDebateApi = {
     return toCamelCase(response.data)
   },
 
+  // Get rhetorical techniques for reference
+  async getTechniques(): Promise<{proper: any[], improper: any[]}> {
+    const response = await api.get('/v1/student/debate/techniques/list')
+    return toCamelCase(response.data)
+  },
+
   // Utility function to count words
   countWords(text: string): number {
     return text.trim().split(/\s+/).filter(word => word.length > 0).length

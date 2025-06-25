@@ -9,6 +9,7 @@ import PostComposer from '@/components/debate/PostComposer'
 import DebateHeader from '@/components/debate/DebateHeader'
 import PositionSelector from '@/components/debate/PositionSelector'
 import RoundComplete from '@/components/debate/RoundComplete'
+import RhetoricalTechniquesPanel from '@/components/debate/RhetoricalTechniquesPanel'
 import { ExclamationCircleIcon } from '@heroicons/react/24/outline'
 
 export default function DebateInterfacePage() {
@@ -98,14 +99,15 @@ export default function DebateInterfacePage() {
     }
   }
 
-  const handleSubmitPost = async (content: string) => {
+  const handleSubmitPost = async (content: string, selectedTechnique?: string) => {
     if (!progress || !progress.canSubmitPost) return
 
     try {
       setSubmitting(true)
       const post: StudentPostCreate = {
         content,
-        word_count: studentDebateApi.countWords(content)
+        word_count: studentDebateApi.countWords(content),
+        selectedTechnique
       }
 
       await studentDebateApi.submitPost(assignmentId, post)
@@ -215,6 +217,9 @@ export default function DebateInterfacePage() {
     <div className="min-h-screen bg-gray-50 flex flex-col">
       {/* Header */}
       <DebateHeader progress={progress} />
+
+      {/* Rhetorical Techniques Panel */}
+      <RhetoricalTechniquesPanel />
 
       {/* Position Selection Modal */}
       {showPositionSelector && (
