@@ -124,7 +124,7 @@ export default function UmaDebatePage() {
   return (
     <div className="p-8">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">uMADebate</h1>
+        <h1 className="text-3xl font-bold text-gray-900 mb-2">uMaDebate</h1>
         <p className="text-gray-600">Create engaging debate assignments where students argue with AI opponents</p>
       </div>
 
