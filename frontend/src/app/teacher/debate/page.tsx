@@ -8,14 +8,12 @@ import {
   PencilIcon, 
   ArchiveBoxArrowDownIcon, 
   ArrowPathIcon,
-  MagnifyingGlassIcon,
-  FunnelIcon
+  MagnifyingGlassIcon
 } from '@heroicons/react/24/outline'
 import { debateApi } from '@/lib/debateApi'
 import type { 
   DebateAssignmentSummary, 
-  DebateAssignmentListResponse,
-  DebateAssignmentFilters 
+  DebateAssignmentListResponse
 } from '@/types/debate'
 
 export default function UmaDebatePage() {
@@ -30,12 +28,7 @@ export default function UmaDebatePage() {
   
   // Search and filter state
   const [search, setSearch] = useState(searchParams.get('search') || '')
-  const [filters, setFilters] = useState<DebateAssignmentFilters>({
-    search: searchParams.get('search') || '',
-    gradeLevel: searchParams.get('gradeLevel') || '',
-    subject: searchParams.get('subject') || '',
-    includeArchived: searchParams.get('includeArchived') === 'true'
-  })
+  const [includeArchived, setIncludeArchived] = useState(false)
   
   const [currentPage, setCurrentPage] = useState(1)
   const perPage = 20
@@ -47,12 +40,10 @@ export default function UmaDebatePage() {
       const params: any = {
         page: currentPage,
         per_page: perPage,
-        include_archived: filters.includeArchived
+        include_archived: includeArchived
       }
       
-      if (filters.search) params.search = filters.search
-      if (filters.gradeLevel) params.grade_level = filters.gradeLevel
-      if (filters.subject) params.subject = filters.subject
+      if (search) params.search = search
       
       const response = await debateApi.listAssignments(params)
       setData(response)
@@ -62,7 +53,7 @@ export default function UmaDebatePage() {
     } finally {
       setLoading(false)
     }
-  }, [filters, currentPage])
+  }, [search, currentPage, includeArchived])
 
   useEffect(() => {
     loadAssignments()
@@ -71,25 +62,9 @@ export default function UmaDebatePage() {
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value
     setSearch(value)
-    setFilters(prev => ({ ...prev, search: value }))
     setCurrentPage(1)
   }
 
-  const handleFilterChange = (field: keyof DebateAssignmentFilters, value: any) => {
-    setFilters(prev => ({ ...prev, [field]: value }))
-    setCurrentPage(1)
-  }
-
-  const handleClearFilters = () => {
-    setFilters({
-      search: '',
-      gradeLevel: '',
-      subject: '',
-      includeArchived: false
-    })
-    setSearch('')
-    setCurrentPage(1)
-  }
 
   const handleArchive = async (id: string) => {
     if (!confirm('Archive this debate assignment? You can restore it later from the archived view.')) {
@@ -153,76 +128,7 @@ export default function UmaDebatePage() {
         <p className="text-gray-600">Create engaging debate assignments where students argue with AI opponents</p>
       </div>
 
-      <div className="flex flex-col lg:flex-row gap-6">
-        {/* Sidebar with Filters */}
-        <div className="lg:w-80">
-          <div className="bg-white rounded-lg shadow p-6">
-            <h3 className="text-lg font-medium mb-4 flex items-center">
-              <FunnelIcon className="h-5 w-5 mr-2" />
-              Filters
-            </h3>
-            
-            {/* Grade Level Filter */}
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Grade Level
-              </label>
-              <select
-                value={filters.gradeLevel || ''}
-                onChange={(e) => handleFilterChange('gradeLevel', e.target.value)}
-                className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-              >
-                <option value="">All Grades</option>
-                <option value="K-2">K-2</option>
-                <option value="3-5">3-5</option>
-                <option value="6-8">6-8</option>
-                <option value="9-12">9-12</option>
-              </select>
-            </div>
-
-            {/* Subject Filter */}
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Subject
-              </label>
-              <select
-                value={filters.subject || ''}
-                onChange={(e) => handleFilterChange('subject', e.target.value)}
-                className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-              >
-                <option value="">All Subjects</option>
-                <option value="English Language Arts">English Language Arts</option>
-                <option value="Social Studies">Social Studies</option>
-                <option value="Science">Science</option>
-                <option value="History">History</option>
-                <option value="Other">Other</option>
-              </select>
-            </div>
-
-            {/* Include Archived */}
-            <div className="mb-6">
-              <label className="flex items-center">
-                <input
-                  type="checkbox"
-                  checked={filters.includeArchived}
-                  onChange={(e) => handleFilterChange('includeArchived', e.target.checked)}
-                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                />
-                <span className="ml-2 text-sm text-gray-700">Show archived</span>
-              </label>
-            </div>
-
-            <button
-              onClick={handleClearFilters}
-              className="w-full px-4 py-2 text-sm text-gray-600 hover:text-gray-900"
-            >
-              Clear all filters
-            </button>
-          </div>
-        </div>
-
-        {/* Main Content */}
-        <div className="flex-1">
+      <div>
           {/* Search and Create Button */}
           <div className="mb-6 flex flex-col sm:flex-row gap-4">
             <div className="flex-1">
@@ -237,13 +143,28 @@ export default function UmaDebatePage() {
                 />
               </div>
             </div>
-            <button 
-              onClick={() => router.push('/teacher/debate/create')}
-              className="inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-            >
-              <PlusIcon className="h-5 w-5 mr-2" />
-              Create New Assignment
-            </button>
+            
+            <div className="flex gap-2">
+              <select
+                value={includeArchived ? 'archived' : 'active'}
+                onChange={(e) => {
+                  setIncludeArchived(e.target.value === 'archived')
+                  setCurrentPage(1)
+                }}
+                className="px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="active">Active</option>
+                <option value="archived">Include Archived</option>
+              </select>
+              
+              <button 
+                onClick={() => router.push('/teacher/debate/create')}
+                className="inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+              >
+                <PlusIcon className="h-5 w-5 mr-2" />
+                Create New Assignment
+              </button>
+            </div>
           </div>
 
           {/* Results Count */}
@@ -271,9 +192,11 @@ export default function UmaDebatePage() {
             ) : assignments.length === 0 ? (
               <div className="text-center py-12 text-gray-500">
                 <ChatBubbleLeftRightIcon className="h-12 w-12 mx-auto mb-3 text-gray-400" />
-                <p>{search || filters.gradeLevel || filters.subject 
+                <p>{search 
                   ? 'No assignments match your search' 
-                  : 'No debate assignments yet. Create your first one!'}</p>
+                  : includeArchived 
+                    ? 'No assignments found'
+                    : 'No debate assignments yet. Create your first one!'}</p>
               </div>
             ) : (
               <div className="overflow-hidden">
@@ -291,9 +214,6 @@ export default function UmaDebatePage() {
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Grade/Subject
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Students
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Created
@@ -334,16 +254,6 @@ export default function UmaDebatePage() {
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div className="text-sm text-gray-900">{assignment.gradeLevel}</div>
                             <div className="text-sm text-gray-500">{assignment.subject}</div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-sm text-gray-900">
-                              {assignment.studentCount || 0} enrolled
-                            </div>
-                            {assignment.completionRate > 0 && (
-                              <div className="text-sm text-gray-500">
-                                {Math.round(assignment.completionRate)}% complete
-                              </div>
-                            )}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                             {formatDate(assignment.createdAt)}
@@ -417,7 +327,6 @@ export default function UmaDebatePage() {
               </button>
             </div>
           )}
-        </div>
       </div>
     </div>
   )

@@ -119,21 +119,24 @@ export default function DebateCreatePage() {
           <label htmlFor="topic" className="block text-sm font-medium text-gray-700">
             Debate Topic <span className="text-red-500">*</span>
           </label>
+          <p className="mt-1 text-sm text-gray-600 italic">
+            Remember: Debate topics should be written as statements, not questions.
+          </p>
           <textarea
             id="topic"
             rows={3}
             value={metadata.topic}
             onChange={(e) => handleFieldChange('topic', e.target.value)}
-            className={`mt-1 block w-full rounded-md shadow-sm ${
+            className={`mt-2 block w-full rounded-md shadow-sm ${
               errors.topic ? 'border-red-300' : 'border-gray-300'
             } focus:border-blue-500 focus:ring-blue-500`}
-            placeholder="e.g., Should schools implement a four-day school week?"
+            placeholder="e.g., Schools should implement a four-day school week"
           />
           {errors.topic && (
             <p className="mt-1 text-sm text-red-600">{errors.topic}</p>
           )}
           <p className="mt-1 text-sm text-gray-500">
-            Enter a clear, debatable statement or question (10-500 characters)
+            Enter a clear, debatable statement (10-500 characters)
           </p>
         </div>
 
@@ -237,7 +240,7 @@ export default function DebateCreatePage() {
           <li>• Choose topics that have clear opposing viewpoints</li>
           <li>• Ensure the topic is age-appropriate and relevant to students</li>
           <li>• Avoid topics that might be too sensitive or controversial for the classroom</li>
-          <li>• Frame topics as clear questions or "should" statements</li>
+          <li>• Frame topics as clear statements (e.g., "Schools should..." not "Should schools...?")</li>
           <li>• Consider current events or issues relevant to your curriculum</li>
         </ul>
       </div>
