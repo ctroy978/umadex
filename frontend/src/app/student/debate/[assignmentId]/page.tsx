@@ -180,29 +180,37 @@ export default function DebateAssignmentPage() {
                 {/* Current Debate Status */}
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-gray-500">Current Debate</p>
-                    <p className="font-medium">Debate {progress?.studentDebate?.currentDebate || 1} of {assignment.debateCount}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-sm text-gray-500">Position</p>
-                    <p className="font-medium capitalize">
-                      {(() => {
-                        const currentDebate = progress?.studentDebate?.currentDebate
-                        if (!currentDebate || !progress?.studentDebate) return 'Not set'
-                        
-                        let position = null
-                        if (currentDebate === 1) {
-                          position = progress.studentDebate.debate_1Position
-                        } else if (currentDebate === 2) {
-                          position = progress.studentDebate.debate_2Position
-                        } else if (currentDebate === 3) {
-                          position = progress.studentDebate.debate_3Position
-                        }
-                        
-                        return position ? position.toUpperCase() : 'Not set'
-                      })()}
+                    <p className="text-sm text-gray-500">
+                      {assignment.status === 'completed' ? 'Assignment Status' : 'Current Debate'}
+                    </p>
+                    <p className="font-medium">
+                      {assignment.status === 'completed' 
+                        ? 'All debates completed' 
+                        : `Debate ${progress?.studentDebate?.currentDebate || 1} of ${assignment.debateCount}`}
                     </p>
                   </div>
+                  {assignment.status !== 'completed' && (
+                    <div className="text-right">
+                      <p className="text-sm text-gray-500">Position</p>
+                      <p className="font-medium capitalize">
+                        {(() => {
+                          const currentDebate = progress?.studentDebate?.currentDebate
+                          if (!currentDebate || !progress?.studentDebate) return 'Not set'
+                          
+                          let position = null
+                          if (currentDebate === 1) {
+                            position = progress.studentDebate.debate_1Position
+                          } else if (currentDebate === 2) {
+                            position = progress.studentDebate.debate_2Position
+                          } else if (currentDebate === 3) {
+                            position = progress.studentDebate.debate_3Position
+                          }
+                          
+                          return position ? position.toUpperCase() : 'Not set'
+                        })()}
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 {/* Debate Progress Bars */}
@@ -226,7 +234,11 @@ export default function DebateAssignmentPage() {
                           }`}
                           style={{
                             width: debateNum < (progress?.studentDebate?.currentDebate || 1) ? '100%' :
-                                   debateNum === (progress?.studentDebate?.currentDebate || 1) ? `${((progress?.studentDebate?.currentRound || 1) / (assignment?.debateFormat?.roundsPerDebate || 3)) * 100}%` :
+                                   debateNum === (progress?.studentDebate?.currentDebate || 1) ? 
+                                     // Check if debate is complete by looking at nextAction
+                                     (progress?.nextAction === 'debate_complete' || progress?.nextAction === 'assignment_complete') ? '100%' :
+                                     // Otherwise calculate based on posts in current debate (5 posts = 100%)
+                                     `${Math.min(100, ((progress?.currentPosts?.length || 0) / 5) * 100)}%` :
                                    '0%'
                           }}
                         />

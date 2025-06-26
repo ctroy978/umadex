@@ -148,7 +148,7 @@ export default function DebateInterfacePage() {
     try {
       // Call the advance endpoint to move to next debate
       await studentDebateApi.advanceDebate(assignmentId)
-      // Navigate back to assignment overview
+      // Navigate directly back to UMADebate dashboard
       router.push(`/student/debate/${assignmentId}`)
     } catch (err) {
       console.error('Failed to advance debate:', err)
@@ -190,23 +190,7 @@ export default function DebateInterfacePage() {
     )
   }
 
-  // Handle round completion
-  if (progress.nextAction === 'debate_complete') {
-    return (
-      <div className="min-h-screen bg-gray-50 flex flex-col">
-        <DebateHeader progress={progress} />
-        <div className="flex-1 flex items-center justify-center p-6">
-          <div className="max-w-3xl w-full">
-            <RoundComplete
-              assignmentId={assignmentId}
-              debateNumber={progress.studentDebate?.currentDebate || 1}
-              onContinue={handleDebateComplete}
-            />
-          </div>
-        </div>
-      </div>
-    )
-  }
+  // Don't show RoundComplete screen immediately - let user see their final feedback first
 
   if (progress.nextAction === 'assignment_complete') {
     router.push(`/student/debate/${assignmentId}/results`)
@@ -370,6 +354,30 @@ export default function DebateInterfacePage() {
               minWords={75}
               maxWords={300}
             />
+          </div>
+        )}
+
+        {/* Complete Round Button */}
+        {progress.nextAction === 'debate_complete' && (
+          <div className="border-t bg-white p-6">
+            <div className="max-w-2xl mx-auto text-center">
+              <div className="mb-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                  Round {progress.studentDebate?.currentDebate || 1} Complete!
+                </h3>
+                <p className="text-gray-600">
+                  Great job completing this debate round. Review your feedback above, then click continue when you're ready.
+                </p>
+              </div>
+              <button
+                onClick={handleDebateComplete}
+                className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+              >
+                {progress.studentDebate?.currentDebate === 3 
+                  ? 'Complete Assignment' 
+                  : 'Continue to Next Debate'}
+              </button>
+            </div>
           </div>
         )}
       </div>
