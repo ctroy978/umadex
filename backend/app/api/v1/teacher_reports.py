@@ -20,6 +20,7 @@ from app.models.classroom import StudentEvent, Classroom, ClassroomStudent, Clas
 from app.models.reading import ReadingAssignment
 from app.models.tests import StudentTestAttempt
 from app.models.vocabulary import VocabularyList
+from app.models.debate import DebateAssignment, StudentDebate
 
 router = APIRouter()
 
@@ -70,7 +71,7 @@ class StudentGrade(BaseModel):
     student_name: str
     assignment_id: UUID
     assignment_title: str
-    assignment_type: str  # 'UMARead' or 'UMAVocab'
+    assignment_type: str  # 'UMARead' or 'UMAVocab' or 'UMADebate'
     work_title: str
     date_assigned: datetime
     date_completed: Optional[datetime]
@@ -265,7 +266,7 @@ async def get_gradebook(
     db: AsyncSession = Depends(get_db),
     classrooms: Optional[str] = Query(None, description="Comma-separated classroom IDs"),
     assignments: Optional[str] = Query(None, description="Comma-separated assignment IDs"),
-    assignment_types: Optional[str] = Query(None, description="Comma-separated assignment types (UMARead,UMAVocab)"),
+    assignment_types: Optional[str] = Query(None, description="Comma-separated assignment types (UMARead,UMAVocab,UMADebate)"),
     assigned_after: Optional[datetime] = Query(None),
     assigned_before: Optional[datetime] = Query(None),
     completed_after: Optional[datetime] = Query(None),
@@ -280,12 +281,12 @@ async def get_gradebook(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100)
 ):
-    """Get gradebook data for teacher's classrooms (UMARead and UMAVocab)"""
+    """Get gradebook data for teacher's classrooms (UMARead, UMAVocab, and UMADebate)"""
     
     # Parse filters
     classroom_ids = [UUID(cid) for cid in classrooms.split(',')] if classrooms else None
     assignment_ids = [UUID(aid) for aid in assignments.split(',')] if assignments else None
-    type_filter = assignment_types.split(',') if assignment_types else ['UMARead', 'UMAVocab']
+    type_filter = assignment_types.split(',') if assignment_types else ['UMARead', 'UMAVocab', 'UMADebate']
     
     # Get all teacher's classrooms if not specified
     if not classroom_ids:
@@ -519,6 +520,106 @@ async def get_gradebook(
                 status='completed' if row.score_percentage is not None else 'in_progress'
             ))
     
+    # Query 3: Get UMADebate scores
+    if 'UMADebate' in type_filter:
+        debate_query = select(
+            StudentDebate,
+            User,
+            ClassroomAssignment,
+            DebateAssignment,
+            Classroom
+        ).join(
+            User, StudentDebate.student_id == User.id
+        ).join(
+            ClassroomAssignment, StudentDebate.classroom_assignment_id == ClassroomAssignment.id
+        ).join(
+            DebateAssignment, StudentDebate.assignment_id == DebateAssignment.id
+        ).join(
+            Classroom, ClassroomAssignment.classroom_id == Classroom.id
+        ).where(
+            and_(
+                Classroom.id.in_(classroom_ids),
+                Classroom.teacher_id == teacher.id,
+                Classroom.deleted_at.is_(None),
+                ClassroomAssignment.assignment_type == 'debate',
+                User.deleted_at.is_(None)
+            )
+        )
+        
+        # Apply filters to UMADebate query
+        if assignment_ids:
+            debate_query = debate_query.where(DebateAssignment.id.in_(assignment_ids))
+        if assigned_after:
+            debate_query = debate_query.where(ClassroomAssignment.assigned_at >= assigned_after)
+        if assigned_before:
+            debate_query = debate_query.where(ClassroomAssignment.assigned_at <= assigned_before)
+        if completed_after:
+            debate_query = debate_query.where(StudentDebate.updated_at >= completed_after)
+        if completed_before:
+            debate_query = debate_query.where(StudentDebate.updated_at <= completed_before)
+        if student_search:
+            search_term = f"%{student_search}%"
+            debate_query = debate_query.where(
+                or_(
+                    User.first_name.ilike(search_term),
+                    User.last_name.ilike(search_term),
+                    func.concat(User.first_name, ' ', User.last_name).ilike(search_term)
+                )
+            )
+        if completion_status == "completed":
+            debate_query = debate_query.where(StudentDebate.final_percentage.isnot(None))
+        elif completion_status == "incomplete":
+            debate_query = debate_query.where(StudentDebate.final_percentage.is_(None))
+        if min_score is not None:
+            debate_query = debate_query.where(StudentDebate.final_percentage >= min_score)
+        if max_score is not None:
+            debate_query = debate_query.where(StudentDebate.final_percentage <= max_score)
+        
+        # Execute UMADebate query
+        debate_result = await db.execute(debate_query)
+        debate_rows = debate_result.all()
+        
+        # Process UMADebate results
+        for row in debate_rows:
+            student_debate = row.StudentDebate
+            student = row.User
+            classroom_assignment = row.ClassroomAssignment
+            assignment = row.DebateAssignment
+            
+            # Determine status based on student debate progress
+            if student_debate.final_percentage is not None:
+                status = 'completed'
+                test_date = student_debate.updated_at
+            elif student_debate.status == 'in_progress':
+                status = 'in_progress'
+                test_date = None
+            else:
+                status = 'not_started'
+                test_date = None
+            
+            # Calculate time spent (approximate based on assignment started time)
+            time_spent_minutes = None
+            if student_debate.assignment_started_at and student_debate.final_percentage is not None:
+                time_diff = student_debate.updated_at - student_debate.assignment_started_at
+                time_spent_minutes = int(time_diff.total_seconds() / 60)
+            
+            all_grades.append(StudentGrade(
+                id=str(student_debate.id),
+                student_id=student.id,
+                student_name=f"{student.last_name}, {student.first_name}",
+                assignment_id=assignment.id,
+                assignment_title=assignment.title,
+                assignment_type='UMADebate',
+                work_title=f"{assignment.grade_level} - {assignment.subject}",
+                date_assigned=classroom_assignment.assigned_at,
+                date_completed=student_debate.updated_at if student_debate.final_percentage is not None else None,
+                test_date=test_date,
+                test_score=float(student_debate.final_percentage) if student_debate.final_percentage else None,
+                difficulty_reached=None,  # Not applicable for debates
+                time_spent=time_spent_minutes,
+                status=status
+            ))
+    
     # Calculate summary statistics
     total_students = len(set(grade.student_id for grade in all_grades))
     scores = [grade.test_score for grade in all_grades if grade.test_score is not None]
@@ -582,7 +683,7 @@ async def export_gradebook(
     db: AsyncSession = Depends(get_db),
     classrooms: Optional[str] = Query(None, description="Comma-separated classroom IDs"),
     assignments: Optional[str] = Query(None, description="Comma-separated assignment IDs"),
-    assignment_types: Optional[str] = Query(None, description="Comma-separated assignment types (UMARead,UMAVocab)"),
+    assignment_types: Optional[str] = Query(None, description="Comma-separated assignment types (UMARead,UMAVocab,UMADebate)"),
     assigned_after: Optional[datetime] = Query(None),
     assigned_before: Optional[datetime] = Query(None),
     completed_after: Optional[datetime] = Query(None),
