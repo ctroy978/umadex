@@ -87,7 +87,8 @@ class AIPostCreate(DebatePostBase):
     fallacy_type: Optional[str] = None
 
 
-class DebatePost(DebatePostBase):
+class DebatePostBase2(DebatePostBase):
+    """Base fields for DebatePost without relationships"""
     id: UUID
     student_debate_id: UUID
     debate_number: int
@@ -116,6 +117,15 @@ class DebatePost(DebatePostBase):
     technique_bonus_awarded: Optional[Decimal]
     
     created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class DebatePost(DebatePostBase2):
+    """DebatePost with optional challenges relationship"""
+    # Include challenges if any (optional to avoid lazy loading issues)
+    challenges: Optional[List['DebateChallenge']] = None
 
     class Config:
         from_attributes = True

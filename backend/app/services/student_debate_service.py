@@ -156,6 +156,7 @@ class StudentDebateService:
         if debate_number:
             query = query.where(DebatePost.debate_number == debate_number)
         
+        query = query.options(selectinload(DebatePost.challenges))
         query = query.order_by(DebatePost.debate_number, DebatePost.round_number, DebatePost.created_at)
         
         result = await db.execute(query)

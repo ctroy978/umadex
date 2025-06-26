@@ -58,7 +58,7 @@ class DebateScoringService:
         if not posts:
             return Decimal('0')
         
-        # Calculate average of final percentages
+        # Calculate average of final percentages (which already include technique bonuses)
         total_percentage = sum(p.final_percentage for p in posts if p.final_percentage)
         post_count = len([p for p in posts if p.final_percentage])
         

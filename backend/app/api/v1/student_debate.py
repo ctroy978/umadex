@@ -21,7 +21,7 @@ from app.models.debate import (
 from app.models.classroom import ClassroomAssignment, ClassroomStudent
 from app.schemas.student_debate import (
     StudentDebate, StudentDebateCreate, StudentDebateUpdate,
-    DebatePost, StudentPostCreate, DebateProgress, AssignmentOverview,
+    DebatePost, DebatePostBase2, StudentPostCreate, DebateProgress, AssignmentOverview,
     ChallengeCreate, ChallengeResult, PostScore, AssignmentScore,
     PositionSelection, RoundFeedback
 )
@@ -256,7 +256,7 @@ async def get_current_debate_state(
     )
 
 
-@router.post("/{assignment_id}/post", response_model=DebatePost)
+@router.post("/{assignment_id}/post", response_model=DebatePostBase2)
 async def submit_student_post(
     assignment_id: UUID,
     post: StudentPostCreate,

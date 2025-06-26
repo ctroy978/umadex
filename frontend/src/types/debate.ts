@@ -209,6 +209,9 @@ export interface DebatePost {
   
   created_at: string;
   
+  // Challenges on this post
+  challenges?: DebateChallenge[];
+  
   // Frontend conversions
   postType?: PostType;
   aiPersonality?: string;
@@ -247,9 +250,22 @@ export interface ChallengeCreate {
 }
 
 export interface ChallengeResult {
-  is_correct: boolean;
-  points_awarded: number;
-  ai_feedback: string;
+  isCorrect: boolean;
+  pointsAwarded: number;
+  aiFeedback: string;
+}
+
+export interface DebateChallenge {
+  id: string;
+  postId: string;
+  studentId: string;
+  challengeType: ChallengeType;
+  challengeValue: string;
+  explanation?: string;
+  isCorrect: boolean;
+  pointsAwarded: number;
+  aiFeedback?: string;
+  createdAt: string;
 }
 
 // Scoring
@@ -259,28 +275,27 @@ export interface PostScore {
   logic: number;
   persuasiveness: number;
   rebuttal: number;
-  base_percentage: number;
-  bonus_points: number;
-  final_percentage: number;
+  basePercentage: number;
+  bonusPoints: number;
+  finalPercentage: number;
   feedback: string;
 }
 
 export interface DebateScore {
-  debate_number: number;
+  debateNumber: number;
   posts: PostScore[];
-  average_percentage: number;
-  total_bonus_points: number;
-  final_percentage: number;
+  averagePercentage: number;
+  totalBonusPoints: number;
+  finalPercentage: number;
 }
 
 export interface AssignmentScore {
-  debate_1_score?: DebateScore;
-  debate_2_score?: DebateScore;
-  debate_3_score?: DebateScore;
-  improvement_bonus: number;
-  consistency_bonus: number;
-  final_grade: number;
-  finalGrade?: number; // Support both snake_case and camelCase
+  debate1Score?: DebateScore;
+  debate2Score?: DebateScore;
+  debate3Score?: DebateScore;
+  improvementBonus: number;
+  consistencyBonus: number;
+  finalGrade: number;
 }
 
 // Progress State

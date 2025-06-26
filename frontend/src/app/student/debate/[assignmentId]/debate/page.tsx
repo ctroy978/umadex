@@ -319,12 +319,18 @@ export default function DebateInterfacePage() {
                 try {
                   const result = await studentDebateApi.submitChallenge(assignmentId, challenge)
                   
-                  // Challenge result will be shown in the UI update
+                  // Show challenge result notification
+                  if (result.isCorrect) {
+                    alert(`✅ Correct! ${result.aiFeedback}\n\nYou earned ${result.pointsAwarded} bonus points!`)
+                  } else {
+                    alert(`❌ ${result.aiFeedback}`)
+                  }
                   
                   // Refresh to update scores
                   await fetchDebateProgress()
                 } catch (err) {
                   console.error('Failed to submit challenge:', err)
+                  alert('Failed to submit challenge. Please try again.')
                 }
               }}
             />

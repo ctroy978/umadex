@@ -164,13 +164,38 @@ export default function DebatePostComponent({
             {/* Challenge button for AI posts */}
             {!isStudent && isLast && availableChallenges.length > 0 && !showChallenge && (
               <div className="mt-3 pt-3 border-t border-gray-200">
-                <button
-                  onClick={() => setShowChallenge(true)}
-                  className="w-full flex items-center justify-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
-                >
-                  <ExclamationTriangleIcon className="h-4 w-4 mr-2" />
-                  Challenge This Argument
-                </button>
+                {post.challenges && post.challenges.length > 0 ? (
+                  <div className="bg-purple-100 rounded-lg p-3">
+                    <div className="flex items-center">
+                      {post.challenges[0].isCorrect ? (
+                        <CheckCircleIcon className="h-5 w-5 text-green-600 mr-2" />
+                      ) : (
+                        <XCircleIcon className="h-5 w-5 text-red-600 mr-2" />
+                      )}
+                      <div className="text-sm">
+                        <p className="font-medium text-purple-900">
+                          Challenge submitted: {post.challenges[0].challengeValue}
+                        </p>
+                        <p className="text-purple-700 mt-1">
+                          {post.challenges[0].aiFeedback}
+                        </p>
+                        {post.challenges[0].pointsAwarded > 0 && (
+                          <p className="text-purple-900 font-medium mt-1">
+                            +{post.challenges[0].pointsAwarded} bonus points
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setShowChallenge(true)}
+                    className="w-full flex items-center justify-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                  >
+                    <ExclamationTriangleIcon className="h-4 w-4 mr-2" />
+                    Challenge This Argument
+                  </button>
+                )}
               </div>
             )}
 
