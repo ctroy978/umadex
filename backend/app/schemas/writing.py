@@ -85,31 +85,51 @@ class WritingAssignmentListResponse(BaseModel):
 
 
 class StudentWritingSubmissionBase(BaseModel):
-    submission_text: str = Field(..., min_length=1, max_length=50000)
+    response_text: str = Field(..., min_length=1, max_length=50000, alias="content")
+    selected_techniques: List[str] = Field(default_factory=list, max_length=5)
+    word_count: int = Field(..., ge=1)
 
 
 class StudentWritingSubmissionCreate(StudentWritingSubmissionBase):
-    assignment_id: UUID
-    classroom_id: UUID
+    is_final: bool = Field(default=True)
 
 
 class StudentWritingSubmissionUpdate(BaseModel):
-    submission_text: Optional[str] = Field(None, min_length=1, max_length=50000)
+    response_text: Optional[str] = Field(None, min_length=1, max_length=50000)
+    selected_techniques: Optional[List[str]] = Field(None, max_length=5)
 
 
-class StudentWritingSubmissionResponse(StudentWritingSubmissionBase):
+class StudentWritingSubmissionResponse(BaseModel):
     id: UUID
+    student_assignment_id: UUID
+    writing_assignment_id: UUID
     student_id: UUID
-    assignment_id: UUID
-    classroom_id: UUID
+    response_text: str
+    selected_techniques: List[str]
     word_count: int
+    submission_attempt: int
+    is_final_submission: bool
     submitted_at: datetime
-    updated_at: datetime
-    evaluation_score: Optional[Dict[str, Any]] = None
-    evaluation_feedback: Optional[str] = None
-    evaluated_at: Optional[datetime] = None
+    score: Optional[float] = None
+    ai_feedback: Optional[Dict[str, Any]] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class StudentWritingDraft(BaseModel):
+    content: str
+    selected_techniques: List[str] = Field(default_factory=list, max_length=5)
+    word_count: int
+
+
+class StudentWritingProgress(BaseModel):
+    student_assignment_id: UUID
+    draft_content: str = ""
+    selected_techniques: List[str] = Field(default_factory=list)
+    word_count: int = 0
+    last_saved_at: Optional[str] = None
+    status: str
+    submission_count: int = 0
 
 
 class WritingAssignmentWithProgress(WritingAssignmentResponse):

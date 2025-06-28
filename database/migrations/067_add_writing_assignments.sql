@@ -45,26 +45,27 @@ ADD CONSTRAINT check_assignment_reference CHECK (
     (assignment_type = 'writing' AND assignment_id IS NOT NULL AND vocabulary_list_id IS NULL)
 );
 
--- Create student writing submissions table for future use
+-- Create student writing submissions table
 CREATE TABLE student_writing_submissions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    student_assignment_id UUID NOT NULL REFERENCES student_assignments(id) ON DELETE CASCADE,
+    writing_assignment_id UUID NOT NULL REFERENCES writing_assignments(id) ON DELETE CASCADE,
     student_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    assignment_id UUID NOT NULL REFERENCES writing_assignments(id) ON DELETE CASCADE,
-    classroom_id UUID NOT NULL REFERENCES classrooms(id) ON DELETE CASCADE,
-    submission_text TEXT NOT NULL,
+    response_text TEXT NOT NULL,
+    selected_techniques TEXT[] DEFAULT '{}',
     word_count INTEGER NOT NULL,
+    submission_attempt INTEGER NOT NULL DEFAULT 1,
+    is_final_submission BOOLEAN DEFAULT FALSE,
     submitted_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    evaluation_score JSONB,
-    evaluation_feedback TEXT,
-    evaluated_at TIMESTAMP WITH TIME ZONE,
-    UNIQUE(student_id, assignment_id, classroom_id)
+    score DECIMAL(3,2),
+    ai_feedback JSONB,
+    CONSTRAINT check_score_range CHECK (score IS NULL OR (score >= 0 AND score <= 10))
 );
 
 -- Create indexes for student submissions
 CREATE INDEX idx_student_writing_submissions_student_id ON student_writing_submissions(student_id);
-CREATE INDEX idx_student_writing_submissions_assignment_id ON student_writing_submissions(assignment_id);
-CREATE INDEX idx_student_writing_submissions_classroom_id ON student_writing_submissions(classroom_id);
+CREATE INDEX idx_student_writing_submissions_student_assignment_id ON student_writing_submissions(student_assignment_id);
+CREATE INDEX idx_student_writing_submissions_writing_assignment_id ON student_writing_submissions(writing_assignment_id);
 CREATE INDEX idx_student_writing_submissions_submitted_at ON student_writing_submissions(submitted_at);
 
 -- Enable RLS on student submissions
