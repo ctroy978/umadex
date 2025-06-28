@@ -23,6 +23,7 @@ class Classroom(Base):
     assignments = relationship("ClassroomAssignment", back_populates="classroom")
     test_schedule = relationship("ClassroomTestSchedule", back_populates="classroom", uselist=False)
     test_overrides = relationship("ClassroomTestOverride", back_populates="classroom")
+    writing_submissions = relationship("StudentWritingSubmission", back_populates="classroom")
 
 
 class ClassroomStudent(Base):

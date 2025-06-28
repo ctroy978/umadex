@@ -8,6 +8,7 @@ from .vocabulary_practice import VocabularyPracticeProgress
 from .tests import AssignmentTest, TestResult, StudentTestAttempt, TeacherBypassCode, TestSecurityIncident
 from .umaread import UmareadStudentResponse, UmareadChunkProgress, UmareadAssignmentProgress
 from .test_schedule import ClassroomTestSchedule, ClassroomTestOverride, TestOverrideUsage
+from .writing import WritingAssignment, StudentWritingSubmission
 
 __all__ = ["User", "UserRole", "EmailWhitelist", "OTPRequest", "UserSession", "RefreshToken",
           "Classroom", "ClassroomStudent", "ClassroomAssignment",
@@ -17,4 +18,5 @@ __all__ = ["User", "UserRole", "EmailWhitelist", "OTPRequest", "UserSession", "R
           "VocabularyPracticeProgress",
           "AssignmentTest", "TestResult", "StudentTestAttempt", "TeacherBypassCode", "TestSecurityIncident",
           "UmareadStudentResponse", "UmareadChunkProgress", "UmareadAssignmentProgress",
-          "ClassroomTestSchedule", "ClassroomTestOverride", "TestOverrideUsage"]
+          "ClassroomTestSchedule", "ClassroomTestOverride", "TestOverrideUsage",
+          "WritingAssignment", "StudentWritingSubmission"]
