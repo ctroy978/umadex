@@ -353,6 +353,31 @@ async def get_classroom_details(
             end_date=ca.end_date
         ))
     
+    # Get writing assignments
+    from app.models.writing import WritingAssignment
+    writing_assignments_result = await db.execute(
+        select(WritingAssignment, ClassroomAssignment)
+        .join(ClassroomAssignment,
+              and_(
+                  ClassroomAssignment.assignment_id == WritingAssignment.id,
+                  ClassroomAssignment.assignment_type == "writing"
+              ))
+        .where(ClassroomAssignment.classroom_id == classroom_id)
+        .order_by(ClassroomAssignment.display_order, ClassroomAssignment.assigned_at)
+    )
+    
+    for writing, ca in writing_assignments_result:
+        assignment_list.append(AssignmentInClassroom(
+            id=ca.id,
+            assignment_id=writing.id,
+            title=writing.title,
+            assignment_type="UMAWrite",
+            assigned_at=ca.assigned_at,
+            display_order=ca.display_order,
+            start_date=ca.start_date,
+            end_date=ca.end_date
+        ))
+    
     # Sort all assignments by display order
     assignment_list.sort(key=lambda x: (x.display_order or float('inf'), x.assigned_at))
     
