@@ -13,7 +13,6 @@ class VocabularyStatus(str, enum.Enum):
     PROCESSING = "processing"
     REVIEWING = "reviewing"
     PUBLISHED = "published"
-    ARCHIVED = "archived"
 
 
 class DefinitionSource(str, enum.Enum):

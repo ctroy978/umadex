@@ -2,8 +2,7 @@ export enum VocabularyStatus {
   DRAFT = 'draft',
   PROCESSING = 'processing',
   REVIEWING = 'reviewing',
-  PUBLISHED = 'published',
-  ARCHIVED = 'archived'
+  PUBLISHED = 'published'
 }
 
 export enum DefinitionSource {
@@ -105,6 +104,7 @@ export interface VocabularyListSummary {
   review_progress: number
   created_at: string
   updated_at: string
+  deleted_at: string | null
 }
 
 export interface VocabularyListPagination {

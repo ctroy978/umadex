@@ -101,11 +101,19 @@ export default function VocabularyViewPage({ params }: { params: { id: string } 
     }
     
     try {
-      await vocabularyApi.updateList(params.id, { status: 'archived' as any })
+      await vocabularyApi.deleteList(params.id)
       router.push('/teacher/uma-vocab')
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to archive list:', error)
-      alert('Failed to archive list')
+      
+      // Check for 400 error with specific message about classrooms
+      if (error.response?.status === 400 && error.response?.data?.detail) {
+        alert(error.response.data.detail)
+      } else if (error.response?.data?.message) {
+        alert(error.response.data.message)
+      } else {
+        alert('Failed to archive list')
+      }
     }
   }
 

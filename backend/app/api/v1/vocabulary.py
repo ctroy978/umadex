@@ -114,6 +114,7 @@ async def list_vocabulary_lists(
     search: Optional[str] = None,
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
+    include_archived: bool = Query(False),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -125,7 +126,7 @@ async def list_vocabulary_lists(
         )
     
     lists, total = await VocabularyService.list_vocabulary_lists(
-        db, current_user.id, status, search, page, per_page
+        db, current_user.id, status, search, page, per_page, include_archived
     )
     
     # Calculate review progress for each list
@@ -155,7 +156,8 @@ async def list_vocabulary_lists(
             word_count=word_count,
             review_progress=review_progress,
             created_at=vocab_list.created_at,
-            updated_at=vocab_list.updated_at
+            updated_at=vocab_list.updated_at,
+            deleted_at=vocab_list.deleted_at
         )
         summaries.append(summary)
     
@@ -281,6 +283,38 @@ async def delete_vocabulary_list(
         )
     
     await VocabularyService.delete_vocabulary_list(db, list_id)
+
+
+@router.post("/vocabulary/{list_id}/restore")
+async def restore_vocabulary_list(
+    list_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Restore a soft-deleted vocabulary list"""
+    # Get the vocabulary list including archived ones
+    result = await db.execute(
+        select(VocabularyList).where(
+            and_(
+                VocabularyList.id == list_id,
+                VocabularyList.teacher_id == current_user.id,
+                VocabularyList.deleted_at.is_not(None)
+            )
+        )
+    )
+    vocabulary_list = result.scalar_one_or_none()
+    
+    if not vocabulary_list:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Archived vocabulary list not found"
+        )
+    
+    # Restore by clearing deleted_at
+    vocabulary_list.deleted_at = None
+    await db.commit()
+    
+    return {"message": "Vocabulary list restored successfully"}
 
 
 @router.post("/vocabulary/{list_id}/generate-ai", response_model=VocabularyListResponse)

@@ -20,8 +20,7 @@ const STATUS_COLORS: Record<VocabularyStatus, { bg: string; text: string; icon: 
   draft: { bg: 'bg-gray-100', text: 'text-gray-800', icon: ClockIcon },
   processing: { bg: 'bg-yellow-100', text: 'text-yellow-800', icon: ClockIcon },
   reviewing: { bg: 'bg-blue-100', text: 'text-blue-800', icon: BookOpenIcon },
-  published: { bg: 'bg-green-100', text: 'text-green-800', icon: CheckCircleIcon },
-  archived: { bg: 'bg-gray-100', text: 'text-gray-600', icon: ArchiveBoxIcon }
+  published: { bg: 'bg-green-100', text: 'text-green-800', icon: CheckCircleIcon }
 }
 
 export default function UmaVocabPage() {
@@ -33,10 +32,12 @@ export default function UmaVocabPage() {
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [totalCount, setTotalCount] = useState(0)
+  const [showArchived, setShowArchived] = useState(false)
+  const [restoringId, setRestoringId] = useState<string | null>(null)
 
   useEffect(() => {
     loadVocabularyLists()
-  }, [currentPage, statusFilter, searchTerm])
+  }, [currentPage, statusFilter, searchTerm, showArchived])
 
   const loadVocabularyLists = async () => {
     try {
@@ -45,7 +46,8 @@ export default function UmaVocabPage() {
         page: currentPage,
         per_page: 20,
         status: statusFilter === 'all' ? undefined : statusFilter,
-        search: searchTerm || undefined
+        search: searchTerm || undefined,
+        include_archived: showArchived
       })
       
       setLists(response.items)
@@ -64,16 +66,25 @@ export default function UmaVocabPage() {
     loadVocabularyLists()
   }
 
-  const handleUnarchive = async (listId: string) => {
+  const handleRestore = async (listId: string) => {
     try {
-      await vocabularyApi.updateList(listId, { 
-        status: 'published' as VocabularyStatus 
-      })
-      // Refresh the list to show the updated status
-      loadVocabularyLists()
-    } catch (error) {
-      console.error('Failed to unarchive vocabulary list:', error)
-      alert('Failed to unarchive vocabulary list. Please try again.')
+      setRestoringId(listId)
+      await vocabularyApi.restoreList(listId)
+      // Refresh the list
+      await loadVocabularyLists()
+    } catch (error: any) {
+      console.error('Failed to restore vocabulary list:', error)
+      
+      // Check for 400 error with specific message about classrooms
+      if (error.response?.status === 400 && error.response?.data?.detail) {
+        alert(error.response.data.detail)
+      } else if (error.response?.data?.message) {
+        alert(error.response.data.message)
+      } else {
+        alert('Failed to restore vocabulary list. Please try again.')
+      }
+    } finally {
+      setRestoringId(null)
     }
   }
 
@@ -155,8 +166,22 @@ export default function UmaVocabPage() {
             <option value="processing">Processing</option>
             <option value="reviewing">Reviewing</option>
             <option value="published">Published</option>
-            <option value="archived">Archived</option>
           </select>
+
+          <button
+            onClick={() => {
+              setShowArchived(!showArchived)
+              setCurrentPage(1)
+            }}
+            className={`inline-flex items-center px-4 py-2 border rounded-md text-sm font-medium ${
+              showArchived
+                ? 'border-primary-600 text-primary-600 bg-primary-50'
+                : 'border-gray-300 text-gray-700 bg-white hover:bg-gray-50'
+            }`}
+          >
+            <ArchiveBoxIcon className="h-5 w-5 mr-2" />
+            {showArchived ? 'Hide Archived' : 'Show Archived'}
+          </button>
           
           <Link
             href="/teacher/vocabulary/create?new=true"
@@ -259,7 +284,16 @@ export default function UmaVocabPage() {
                       {formatDate(list.created_at)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                      {list.status === 'reviewing' ? (
+                      {list.deleted_at ? (
+                        <button
+                          onClick={() => handleRestore(list.id)}
+                          className="inline-flex items-center text-green-600 hover:text-green-900 disabled:opacity-50"
+                          disabled={restoringId === list.id}
+                        >
+                          <ArrowUturnLeftIcon className="h-4 w-4 mr-1" />
+                          {restoringId === list.id ? 'Restoring...' : 'Restore'}
+                        </button>
+                      ) : list.status === 'reviewing' ? (
                         <Link
                           href={`/teacher/vocabulary/${list.id}/review`}
                           className="text-primary-600 hover:text-primary-900"
@@ -273,14 +307,6 @@ export default function UmaVocabPage() {
                         >
                           View
                         </Link>
-                      ) : list.status === 'archived' ? (
-                        <button
-                          onClick={() => handleUnarchive(list.id)}
-                          className="inline-flex items-center text-green-600 hover:text-green-900"
-                        >
-                          <ArrowUturnLeftIcon className="h-4 w-4 mr-1" />
-                          Unarchive
-                        </button>
                       ) : list.status === 'draft' || list.status === 'processing' ? (
                         <span className="text-gray-400">Processing...</span>
                       ) : null}

@@ -122,15 +122,17 @@ class VocabularyService:
         status: Optional[VocabularyStatus] = None,
         search: Optional[str] = None,
         page: int = 1,
-        per_page: int = 20
+        per_page: int = 20,
+        include_archived: bool = False
     ) -> Tuple[List[VocabularyList], int]:
         """List vocabulary lists with pagination and filters"""
-        query = select(VocabularyList).where(
-            and_(
-                VocabularyList.teacher_id == teacher_id,
-                VocabularyList.deleted_at.is_(None)
-            )
-        )
+        conditions = [VocabularyList.teacher_id == teacher_id]
+        
+        # Only filter deleted_at if not including archived
+        if not include_archived:
+            conditions.append(VocabularyList.deleted_at.is_(None))
+        
+        query = select(VocabularyList).where(and_(*conditions))
         
         if status:
             query = query.where(VocabularyList.status == status)
@@ -170,12 +172,6 @@ class VocabularyService:
         
         for field, value in update_data.model_dump(exclude_unset=True).items():
             setattr(vocabulary_list, field, value)
-            
-        # If status is being changed from archived to something else, clear deleted_at
-        if ('status' in update_data.model_dump(exclude_unset=True) and 
-            vocabulary_list.status != VocabularyStatus.ARCHIVED and 
-            vocabulary_list.deleted_at is not None):
-            vocabulary_list.deleted_at = None
         
         await db.commit()
         await db.refresh(vocabulary_list)
@@ -192,7 +188,6 @@ class VocabularyService:
             return False
         
         vocabulary_list.deleted_at = datetime.utcnow()
-        vocabulary_list.status = VocabularyStatus.ARCHIVED
         await db.commit()
         return True
     

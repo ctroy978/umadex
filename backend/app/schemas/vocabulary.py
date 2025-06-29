@@ -134,6 +134,7 @@ class VocabularyListSummary(BaseModel):
     review_progress: int  # Percentage of words reviewed
     created_at: datetime
     updated_at: datetime
+    deleted_at: Optional[datetime] = None
     
     class Config:
         from_attributes = True

@@ -24,6 +24,7 @@ export const vocabularyApi = {
     search?: string
     page?: number
     per_page?: number
+    include_archived?: boolean
   }): Promise<VocabularyListPagination> {
     const response = await api.get('/v1/teacher/vocabulary', { params })
     return response.data
@@ -44,6 +45,12 @@ export const vocabularyApi = {
   // Delete (archive) a vocabulary list
   async deleteList(listId: string): Promise<void> {
     await api.delete(`/v1/teacher/vocabulary/${listId}`)
+  },
+
+  // Restore an archived vocabulary list
+  async restoreList(listId: string): Promise<{ message: string }> {
+    const response = await api.post(`/v1/teacher/vocabulary/${listId}/restore`)
+    return response.data
   },
 
   // Trigger AI generation for a list
