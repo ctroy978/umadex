@@ -12,7 +12,9 @@ import {
   ClockIcon,
   CheckCircleIcon,
   ArchiveBoxIcon,
-  ArrowUturnLeftIcon
+  ArrowUturnLeftIcon,
+  ArchiveBoxArrowDownIcon,
+  ArrowPathIcon
 } from '@heroicons/react/24/outline'
 import type { VocabularyListSummary, VocabularyStatus } from '@/types/vocabulary'
 
@@ -34,6 +36,7 @@ export default function UmaVocabPage() {
   const [totalCount, setTotalCount] = useState(0)
   const [showArchived, setShowArchived] = useState(false)
   const [restoringId, setRestoringId] = useState<string | null>(null)
+  const [archivingId, setArchivingId] = useState<string | null>(null)
 
   useEffect(() => {
     loadVocabularyLists()
@@ -64,6 +67,31 @@ export default function UmaVocabPage() {
     e.preventDefault()
     setCurrentPage(1)
     loadVocabularyLists()
+  }
+
+  const handleArchive = async (listId: string) => {
+    if (!confirm('Archive this vocabulary list? You can restore it later from the archived view.')) {
+      return
+    }
+    
+    try {
+      setArchivingId(listId)
+      await vocabularyApi.deleteList(listId)
+      await loadVocabularyLists()
+    } catch (error: any) {
+      console.error('Error archiving vocabulary list:', error)
+      
+      // Check for 400 error with specific message about classrooms
+      if (error.response?.status === 400 && error.response?.data?.detail) {
+        alert(error.response.data.detail)
+      } else if (error.response?.data?.message) {
+        alert(error.response.data.message)
+      } else {
+        alert('Failed to archive vocabulary list')
+      }
+    } finally {
+      setArchivingId(null)
+    }
   }
 
   const handleRestore = async (listId: string) => {
@@ -284,32 +312,59 @@ export default function UmaVocabPage() {
                       {formatDate(list.created_at)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                      {list.deleted_at ? (
-                        <button
-                          onClick={() => handleRestore(list.id)}
-                          className="inline-flex items-center text-green-600 hover:text-green-900 disabled:opacity-50"
-                          disabled={restoringId === list.id}
-                        >
-                          <ArrowUturnLeftIcon className="h-4 w-4 mr-1" />
-                          {restoringId === list.id ? 'Restoring...' : 'Restore'}
-                        </button>
-                      ) : list.status === 'reviewing' ? (
-                        <Link
-                          href={`/teacher/vocabulary/${list.id}/review`}
-                          className="text-primary-600 hover:text-primary-900"
-                        >
-                          Review
-                        </Link>
-                      ) : list.status === 'published' ? (
-                        <Link
-                          href={`/teacher/vocabulary/${list.id}`}
-                          className="text-primary-600 hover:text-primary-900"
-                        >
-                          View
-                        </Link>
-                      ) : list.status === 'draft' || list.status === 'processing' ? (
-                        <span className="text-gray-400">Processing...</span>
-                      ) : null}
+                      <div className="flex items-center justify-end space-x-3">
+                        {list.deleted_at ? (
+                          <button
+                            onClick={() => handleRestore(list.id)}
+                            disabled={restoringId === list.id}
+                            className="text-green-600 hover:text-green-900 disabled:opacity-50"
+                            title="Restore"
+                          >
+                            {restoringId === list.id ? (
+                              <ArrowPathIcon className="h-5 w-5 animate-spin" />
+                            ) : (
+                              <ArrowPathIcon className="h-5 w-5" />
+                            )}
+                          </button>
+                        ) : (
+                          <>
+                            {list.status === 'reviewing' ? (
+                              <Link
+                                href={`/teacher/vocabulary/${list.id}/review`}
+                                className="text-primary-600 hover:text-primary-900"
+                                title="Review"
+                              >
+                                Review
+                              </Link>
+                            ) : list.status === 'published' ? (
+                              <Link
+                                href={`/teacher/vocabulary/${list.id}`}
+                                className="text-primary-600 hover:text-primary-900"
+                                title="View"
+                              >
+                                View
+                              </Link>
+                            ) : list.status === 'draft' || list.status === 'processing' ? (
+                              <span className="text-gray-400">Processing...</span>
+                            ) : null}
+                            
+                            {(list.status === 'published' || list.status === 'reviewing') && (
+                              <button
+                                onClick={() => handleArchive(list.id)}
+                                disabled={archivingId === list.id}
+                                className="text-gray-600 hover:text-gray-900 disabled:opacity-50"
+                                title="Archive"
+                              >
+                                {archivingId === list.id ? (
+                                  <ArrowPathIcon className="h-5 w-5 animate-spin" />
+                                ) : (
+                                  <ArchiveBoxArrowDownIcon className="h-5 w-5" />
+                                )}
+                              </button>
+                            )}
+                          </>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}

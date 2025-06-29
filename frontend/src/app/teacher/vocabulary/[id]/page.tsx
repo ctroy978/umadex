@@ -8,7 +8,6 @@ import {
   DocumentArrowDownIcon,
   PencilIcon,
   BookOpenIcon,
-  ArchiveBoxIcon,
   PresentationChartBarIcon,
   Cog6ToothIcon
 } from '@heroicons/react/24/outline'
@@ -95,27 +94,6 @@ export default function VocabularyViewPage({ params }: { params: { id: string } 
   }
 
 
-  const handleArchive = async () => {
-    if (!confirm('Are you sure you want to archive this vocabulary list?')) {
-      return
-    }
-    
-    try {
-      await vocabularyApi.deleteList(params.id)
-      router.push('/teacher/uma-vocab')
-    } catch (error: any) {
-      console.error('Failed to archive list:', error)
-      
-      // Check for 400 error with specific message about classrooms
-      if (error.response?.status === 400 && error.response?.data?.detail) {
-        alert(error.response.data.detail)
-      } else if (error.response?.data?.message) {
-        alert(error.response.data.message)
-      } else {
-        alert('Failed to archive list')
-      }
-    }
-  }
 
   if (isLoading) {
     return (
@@ -221,16 +199,6 @@ export default function VocabularyViewPage({ params }: { params: { id: string } 
                 Configure Test
               </button>
             )}
-            
-            {list.status === 'published' && (
-              <button
-                onClick={handleArchive}
-                className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
-              >
-                <ArchiveBoxIcon className="h-4 w-4 mr-2" />
-                Archive
-              </button>
-            )}
           </div>
         </div>
       </div>
@@ -239,7 +207,6 @@ export default function VocabularyViewPage({ params }: { params: { id: string } 
       <div className="mb-6">
         <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
           list.status === 'published' ? 'bg-green-100 text-green-800' :
-          list.status === 'archived' ? 'bg-gray-100 text-gray-600' :
           'bg-blue-100 text-blue-800'
         }`}>
           <BookOpenIcon className="w-4 h-4 mr-1" />
