@@ -68,86 +68,146 @@ export default function FeedbackModal({
                 </Dialog.Title>
 
                 {/* Overall Score */}
-                <div className={`mb-8 p-6 rounded-xl ${getScoreBgColor(feedback.overall_score * 10)}`}>
+                <div className={`mb-8 p-6 rounded-xl ${getScoreBgColor(feedback.overall_score)}`}>
                   <div className="flex items-center justify-between">
                     <h4 className="text-lg font-semibold text-gray-900">Overall Score</h4>
-                    <span className={`text-3xl font-bold ${getScoreColor(feedback.overall_score * 10)}`}>
-                      {Math.round(feedback.overall_score * 10)}%
+                    <span className={`text-3xl font-bold ${getScoreColor(feedback.overall_score)}`}>
+                      {Math.round(feedback.overall_score)}%
                     </span>
                   </div>
                   <p className="mt-2 text-gray-700">{feedback.general_feedback}</p>
+                  {feedback.core_score !== undefined && feedback.bonus_points !== undefined && (
+                    <div className="mt-3 text-sm text-gray-600">
+                      Core: {feedback.core_score}/100 • Bonus: +{feedback.bonus_points}
+                    </div>
+                  )}
                 </div>
 
                 {/* Criteria Scores */}
-                {Object.keys(feedback.criteria_scores).length > 0 && (
+                {feedback.criteria_scores && Object.keys(feedback.criteria_scores).length > 0 && (
                   <div className="mb-8">
                     <h4 className="text-lg font-semibold text-gray-900 mb-4">Criteria Evaluation</h4>
                     <div className="space-y-4">
-                      {Object.entries(feedback.criteria_scores).map(([criterion, data]) => (
-                        <div key={criterion} className="bg-gray-50 rounded-lg p-4">
-                          <div className="flex items-center justify-between mb-2">
-                            <h5 className="font-medium text-gray-900 capitalize">{criterion}</h5>
-                            <span className={`font-semibold ${getScoreColor(data.score * 10)}`}>
-                              {Math.round(data.score * 10)}%
-                            </span>
-                          </div>
-                          <p className="text-sm text-gray-700 mb-2">{data.feedback}</p>
-                          {data.suggestions.length > 0 && (
-                            <div className="mt-2">
-                              <p className="text-xs font-medium text-gray-600 mb-1">Suggestions:</p>
-                              <ul className="text-xs text-gray-600 space-y-1">
-                                {data.suggestions.map((suggestion, idx) => (
-                                  <li key={idx} className="flex items-start">
-                                    <LightBulbIcon className="h-3 w-3 text-yellow-500 mr-1 flex-shrink-0 mt-0.5" />
-                                    {suggestion}
-                                  </li>
-                                ))}
-                              </ul>
+                      {Object.entries(feedback.criteria_scores).map(([criterion, data]: [string, any]) => {
+                        if (!data) return null
+                        return (
+                          <div key={criterion} className="bg-gray-50 rounded-lg p-4">
+                            <div className="flex items-center justify-between mb-2">
+                              <h5 className="font-medium text-gray-900">
+                                {criterion.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                              </h5>
+                              {data.score !== undefined && (
+                                <span className={`font-semibold ${getScoreColor((data.score / 40) * 100)}`}>
+                                  {data.score}/{criterion === 'content_purpose' ? 40 : criterion === 'teacher_criteria' ? 35 : 25}
+                                </span>
+                              )}
                             </div>
-                          )}
-                        </div>
-                      ))}
+                            <p className="text-sm text-gray-700 mb-2">{data.reasoning || data.feedback}</p>
+                            {data.strengths && data.strengths.length > 0 && (
+                              <div className="mt-2">
+                                <p className="text-xs font-medium text-green-600 mb-1">Strengths:</p>
+                                <ul className="text-xs text-gray-600 space-y-1">
+                                  {data.strengths.map((strength: string, idx: number) => (
+                                    <li key={idx} className="flex items-start">
+                                      <CheckCircleIcon className="h-3 w-3 text-green-500 mr-1 flex-shrink-0 mt-0.5" />
+                                      {strength}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                            {data.suggestions && data.suggestions.length > 0 && (
+                              <div className="mt-2">
+                                <p className="text-xs font-medium text-gray-600 mb-1">Suggestions:</p>
+                                <ul className="text-xs text-gray-600 space-y-1">
+                                  {data.suggestions.map((suggestion: string, idx: number) => (
+                                    <li key={idx} className="flex items-start">
+                                      <LightBulbIcon className="h-3 w-3 text-yellow-500 mr-1 flex-shrink-0 mt-0.5" />
+                                      {suggestion}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
                     </div>
                   </div>
                 )}
 
                 {/* Technique Validation */}
-                {Object.keys(feedback.technique_validation).length > 0 && (
-                  <div className="mb-8">
-                    <h4 className="text-lg font-semibold text-gray-900 mb-4">Technique Usage</h4>
-                    <div className="space-y-3">
-                      {Object.entries(feedback.technique_validation).map(([technique, data]) => (
-                        <div key={technique} className={`rounded-lg p-4 border-2 ${
-                          data.found ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'
-                        }`}>
-                          <div className="flex items-center justify-between mb-2">
-                            <h5 className="font-medium text-gray-900">{technique}</h5>
-                            {data.found ? (
-                              <CheckCircleIcon className="h-5 w-5 text-green-600" />
-                            ) : (
-                              <XCircleIcon className="h-5 w-5 text-red-600" />
+                {feedback.technique_validation && (
+                  feedback.technique_validation.techniques?.length > 0 ? (
+                    <div className="mb-8">
+                      <h4 className="text-lg font-semibold text-gray-900 mb-4">Technique Usage</h4>
+                      <div className="space-y-3">
+                        {feedback.technique_validation.techniques.map((technique: any) => (
+                          <div key={technique.name} className={`rounded-lg p-4 border-2 ${
+                            technique.found ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'
+                          }`}>
+                            <div className="flex items-center justify-between mb-2">
+                              <h5 className="font-medium text-gray-900">{technique.name}</h5>
+                              {technique.found ? (
+                                <CheckCircleIcon className="h-5 w-5 text-green-600" />
+                              ) : (
+                                <XCircleIcon className="h-5 w-5 text-red-600" />
+                              )}
+                            </div>
+                            <p className="text-sm text-gray-700">{technique.feedback}</p>
+                            {technique.example && (
+                              <div className="mt-2">
+                                <p className="text-xs font-medium text-gray-600 mb-1">Example found:</p>
+                                <p className="text-xs text-gray-600 italic">"{technique.example}"</p>
+                              </div>
+                            )}
+                            {technique.found && technique.points_awarded > 0 && (
+                              <div className="mt-2 text-sm font-medium text-green-700">
+                                +{technique.points_awarded}% bonus points earned!
+                              </div>
                             )}
                           </div>
-                          <p className="text-sm text-gray-700">{data.feedback}</p>
-                          {data.examples.length > 0 && (
-                            <div className="mt-2">
-                              <p className="text-xs font-medium text-gray-600 mb-1">Examples found:</p>
-                              <ul className="text-xs text-gray-600 space-y-1">
-                                {data.examples.map((example, idx) => (
-                                  <li key={idx} className="italic">"{example}"</li>
-                                ))}
-                              </ul>
-                            </div>
-                          )}
-                          {data.found && (
-                            <div className="mt-2 text-sm font-medium text-green-700">
-                              +5% bonus points earned!
-                            </div>
-                          )}
-                        </div>
-                      ))}
+                        ))}
+                      </div>
                     </div>
-                  </div>
+                  ) : Object.keys(feedback.technique_validation).length > 0 && (
+                    // Fallback for object-based technique validation
+                    <div className="mb-8">
+                      <h4 className="text-lg font-semibold text-gray-900 mb-4">Technique Usage</h4>
+                      <div className="space-y-3">
+                        {Object.entries(feedback.technique_validation).map(([technique, data]: [string, any]) => (
+                          <div key={technique} className={`rounded-lg p-4 border-2 ${
+                            data.found ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'
+                          }`}>
+                            <div className="flex items-center justify-between mb-2">
+                              <h5 className="font-medium text-gray-900">{technique}</h5>
+                              {data.found ? (
+                                <CheckCircleIcon className="h-5 w-5 text-green-600" />
+                              ) : (
+                                <XCircleIcon className="h-5 w-5 text-red-600" />
+                              )}
+                            </div>
+                            <p className="text-sm text-gray-700">{data.feedback}</p>
+                            {data.examples && data.examples.length > 0 && (
+                              <div className="mt-2">
+                                <p className="text-xs font-medium text-gray-600 mb-1">Examples found:</p>
+                                <ul className="text-xs text-gray-600 space-y-1">
+                                  {data.examples.map((example: string, idx: number) => (
+                                    <li key={idx} className="italic">"{example}"</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                            {data.found && (
+                              <div className="mt-2 text-sm font-medium text-green-700">
+                                +5% bonus points earned!
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )
                 )}
 
                 {/* Revision Suggestions */}

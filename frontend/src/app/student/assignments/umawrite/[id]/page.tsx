@@ -8,7 +8,6 @@ import WritingEditor from '@/components/student/writing/WritingEditor'
 import TechniquesPanel from '@/components/student/writing/TechniquesPanel'
 import FeedbackModal from '@/components/student/writing/FeedbackModal'
 import { BookOpenIcon, ChevronLeftIcon } from '@heroicons/react/24/outline'
-import toast from 'react-hot-toast'
 
 export default function StudentWritingAssignmentPage() {
   const params = useParams()
@@ -26,6 +25,9 @@ export default function StudentWritingAssignmentPage() {
   const [showTechniques, setShowTechniques] = useState(false)
   const [showFeedback, setShowFeedback] = useState(false)
   const [lastSubmission, setLastSubmission] = useState<WritingSubmissionResponse | null>(null)
+  const [lastSavedContent, setLastSavedContent] = useState('')
+  const [lastSavedTechniques, setLastSavedTechniques] = useState<string[]>([])
+  const [evaluating, setEvaluating] = useState(false)
 
   // Load assignment and progress
   useEffect(() => {
@@ -46,13 +48,16 @@ export default function StudentWritingAssignmentPage() {
         setContent(progressData.draft_content || '')
         setSelectedTechniques(progressData.selected_techniques || [])
         setWordCount(progressData.word_count || 0)
+        // Initialize last saved state
+        setLastSavedContent(progressData.draft_content || '')
+        setLastSavedTechniques(progressData.selected_techniques || [])
       } else {
         // Start the assignment
         await studentWritingApi.startAssignment(assignmentId)
       }
     } catch (error) {
       console.error('Error loading assignment:', error)
-      toast.error('Failed to load assignment')
+      alert('Failed to load assignment')
     } finally {
       setLoading(false)
     }
@@ -61,6 +66,14 @@ export default function StudentWritingAssignmentPage() {
   // Auto-save draft
   const saveDraft = useCallback(async () => {
     if (!content.trim() || saving) return
+    
+    // Check if content or techniques actually changed
+    const contentChanged = content !== lastSavedContent
+    const techniquesChanged = JSON.stringify(selectedTechniques) !== JSON.stringify(lastSavedTechniques)
+    
+    if (!contentChanged && !techniquesChanged) {
+      return // Don't save if nothing changed
+    }
 
     setSaving(true)
     try {
@@ -69,12 +82,15 @@ export default function StudentWritingAssignmentPage() {
         selected_techniques: selectedTechniques,
         word_count: wordCount
       })
+      // Update last saved state
+      setLastSavedContent(content)
+      setLastSavedTechniques(selectedTechniques)
     } catch (error) {
       console.error('Error saving draft:', error)
     } finally {
       setSaving(false)
     }
-  }, [content, selectedTechniques, wordCount, assignmentId, saving])
+  }, [content, selectedTechniques, wordCount, assignmentId, saving, lastSavedContent, lastSavedTechniques])
 
   // Auto-save timer
   useEffect(() => {
@@ -83,7 +99,7 @@ export default function StudentWritingAssignmentPage() {
     }, 2000) // Save 2 seconds after typing stops
 
     return () => clearTimeout(timer)
-  }, [content, saveDraft])
+  }, [content, selectedTechniques, saveDraft])
 
   const handleTechniqueToggle = (technique: string) => {
     setSelectedTechniques(prev => {
@@ -92,7 +108,7 @@ export default function StudentWritingAssignmentPage() {
       } else if (prev.length < 5) {
         return [...prev, technique]
       }
-      toast.error('You can select up to 5 techniques')
+      alert('You can select up to 5 techniques')
       return prev
     })
   }
@@ -102,13 +118,13 @@ export default function StudentWritingAssignmentPage() {
 
     // Validate word count
     if (wordCount < assignment.word_count_min || wordCount > assignment.word_count_max) {
-      toast.error(`Word count must be between ${assignment.word_count_min} and ${assignment.word_count_max} words`)
+      alert(`Word count must be between ${assignment.word_count_min} and ${assignment.word_count_max} words`)
       return
     }
 
     // Validate techniques
     if (selectedTechniques.length === 0) {
-      toast.error('Please select at least one writing technique')
+      alert('Please select at least one writing technique')
       return
     }
 
@@ -121,24 +137,60 @@ export default function StudentWritingAssignmentPage() {
         is_final: isFinal
       })
       
+      console.log('Submission response:', submission)
       setLastSubmission(submission)
-      toast.success(isFinal ? 'Assignment submitted successfully!' : 'Draft submitted for feedback')
+      alert(isFinal ? 'Assignment submitted successfully!' : 'Draft submitted for feedback')
       
-      // Check for feedback after a delay
+      // Show evaluating state
+      setEvaluating(true)
+      
+      // Trigger AI evaluation
       setTimeout(async () => {
         try {
-          const feedback = await studentWritingApi.getFeedback(assignmentId, submission.id)
-          if (feedback.feedback) {
-            setLastSubmission(prev => prev ? { ...prev, ai_feedback: feedback.feedback } : null)
+          console.log('Triggering evaluation for submission:', submission.id)
+          const evalResult = await studentWritingApi.evaluateSubmission(submission.id)
+          console.log('Evaluation result:', evalResult)
+          
+          if (evalResult.ai_feedback) {
+            setLastSubmission(prev => {
+              const updated = prev ? { ...prev, ai_feedback: evalResult.ai_feedback, score: evalResult.score } : null
+              console.log('Updated submission with feedback:', updated)
+              return updated
+            })
             setShowFeedback(true)
+          } else {
+            // Try polling for feedback
+            console.log('No immediate feedback, trying to poll...')
+            const feedback = await studentWritingApi.getFeedback(assignmentId, submission.id)
+            console.log('Polled feedback:', feedback)
+            
+            if (feedback.feedback) {
+              setLastSubmission(prev => prev ? { ...prev, ai_feedback: feedback.feedback, score: feedback.score } : null)
+              setShowFeedback(true)
+            } else {
+              alert('Feedback is being generated. Please refresh the page in a few moments.')
+            }
           }
         } catch (error) {
-          console.error('Error getting feedback:', error)
+          console.error('Error triggering evaluation:', error)
+          // Try to get feedback anyway
+          try {
+            const feedback = await studentWritingApi.getFeedback(assignmentId, submission.id)
+            console.log('Fallback feedback attempt:', feedback)
+            if (feedback.feedback) {
+              setLastSubmission(prev => prev ? { ...prev, ai_feedback: feedback.feedback, score: feedback.score } : null)
+              setShowFeedback(true)
+            }
+          } catch (feedbackError) {
+            console.error('Error getting feedback:', feedbackError)
+            alert('Failed to get feedback. Please try refreshing the page.')
+          }
         }
-      }, 3000)
+        setEvaluating(false) // Clear evaluating state
+      }, 3000) // Increased timeout to 3 seconds
     } catch (error) {
       console.error('Error submitting:', error)
-      toast.error('Failed to submit assignment')
+      alert('Failed to submit assignment')
     } finally {
       setSubmitting(false)
     }
@@ -261,12 +313,12 @@ export default function StudentWritingAssignmentPage() {
             <div className="bg-white rounded-lg shadow-md p-6 mb-6">
               <h3 className="text-lg font-semibold text-gray-900 mb-4">Evaluation Criteria</h3>
               <div className="space-y-3">
-                {Object.entries(assignment.evaluation_criteria).map(([category, items]) => (
+                {Object.entries(assignment.evaluation_criteria).map(([category, items]: [string, string[]]) => (
                   items.length > 0 && (
                     <div key={category}>
                       <h4 className="text-sm font-medium text-gray-700 capitalize mb-1">{category}</h4>
                       <div className="flex flex-wrap gap-2">
-                        {items.map((item) => (
+                        {items.map((item: string) => (
                           <span key={item} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
                             {item}
                           </span>
@@ -313,6 +365,21 @@ export default function StudentWritingAssignmentPage() {
         selectedTechniques={selectedTechniques}
         onTechniqueToggle={handleTechniqueToggle}
       />
+
+      {/* Evaluating Indicator */}
+      {evaluating && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-sm w-full mx-4">
+            <div className="flex flex-col items-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Evaluating Your Writing</h3>
+              <p className="text-sm text-gray-600 text-center">
+                Our AI is analyzing your submission and generating personalized feedback...
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Feedback Modal */}
       {lastSubmission?.ai_feedback && (

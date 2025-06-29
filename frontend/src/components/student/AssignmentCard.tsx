@@ -10,6 +10,7 @@ import {
   CalendarIcon,
   UserIcon,
   CheckCircleIcon,
+  DocumentCheckIcon,
   DocumentCheckIcon as FileCheckIcon,
   LockClosedIcon,
   ExclamationTriangleIcon
@@ -36,6 +37,9 @@ export default function AssignmentCard({ assignment, classroomId }: AssignmentCa
       if (assignment.type === 'UMADebate') {
         // Navigate to debate assignment page
         router.push(`/student/debate/${assignment.id}`)
+      } else if (assignment.type === 'UMAWrite') {
+        // Navigate to writing assignment page
+        router.push(`/student/assignments/umawrite/${assignment.id}`)
       } else if (assignment.is_completed && assignment.has_test) {
         if (assignment.test_completed && assignment.test_attempt_id) {
           // Navigate to test results for completed tests
@@ -70,6 +74,8 @@ export default function AssignmentCard({ assignment, classroomId }: AssignmentCa
         return <LanguageIcon className="h-5 w-5 text-purple-600" />
       case 'debate':
         return <UserIcon className="h-5 w-5 text-green-600" />
+      case 'writing':
+        return <DocumentCheckIcon className="h-5 w-5 text-amber-600" />
       default:
         return <BookOpenIcon className="h-5 w-5 text-gray-600" />
     }
@@ -124,6 +130,7 @@ export default function AssignmentCard({ assignment, classroomId }: AssignmentCa
               assignment.item_type === 'reading' ? 'bg-blue-100' : 
               assignment.item_type === 'vocabulary' ? 'bg-purple-100' :
               assignment.item_type === 'debate' ? 'bg-green-100' :
+              assignment.item_type === 'writing' ? 'bg-amber-100' :
               'bg-gray-100'
             }`}>
               {getTypeIcon()}

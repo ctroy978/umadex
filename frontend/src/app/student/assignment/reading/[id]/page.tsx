@@ -285,7 +285,6 @@ export default function UMAReadAssignmentPage({ params }: { params: { id: string
           totalChunks={assignment.total_chunks}
           difficultyLevel={progress?.difficulty_level || assignment.difficulty_level}
           assignmentId={id}
-          hasTest={hasTest}
         />
     );
   }

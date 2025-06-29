@@ -4,6 +4,7 @@ AI Helper for debate responses using Google Gemini
 import google.generativeai as genai
 from typing import Optional
 import logging
+import asyncio
 from app.config.ai_config import get_gemini_config
 
 logger = logging.getLogger(__name__)
@@ -25,10 +26,14 @@ async def get_ai_response(prompt: str, max_tokens: int = 300) -> str:
             "top_p": 0.95,
         }
         
-        # Generate response
-        response = model.generate_content(
-            prompt,
-            generation_config=generation_config
+        # Generate response in a thread pool to avoid blocking
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(
+            None,
+            lambda: model.generate_content(
+                prompt,
+                generation_config=generation_config
+            )
         )
         
         # Extract text from response

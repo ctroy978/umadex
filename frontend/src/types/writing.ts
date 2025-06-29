@@ -68,7 +68,7 @@ export interface StudentWritingDraft {
 }
 
 export interface StudentWritingProgress {
-  student_assignment_id: string
+  student_assignment_id: string | null
   draft_content: string
   selected_techniques: string[]
   word_count: number
@@ -94,17 +94,27 @@ export interface WritingSubmissionResponse {
 
 export interface WritingFeedback {
   overall_score: number
+  core_score: number
+  bonus_points: number
   criteria_scores: {
-    [criterion: string]: {
-      score: number
-      feedback: string
-      suggestions: string[]
-    }
+    content_purpose?: any
+    teacher_criteria?: any
+    conventions_clarity?: any
   }
   technique_validation: {
+    total_bonus?: number
+    techniques?: Array<{
+      name: string
+      found: boolean
+      example?: string
+      effectiveness?: string
+      points_awarded: number
+      feedback: string
+    }>
+  } | {
     [technique: string]: {
       found: boolean
-      examples: string[]
+      examples?: string[]
       feedback: string
     }
   }

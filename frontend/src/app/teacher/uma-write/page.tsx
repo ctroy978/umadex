@@ -265,11 +265,11 @@ export default function UmaWritePage() {
                   </div>
                   
                   <Link
-                    href={`/teacher/uma-write/${assignment.id}/classrooms`}
+                    href="/teacher/classrooms"
                     className="inline-flex items-center px-3 py-1 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors text-sm"
                   >
                     <ClipboardDocumentListIcon className="h-4 w-4 mr-1" />
-                    Manage
+                    Classrooms
                   </Link>
                 </div>
               </div>

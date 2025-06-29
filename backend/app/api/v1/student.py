@@ -14,6 +14,7 @@ from app.models.classroom import Classroom, ClassroomStudent, ClassroomAssignmen
 from app.models.reading import ReadingAssignment
 from app.models.vocabulary import VocabularyList
 from app.models.debate import DebateAssignment
+from app.models.writing import WritingAssignment
 from app.models.vocabulary_practice import VocabularyPuzzleAttempt, VocabularyFillInBlankAttempt
 from app.models.umaread import UmareadAssignmentProgress
 from app.models.tests import AssignmentTest, StudentTestAttempt
@@ -654,6 +655,44 @@ async def get_classroom_detail(
             status=status,
             is_completed=False,  # Will be updated when student debate tracking is implemented
             has_test=False,  # Debates don't have tests
+            test_completed=False,
+            test_attempt_id=None
+        ))
+    
+    # Get writing assignments
+    writing_query = await db.execute(
+        select(WritingAssignment, ClassroomAssignment)
+        .join(ClassroomAssignment,
+              and_(
+                  ClassroomAssignment.assignment_id == WritingAssignment.id,
+                  ClassroomAssignment.assignment_type == "writing"
+              ))
+        .where(
+            and_(
+                ClassroomAssignment.classroom_id == classroom_id,
+                WritingAssignment.deleted_at.is_(None)
+            )
+        )
+        .order_by(ClassroomAssignment.start_date, ClassroomAssignment.display_order, ClassroomAssignment.assigned_at)
+    )
+    
+    for writing, ca in writing_query:
+        status = calculate_assignment_status(ca.start_date, ca.end_date)
+        assignments.append(StudentAssignmentResponse(
+            id=str(writing.id),
+            title=writing.title,
+            work_title=writing.prompt_text[:100] + "..." if len(writing.prompt_text) > 100 else writing.prompt_text,
+            author=None,
+            grade_level=writing.grade_level,
+            type="UMAWrite",
+            item_type="writing",
+            assigned_at=ca.assigned_at,
+            start_date=ca.start_date,
+            end_date=ca.end_date,
+            display_order=ca.display_order,
+            status=status,
+            is_completed=False,  # Will be updated when student writing tracking is implemented
+            has_test=False,  # Writing assignments don't have tests
             test_completed=False,
             test_attempt_id=None
         ))

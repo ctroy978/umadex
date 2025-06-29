@@ -123,7 +123,7 @@ class StudentWritingDraft(BaseModel):
 
 
 class StudentWritingProgress(BaseModel):
-    student_assignment_id: UUID
+    student_assignment_id: Optional[UUID] = None
     draft_content: str = ""
     selected_techniques: List[str] = Field(default_factory=list)
     word_count: int = 0

@@ -5,11 +5,12 @@ from sqlalchemy.orm import selectinload
 from typing import Optional, List
 from uuid import UUID
 from datetime import datetime
+import logging
 
 from app.core.database import get_db
 from app.utils.deps import get_current_user
 from app.models import WritingAssignment, StudentWritingSubmission, ClassroomAssignment, Classroom
-from app.models.classroom import StudentAssignment
+from app.models.classroom import StudentAssignment, ClassroomStudent
 from app.models.user import User, UserRole
 from app.schemas.writing import (
     WritingAssignmentCreate,
@@ -22,8 +23,10 @@ from app.schemas.writing import (
     StudentWritingDraft,
     StudentWritingProgress
 )
+from app.services.writing_ai import WritingAIService
 
 router = APIRouter(prefix="/writing", tags=["writing"])
+logger = logging.getLogger(__name__)
 
 
 def require_teacher(current_user: User = Depends(get_current_user)) -> User:
@@ -352,9 +355,10 @@ async def get_student_writing_assignment(
             ClassroomAssignment.assignment_type == "writing"
         ))
         .join(Classroom, Classroom.id == ClassroomAssignment.classroom_id)
-        .join(StudentAssignment, and_(
-            StudentAssignment.classroom_id == Classroom.id,
-            StudentAssignment.student_id == current_user.id
+        .join(ClassroomStudent, and_(
+            ClassroomStudent.classroom_id == Classroom.id,
+            ClassroomStudent.student_id == current_user.id,
+            ClassroomStudent.removed_at.is_(None)
         ))
         .where(
             and_(
@@ -381,24 +385,62 @@ async def start_writing_assignment(
     db: AsyncSession = Depends(get_db)
 ):
     """Start working on a writing assignment."""
-    # Get the student assignment record
+    # First verify student has access and get the classroom assignment
+    ca_result = await db.execute(
+        select(ClassroomAssignment)
+        .join(Classroom, Classroom.id == ClassroomAssignment.classroom_id)
+        .join(ClassroomStudent, and_(
+            ClassroomStudent.classroom_id == Classroom.id,
+            ClassroomStudent.student_id == current_user.id,
+            ClassroomStudent.removed_at.is_(None)
+        ))
+        .where(
+            and_(
+                ClassroomAssignment.assignment_id == assignment_id,
+                ClassroomAssignment.assignment_type == "writing"
+            )
+        )
+    )
+    classroom_assignment = ca_result.scalar_one_or_none()
+    
+    if not classroom_assignment:
+        raise HTTPException(status_code=404, detail="Assignment not found or access denied")
+    
+    # Check if student assignment already exists
     result = await db.execute(
         select(StudentAssignment)
-        .join(ClassroomAssignment, and_(
-            ClassroomAssignment.classroom_id == StudentAssignment.classroom_id,
-            ClassroomAssignment.assignment_type == "writing",
-            ClassroomAssignment.assignment_id == assignment_id
-        ))
-        .where(StudentAssignment.student_id == current_user.id)
+        .where(
+            and_(
+                StudentAssignment.classroom_assignment_id == classroom_assignment.id,
+                StudentAssignment.student_id == current_user.id
+            )
+        )
     )
     student_assignment = result.scalar_one_or_none()
     
     if not student_assignment:
-        raise HTTPException(status_code=404, detail="Assignment not found or access denied")
-    
-    # Initialize progress if not started
-    if not student_assignment.progress_metadata_metadata:
-        student_assignment.progress_metadata_metadata = {
+        # Create new StudentAssignment record
+        student_assignment = StudentAssignment(
+            classroom_assignment_id=classroom_assignment.id,
+            student_id=current_user.id,
+            assignment_id=assignment_id,
+            assignment_type="writing",
+            progress_metadata={
+                "draft_content": "",
+                "selected_techniques": [],
+                "submission_count": 0,
+                "current_score": None,
+                "technique_validations": {},
+                "last_saved_at": datetime.utcnow().isoformat()
+            },
+            status="in_progress"
+        )
+        db.add(student_assignment)
+        await db.commit()
+        await db.refresh(student_assignment)
+    elif not student_assignment.progress_metadata:
+        # Initialize progress if not started
+        student_assignment.progress_metadata = {
             "draft_content": "",
             "selected_techniques": [],
             "submission_count": 0,
@@ -424,7 +466,7 @@ async def save_writing_draft(
     result = await db.execute(
         select(StudentAssignment)
         .join(ClassroomAssignment, and_(
-            ClassroomAssignment.classroom_id == StudentAssignment.classroom_id,
+            ClassroomAssignment.id == StudentAssignment.classroom_assignment_id,
             ClassroomAssignment.assignment_type == "writing",
             ClassroomAssignment.assignment_id == assignment_id
         ))
@@ -433,7 +475,39 @@ async def save_writing_draft(
     student_assignment = result.scalar_one_or_none()
     
     if not student_assignment:
-        raise HTTPException(status_code=404, detail="Assignment not found or access denied")
+        # Try to create it if it doesn't exist
+        ca_result = await db.execute(
+            select(ClassroomAssignment)
+            .join(Classroom, Classroom.id == ClassroomAssignment.classroom_id)
+            .join(ClassroomStudent, and_(
+                ClassroomStudent.classroom_id == Classroom.id,
+                ClassroomStudent.student_id == current_user.id,
+                ClassroomStudent.removed_at.is_(None)
+            ))
+            .where(
+                and_(
+                    ClassroomAssignment.assignment_id == assignment_id,
+                    ClassroomAssignment.assignment_type == "writing"
+                )
+            )
+        )
+        classroom_assignment = ca_result.scalar_one_or_none()
+        
+        if not classroom_assignment:
+            raise HTTPException(status_code=404, detail="Assignment not found or access denied")
+        
+        # Create new StudentAssignment record
+        student_assignment = StudentAssignment(
+            classroom_assignment_id=classroom_assignment.id,
+            student_id=current_user.id,
+            assignment_id=assignment_id,
+            assignment_type="writing",
+            progress_metadata={},
+            status="not_started"
+        )
+        db.add(student_assignment)
+        await db.commit()
+        await db.refresh(student_assignment)
     
     # Update progress
     if not student_assignment.progress_metadata:
@@ -466,7 +540,7 @@ async def update_selected_techniques(
     result = await db.execute(
         select(StudentAssignment)
         .join(ClassroomAssignment, and_(
-            ClassroomAssignment.classroom_id == StudentAssignment.classroom_id,
+            ClassroomAssignment.id == StudentAssignment.classroom_assignment_id,
             ClassroomAssignment.assignment_type == "writing",
             ClassroomAssignment.assignment_id == assignment_id
         ))
@@ -501,7 +575,7 @@ async def submit_writing_assignment(
     result = await db.execute(
         select(StudentAssignment)
         .join(ClassroomAssignment, and_(
-            ClassroomAssignment.classroom_id == StudentAssignment.classroom_id,
+            ClassroomAssignment.id == StudentAssignment.classroom_assignment_id,
             ClassroomAssignment.assignment_type == "writing",
             ClassroomAssignment.assignment_id == assignment_id
         ))
@@ -533,7 +607,7 @@ async def submit_writing_assignment(
         student_assignment_id=student_assignment.id,
         writing_assignment_id=assignment_id,
         student_id=current_user.id,
-        response_text=submission.content,
+        response_text=submission.response_text,
         selected_techniques=submission.selected_techniques,
         word_count=submission.word_count,
         submission_attempt=submission_count,
@@ -548,7 +622,6 @@ async def submit_writing_assignment(
     
     student_assignment.progress_metadata.update({
         "submission_count": submission_count,
-        "last_submission_id": str(db_submission.id),
         "last_saved_at": datetime.utcnow().isoformat()
     })
     
@@ -558,22 +631,122 @@ async def submit_writing_assignment(
     await db.commit()
     await db.refresh(db_submission)
     
-    # TODO: Trigger AI evaluation here
-    # For now, return a placeholder response
-    return StudentWritingSubmissionResponse(
-        id=db_submission.id,
-        student_assignment_id=db_submission.student_assignment_id,
-        writing_assignment_id=db_submission.writing_assignment_id,
-        student_id=db_submission.student_id,
-        response_text=db_submission.response_text,
-        selected_techniques=db_submission.selected_techniques,
-        word_count=db_submission.word_count,
-        submission_attempt=db_submission.submission_attempt,
-        is_final_submission=db_submission.is_final_submission,
-        submitted_at=db_submission.submitted_at,
-        score=None,
-        ai_feedback=None
+    # Store the ID before any additional operations
+    submission_id = db_submission.id
+    
+    # Now update with the submission ID after it's been generated
+    student_assignment.progress_metadata["last_submission_id"] = str(submission_id)
+    await db.commit()
+    
+    # AI evaluation will be triggered asynchronously after response
+    # For now, just log that we'll evaluate it
+    logger.info(f"Writing submission {submission_id} will be evaluated asynchronously")
+    
+    # Prepare response data before potential session issues
+    response_data = {
+        'id': submission_id,
+        'student_assignment_id': student_assignment.id,
+        'writing_assignment_id': assignment_id,
+        'student_id': current_user.id,
+        'response_text': submission.response_text,
+        'selected_techniques': submission.selected_techniques,
+        'word_count': submission.word_count,
+        'submission_attempt': submission_count,
+        'is_final_submission': submission.is_final,
+        'submitted_at': db_submission.submitted_at,
+        'score': getattr(db_submission, 'score', None),
+        'ai_feedback': getattr(db_submission, 'ai_feedback', None)
+    }
+    
+    return StudentWritingSubmissionResponse(**response_data)
+
+
+@router.post("/student/submissions/{submission_id}/evaluate")
+async def evaluate_submission(
+    submission_id: UUID,
+    current_user: User = Depends(require_student),
+    db: AsyncSession = Depends(get_db)
+):
+    """Trigger AI evaluation for a submission."""
+    # Get the submission
+    result = await db.execute(
+        select(StudentWritingSubmission)
+        .where(
+            and_(
+                StudentWritingSubmission.id == submission_id,
+                StudentWritingSubmission.student_id == current_user.id
+            )
+        )
     )
+    submission = result.scalar_one_or_none()
+    
+    if not submission:
+        raise HTTPException(status_code=404, detail="Submission not found")
+    
+    # Check if already evaluated
+    if submission.score is not None:
+        return {"message": "Submission already evaluated", "score": submission.score}
+    
+    # Get the writing assignment
+    assignment_result = await db.execute(
+        select(WritingAssignment).where(WritingAssignment.id == submission.writing_assignment_id)
+    )
+    writing_assignment = assignment_result.scalar_one()
+    
+    # Get student assignment for grade level
+    sa_result = await db.execute(
+        select(StudentAssignment, ClassroomAssignment, Classroom)
+        .join(ClassroomAssignment, ClassroomAssignment.id == StudentAssignment.classroom_assignment_id)
+        .join(Classroom, Classroom.id == ClassroomAssignment.classroom_id)
+        .where(StudentAssignment.id == submission.student_assignment_id)
+    )
+    sa_data = sa_result.first()
+    grade_level = sa_data.Classroom.name if sa_data else "Middle School"
+    
+    # Trigger AI evaluation
+    ai_service = WritingAIService()
+    
+    try:
+        logger.info(f"Starting AI evaluation for submission {submission_id}")
+        logger.info(f"Assignment: {writing_assignment.id}, Grade level: {grade_level}")
+        logger.info(f"Word count: {submission.word_count}, Techniques: {submission.selected_techniques}")
+        
+        evaluation_result = await ai_service.evaluate_writing_submission(
+            student_response=submission.response_text,
+            word_count=submission.word_count,
+            selected_techniques=submission.selected_techniques,
+            assignment=writing_assignment,
+            grade_level=grade_level
+        )
+        
+        logger.info(f"AI evaluation completed. Score: {evaluation_result.get('score', 'N/A')}")
+        
+        # Update submission with AI evaluation
+        submission.score = float(evaluation_result['score'])
+        submission.ai_feedback = evaluation_result['ai_feedback']
+        
+        # Update student assignment progress if exists
+        if sa_data:
+            student_assignment = sa_data.StudentAssignment
+            if not student_assignment.progress_metadata:
+                student_assignment.progress_metadata = {}
+            student_assignment.progress_metadata['current_score'] = float(evaluation_result['score'])
+            student_assignment.progress_metadata['technique_validations'] = evaluation_result['ai_feedback']['technique_validation']
+        
+        await db.commit()
+        
+        return {
+            "message": "Evaluation completed",
+            "score": evaluation_result['score'],
+            "ai_feedback": evaluation_result['ai_feedback']
+        }
+        
+    except Exception as e:
+        logger.error(f"AI evaluation failed for submission {submission_id}: {str(e)}")
+        logger.error(f"Error type: {type(e).__name__}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail="Evaluation failed")
 
 
 @router.get("/student/assignments/{assignment_id}/feedback")
@@ -621,11 +794,35 @@ async def get_writing_progress(
     db: AsyncSession = Depends(get_db)
 ):
     """Get the current progress for a writing assignment."""
-    # Get the student assignment record
+    # First verify student has access to the assignment
+    access_check = await db.execute(
+        select(WritingAssignment)
+        .join(ClassroomAssignment, and_(
+            ClassroomAssignment.assignment_id == WritingAssignment.id,
+            ClassroomAssignment.assignment_type == "writing"
+        ))
+        .join(Classroom, Classroom.id == ClassroomAssignment.classroom_id)
+        .join(ClassroomStudent, and_(
+            ClassroomStudent.classroom_id == Classroom.id,
+            ClassroomStudent.student_id == current_user.id,
+            ClassroomStudent.removed_at.is_(None)
+        ))
+        .where(
+            and_(
+                WritingAssignment.id == assignment_id,
+                WritingAssignment.deleted_at.is_(None)
+            )
+        )
+    )
+    
+    if not access_check.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Assignment not found or access denied")
+    
+    # Try to get existing progress from StudentAssignment
     result = await db.execute(
         select(StudentAssignment)
         .join(ClassroomAssignment, and_(
-            ClassroomAssignment.classroom_id == StudentAssignment.classroom_id,
+            ClassroomAssignment.id == StudentAssignment.classroom_assignment_id,
             ClassroomAssignment.assignment_type == "writing",
             ClassroomAssignment.assignment_id == assignment_id
         ))
@@ -634,7 +831,16 @@ async def get_writing_progress(
     student_assignment = result.scalar_one_or_none()
     
     if not student_assignment:
-        raise HTTPException(status_code=404, detail="Assignment not found or access denied")
+        # Return empty progress if no record exists yet
+        return StudentWritingProgress(
+            student_assignment_id=None,
+            draft_content="",
+            selected_techniques=[],
+            word_count=0,
+            last_saved_at=None,
+            status="not_started",
+            submission_count=0
+        )
     
     progress = student_assignment.progress_metadata or {}
     

@@ -18,6 +18,7 @@ from app.models.classroom import Classroom, ClassroomAssignment, StudentAssignme
 from app.models.reading import ReadingAssignment as ReadingAssignmentModel
 from app.models.vocabulary import VocabularyList
 from app.models.debate import DebateAssignment
+from app.models.writing import WritingAssignment
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -34,7 +35,7 @@ def require_teacher(current_user: User = Depends(get_current_user)) -> User:
 
 class AssignmentSchedule(BaseModel):
     assignment_id: UUID
-    assignment_type: str = "reading"  # "reading", "vocabulary", or "debate"
+    assignment_type: str = "reading"  # "reading", "vocabulary", "debate", or "writing"
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
 
@@ -91,24 +92,38 @@ async def check_assignment_removal(
     # Build lookup maps
     current_reading = {}
     current_vocabulary = {}
+    current_debate = {}
+    current_writing = {}
     for ca in current_assignments:
         if ca.assignment_type == "reading" and ca.assignment_id:
             current_reading[ca.assignment_id] = ca
         elif ca.assignment_type == "vocabulary" and ca.vocabulary_list_id:
             current_vocabulary[ca.vocabulary_list_id] = ca
+        elif ca.assignment_type == "debate" and ca.assignment_id:
+            current_debate[ca.assignment_id] = ca
+        elif ca.assignment_type == "writing" and ca.assignment_id:
+            current_writing[ca.assignment_id] = ca
     
     # Process requested assignments
     requested_reading = set()
     requested_vocabulary = set()
+    requested_debate = set()
+    requested_writing = set()
     for sched in request.assignments:
         if sched.assignment_type == "vocabulary":
             requested_vocabulary.add(sched.assignment_id)
+        elif sched.assignment_type == "debate":
+            requested_debate.add(sched.assignment_id)
+        elif sched.assignment_type == "writing":
+            requested_writing.add(sched.assignment_id)
         else:
             requested_reading.add(sched.assignment_id)
     
     # Calculate what will be removed
     reading_to_remove = set(current_reading.keys()) - requested_reading
     vocabulary_to_remove = set(current_vocabulary.keys()) - requested_vocabulary
+    debate_to_remove = set(current_debate.keys()) - requested_debate
+    writing_to_remove = set(current_writing.keys()) - requested_writing
     
     assignments_with_students = []
     total_students = 0
@@ -167,6 +182,60 @@ async def check_assignment_removal(
             })
             total_students += student_count
     
+    # Check debate assignments
+    for assignment_id in debate_to_remove:
+        ca = current_debate[assignment_id]
+        
+        # Get assignment details
+        assignment_result = await db.execute(
+            select(DebateAssignment).where(DebateAssignment.id == assignment_id)
+        )
+        assignment = assignment_result.scalar_one_or_none()
+        
+        # Count students
+        count_result = await db.execute(
+            select(func.count(StudentAssignment.id)).where(
+                StudentAssignment.classroom_assignment_id == ca.id
+            )
+        )
+        student_count = count_result.scalar() or 0
+        
+        if student_count > 0:
+            assignments_with_students.append({
+                "assignment_id": str(assignment_id),
+                "assignment_type": "debate",
+                "assignment_title": assignment.title if assignment else "Unknown",
+                "student_count": student_count
+            })
+            total_students += student_count
+    
+    # Check writing assignments
+    for assignment_id in writing_to_remove:
+        ca = current_writing[assignment_id]
+        
+        # Get assignment details
+        assignment_result = await db.execute(
+            select(WritingAssignment).where(WritingAssignment.id == assignment_id)
+        )
+        assignment = assignment_result.scalar_one_or_none()
+        
+        # Count students
+        count_result = await db.execute(
+            select(func.count(StudentAssignment.id)).where(
+                StudentAssignment.classroom_assignment_id == ca.id
+            )
+        )
+        student_count = count_result.scalar() or 0
+        
+        if student_count > 0:
+            assignments_with_students.append({
+                "assignment_id": str(assignment_id),
+                "assignment_type": "writing",
+                "assignment_title": assignment.title if assignment else "Unknown",
+                "student_count": student_count
+            })
+            total_students += student_count
+    
     return CheckAssignmentRemovalResponse(
         assignments_with_students=assignments_with_students,
         total_students_affected=total_students
@@ -214,6 +283,7 @@ async def get_all_available_assignments(
     assigned_reading = {}
     assigned_vocabulary = {}
     assigned_debate = {}
+    assigned_writing = {}
     for ca in assigned_items:
         if ca.assignment_type == "reading" and ca.assignment_id:
             assigned_reading[ca.assignment_id] = ca
@@ -221,6 +291,8 @@ async def get_all_available_assignments(
             assigned_vocabulary[ca.vocabulary_list_id] = ca
         elif ca.assignment_type == "debate" and ca.assignment_id:
             assigned_debate[ca.assignment_id] = ca
+        elif ca.assignment_type == "writing" and ca.assignment_id:
+            assigned_writing[ca.assignment_id] = ca
     
     all_assignments = []
     
@@ -428,6 +500,70 @@ async def get_all_available_assignments(
             
             all_assignments.append(debate_dict)
     
+    # Handle writing assignments
+    if not assignment_type or assignment_type in ["all", "UMAWrite"]:
+        # Build query for writing assignments
+        writing_query = select(WritingAssignment).where(
+            and_(
+                WritingAssignment.teacher_id == teacher.id,
+                WritingAssignment.deleted_at.is_(None)  # Filter out archived assignments
+            )
+        )
+        
+        # Apply filters
+        if search:
+            writing_query = writing_query.where(
+                or_(
+                    WritingAssignment.title.ilike(f"%{search}%"),
+                    WritingAssignment.prompt_text.ilike(f"%{search}%"),
+                    WritingAssignment.subject.ilike(f"%{search}%")
+                )
+            )
+        
+        if grade_level and grade_level != "all":
+            writing_query = writing_query.where(WritingAssignment.grade_level == grade_level)
+        
+        if status:
+            if status == "assigned":
+                writing_query = writing_query.where(WritingAssignment.id.in_(assigned_writing.keys()))
+            elif status == "unassigned":
+                writing_query = writing_query.where(WritingAssignment.id.notin_(assigned_writing.keys()))
+        
+        # Execute query
+        writing_result = await db.execute(writing_query)
+        writing_assignments = writing_result.scalars().all()
+        
+        # Format writing assignments
+        for assignment in writing_assignments:
+            writing_dict = {
+                "id": str(assignment.id),
+                "assignment_title": assignment.title,
+                "work_title": assignment.prompt_text[:100] + "..." if len(assignment.prompt_text) > 100 else assignment.prompt_text,
+                "author": "",  # No author for writing assignments
+                "assignment_type": "UMAWrite",
+                "grade_level": assignment.grade_level,
+                "work_type": assignment.subject or "Writing",
+                "status": "published",  # Writing assignments don't have draft status
+                "created_at": assignment.created_at,
+                "is_assigned": assignment.id in assigned_writing,
+                "is_archived": assignment.deleted_at is not None,
+                "writing_config": {
+                    "word_count_min": assignment.word_count_min,
+                    "word_count_max": assignment.word_count_max
+                },
+                "item_type": "writing"
+            }
+            
+            # Add schedule info if assigned
+            if assignment.id in assigned_writing:
+                ca = assigned_writing[assignment.id]
+                writing_dict["current_schedule"] = {
+                    "start_date": ca.start_date,
+                    "end_date": ca.end_date
+                }
+            
+            all_assignments.append(writing_dict)
+    
     # Sort all assignments by created_at desc
     # Handle both offset-naive and offset-aware datetimes
     all_assignments.sort(key=lambda x: x["created_at"].replace(tzinfo=None) if x["created_at"] else datetime.min, reverse=True)
@@ -486,6 +622,7 @@ async def update_all_classroom_assignments(
     current_reading = {}
     current_vocabulary = {}
     current_debate = {}
+    current_writing = {}
     for ca in current_assignments:
         if ca.assignment_type == "reading" and ca.assignment_id:
             current_reading[ca.assignment_id] = ca
@@ -493,11 +630,14 @@ async def update_all_classroom_assignments(
             current_vocabulary[ca.vocabulary_list_id] = ca
         elif ca.assignment_type == "debate" and ca.assignment_id:
             current_debate[ca.assignment_id] = ca
+        elif ca.assignment_type == "writing" and ca.assignment_id:
+            current_writing[ca.assignment_id] = ca
     
     # Process requested assignments
     requested_reading = {}
     requested_vocabulary = {}
     requested_debate = {}
+    requested_writing = {}
     for sched in request.assignments:
         try:
             # Ensure assignment_id is a valid UUID
@@ -506,6 +646,8 @@ async def update_all_classroom_assignments(
                 requested_vocabulary[assignment_id] = sched
             elif sched.assignment_type == "debate":
                 requested_debate[assignment_id] = sched
+            elif sched.assignment_type == "writing":
+                requested_writing[assignment_id] = sched
             else:  # Default to reading
                 requested_reading[assignment_id] = sched
         except Exception as e:
@@ -527,6 +669,10 @@ async def update_all_classroom_assignments(
     debate_to_add = set(requested_debate.keys()) - set(current_debate.keys())
     debate_to_remove = set(current_debate.keys()) - set(requested_debate.keys())
     debate_to_update = set(requested_debate.keys()) & set(current_debate.keys())
+    
+    writing_to_add = set(requested_writing.keys()) - set(current_writing.keys())
+    writing_to_remove = set(current_writing.keys()) - set(requested_writing.keys())
+    writing_to_update = set(requested_writing.keys()) & set(current_writing.keys())
     
     # Count students affected by removals
     students_affected = 0
@@ -687,6 +833,59 @@ async def update_all_classroom_assignments(
             )
         )
     
+    if writing_to_remove:
+        # Get classroom assignment IDs that will be removed
+        ca_ids_result = await db.execute(
+            select(ClassroomAssignment.id).where(
+                and_(
+                    ClassroomAssignment.classroom_id == classroom_id,
+                    ClassroomAssignment.assignment_type == "writing",
+                    ClassroomAssignment.assignment_id.in_(writing_to_remove)
+                )
+            )
+        )
+        ca_ids = [row[0] for row in ca_ids_result]
+        
+        if ca_ids:
+            # Count affected students
+            count_result = await db.execute(
+                select(func.count(StudentAssignment.id)).where(
+                    StudentAssignment.classroom_assignment_id.in_(ca_ids)
+                )
+            )
+            students_affected += count_result.scalar() or 0
+            
+            # Import writing models
+            from app.models.writing import StudentWritingSubmission
+            
+            # Delete student writing submissions first
+            await db.execute(
+                delete(StudentWritingSubmission).where(
+                    and_(
+                        StudentWritingSubmission.classroom_id == classroom_id,
+                        StudentWritingSubmission.assignment_id.in_(writing_to_remove)
+                    )
+                )
+            )
+            
+            # Delete student assignments
+            await db.execute(
+                delete(StudentAssignment).where(
+                    StudentAssignment.classroom_assignment_id.in_(ca_ids)
+                )
+            )
+        
+        # Then delete classroom assignments
+        await db.execute(
+            delete(ClassroomAssignment).where(
+                and_(
+                    ClassroomAssignment.classroom_id == classroom_id,
+                    ClassroomAssignment.assignment_type == "writing",
+                    ClassroomAssignment.assignment_id.in_(writing_to_remove)
+                )
+            )
+        )
+    
     # Update existing assignments
     for assignment_id in reading_to_update:
         ca = current_reading[assignment_id]
@@ -707,8 +906,14 @@ async def update_all_classroom_assignments(
         ca.start_date = schedule.start_date
         ca.end_date = schedule.end_date
     
+    for assignment_id in writing_to_update:
+        ca = current_writing[assignment_id]
+        schedule = requested_writing[assignment_id]
+        ca.start_date = schedule.start_date
+        ca.end_date = schedule.end_date
+    
     # Add new reading assignments
-    display_order = len(current_assignments) - len(reading_to_remove) - len(vocabulary_to_remove) - len(debate_to_remove)
+    display_order = len(current_assignments) - len(reading_to_remove) - len(vocabulary_to_remove) - len(debate_to_remove) - len(writing_to_remove)
     for assignment_id in reading_to_add:
         # Verify assignment exists and belongs to teacher
         assignment_result = await db.execute(
@@ -827,6 +1032,46 @@ async def update_all_classroom_assignments(
             db.add(ca)
             display_order += 1
     
+    # Add new writing assignments
+    for assignment_id in writing_to_add:
+        # Verify writing assignment exists and belongs to teacher
+        writing_result = await db.execute(
+            select(WritingAssignment).where(
+                and_(
+                    WritingAssignment.id == assignment_id,
+                    WritingAssignment.teacher_id == teacher.id,
+                    WritingAssignment.deleted_at.is_(None)
+                )
+            )
+        )
+        writing_assignment = writing_result.scalar_one_or_none()
+        if not writing_assignment:
+            logger.warning(f"Writing assignment {assignment_id} not found or archived, skipping")
+            continue
+        
+        # Check if writing assignment already exists for this classroom
+        existing_result = await db.execute(
+            select(ClassroomAssignment).where(
+                and_(
+                    ClassroomAssignment.classroom_id == classroom_id,
+                    ClassroomAssignment.assignment_id == assignment_id,
+                    ClassroomAssignment.assignment_type == "writing"
+                )
+            )
+        )
+        if not existing_result.scalar_one_or_none():
+            schedule = requested_writing[assignment_id]
+            ca = ClassroomAssignment(
+                classroom_id=classroom_id,
+                assignment_id=assignment_id,
+                assignment_type="writing",
+                display_order=display_order,
+                start_date=schedule.start_date,
+                end_date=schedule.end_date
+            )
+            db.add(ca)
+            display_order += 1
+    
     try:
         await db.commit()
     except IntegrityError as e:
@@ -857,12 +1102,12 @@ async def update_all_classroom_assignments(
             detail=f"Failed to update assignments: {str(e)}"
         )
     
-    total_added = len(reading_to_add) + len(vocabulary_to_add) + len(debate_to_add)
-    total_removed = len(reading_to_remove) + len(vocabulary_to_remove) + len(debate_to_remove)
+    total_added = len(reading_to_add) + len(vocabulary_to_add) + len(debate_to_add) + len(writing_to_add)
+    total_removed = len(reading_to_remove) + len(vocabulary_to_remove) + len(debate_to_remove) + len(writing_to_remove)
     
     return UpdateClassroomAssignmentsResponse(
-        added=[str(id) for id in list(reading_to_add) + list(vocabulary_to_add) + list(debate_to_add)],
-        removed=[str(id) for id in list(reading_to_remove) + list(vocabulary_to_remove) + list(debate_to_remove)],
-        total=len(requested_reading) + len(requested_vocabulary) + len(requested_debate),
+        added=[str(id) for id in list(reading_to_add) + list(vocabulary_to_add) + list(debate_to_add) + list(writing_to_add)],
+        removed=[str(id) for id in list(reading_to_remove) + list(vocabulary_to_remove) + list(debate_to_remove) + list(writing_to_remove)],
+        total=len(requested_reading) + len(requested_vocabulary) + len(requested_debate) + len(requested_writing),
         students_affected=students_affected
     )

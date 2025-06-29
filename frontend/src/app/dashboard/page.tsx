@@ -93,7 +93,7 @@ export default function DashboardPage() {
                     <dt className="text-sm font-medium text-gray-500">Role</dt>
                     <dd className="mt-1">
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        user?.role === 'teacher' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
+                        (user?.role as string) === 'teacher' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
                       }`}>
                         {user?.role}
                       </span>

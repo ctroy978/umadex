@@ -1,5 +1,5 @@
-from sqlalchemy import Column, String, Integer, Text, ForeignKey, DateTime, CheckConstraint, UniqueConstraint
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy import Column, String, Integer, Text, ForeignKey, DateTime, CheckConstraint, UniqueConstraint, Boolean, Float
+from sqlalchemy.dialects.postgresql import UUID, JSONB, ARRAY
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.core.database import Base
@@ -38,23 +38,19 @@ class StudentWritingSubmission(Base):
     __tablename__ = "student_writing_submissions"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    student_assignment_id = Column(UUID(as_uuid=True), ForeignKey("student_assignments.id", ondelete="CASCADE"), nullable=False)
+    writing_assignment_id = Column(UUID(as_uuid=True), ForeignKey("writing_assignments.id", ondelete="CASCADE"), nullable=False)
     student_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    assignment_id = Column(UUID(as_uuid=True), ForeignKey("writing_assignments.id", ondelete="CASCADE"), nullable=False)
-    classroom_id = Column(UUID(as_uuid=True), ForeignKey("classrooms.id", ondelete="CASCADE"), nullable=False)
-    submission_text = Column(Text, nullable=False)
+    response_text = Column(Text, nullable=False)
+    selected_techniques = Column(ARRAY(Text), default=list)
     word_count = Column(Integer, nullable=False)
+    submission_attempt = Column(Integer, nullable=False, default=1)
+    is_final_submission = Column(Boolean, default=False)
     submitted_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
-    evaluation_score = Column(JSONB)
-    evaluation_feedback = Column(Text)
-    evaluated_at = Column(DateTime(timezone=True))
+    score = Column(Float)
+    ai_feedback = Column(JSONB)
 
     # Relationships
     student = relationship("User", back_populates="writing_submissions")
     assignment = relationship("WritingAssignment", back_populates="submissions")
-    classroom = relationship("Classroom", back_populates="writing_submissions")
-
-    # Unique constraint
-    __table_args__ = (
-        UniqueConstraint('student_id', 'assignment_id', 'classroom_id', name='unique_student_assignment_classroom'),
-    )
+    student_assignment = relationship("StudentAssignment")
