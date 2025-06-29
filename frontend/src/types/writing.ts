@@ -75,6 +75,8 @@ export interface StudentWritingProgress {
   last_saved_at?: string
   status: string
   submission_count: number
+  is_completed?: boolean
+  submissions?: WritingSubmissionResponse[]
 }
 
 export interface WritingSubmissionResponse {

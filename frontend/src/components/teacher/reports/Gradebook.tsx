@@ -31,7 +31,7 @@ interface StudentGrade {
   student_name: string;
   assignment_id: string;
   assignment_title: string;
-  assignment_type: string; // 'UMARead' or 'UMAVocab' or 'UMADebate'
+  assignment_type: string; // 'UMARead' or 'UMAVocab' or 'UMADebate' or 'UMAWrite'
   work_title: string;
   date_assigned: string;
   date_completed: string | null;
@@ -236,6 +236,25 @@ export default function Gradebook() {
         allAssignments.push(...debateAssignments);
       }
       
+      // Fetch UMAWrite assignments
+      const writeResponse = await fetch('/api/v1/writing/assignments?per_page=100', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (writeResponse.ok) {
+        const data = await writeResponse.json();
+        const writeAssignments = data.assignments
+          .filter((w: any) => !w.is_archived)
+          .map((w: any) => ({
+            id: w.id,
+            title: w.title,
+            workTitle: `${w.grade_level || 'All Grades'} - ${w.subject || 'Writing'}`,
+            type: 'UMAWrite'
+          }));
+        allAssignments.push(...writeAssignments);
+      }
+      
       setAssignments(allAssignments);
     } catch (error) {
       console.error('Error fetching assignments:', error);
@@ -417,7 +436,7 @@ export default function Gradebook() {
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Gradebook</h2>
           <p className="mt-1 text-sm text-gray-600">
-            View and analyze student test scores across all your UMARead, UMAVocab, and UMADebate assignments
+            View and analyze student test scores across all your UMARead, UMAVocab, UMADebate, and UMAWrite assignments
           </p>
         </div>
         <div className="flex gap-2">
@@ -507,6 +526,7 @@ export default function Gradebook() {
                 <option value="UMARead">UMARead</option>
                 <option value="UMAVocab">UMAVocab</option>
                 <option value="UMADebate">UMADebate</option>
+                <option value="UMAWrite">UMAWrite</option>
               </select>
             </div>
 
@@ -725,7 +745,9 @@ export default function Gradebook() {
                             ? 'bg-blue-100 text-blue-800' 
                             : grade.assignment_type === 'UMAVocab'
                             ? 'bg-purple-100 text-purple-800'
-                            : 'bg-green-100 text-green-800'
+                            : grade.assignment_type === 'UMADebate'
+                            ? 'bg-green-100 text-green-800'
+                            : 'bg-orange-100 text-orange-800'
                         }`}>
                           {grade.assignment_type}
                         </span>

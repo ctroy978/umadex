@@ -21,6 +21,7 @@ from app.models.reading import ReadingAssignment
 from app.models.tests import StudentTestAttempt
 from app.models.vocabulary import VocabularyList
 from app.models.debate import DebateAssignment, StudentDebate
+from app.models.writing import WritingAssignment, StudentWritingSubmission
 
 router = APIRouter()
 
@@ -71,7 +72,7 @@ class StudentGrade(BaseModel):
     student_name: str
     assignment_id: UUID
     assignment_title: str
-    assignment_type: str  # 'UMARead' or 'UMAVocab' or 'UMADebate'
+    assignment_type: str  # 'UMARead' or 'UMAVocab' or 'UMADebate' or 'UMAWrite'
     work_title: str
     date_assigned: datetime
     date_completed: Optional[datetime]
@@ -266,7 +267,7 @@ async def get_gradebook(
     db: AsyncSession = Depends(get_db),
     classrooms: Optional[str] = Query(None, description="Comma-separated classroom IDs"),
     assignments: Optional[str] = Query(None, description="Comma-separated assignment IDs"),
-    assignment_types: Optional[str] = Query(None, description="Comma-separated assignment types (UMARead,UMAVocab,UMADebate)"),
+    assignment_types: Optional[str] = Query(None, description="Comma-separated assignment types (UMARead,UMAVocab,UMADebate,UMAWrite)"),
     assigned_after: Optional[datetime] = Query(None),
     assigned_before: Optional[datetime] = Query(None),
     completed_after: Optional[datetime] = Query(None),
@@ -286,7 +287,7 @@ async def get_gradebook(
     # Parse filters
     classroom_ids = [UUID(cid) for cid in classrooms.split(',')] if classrooms else None
     assignment_ids = [UUID(aid) for aid in assignments.split(',')] if assignments else None
-    type_filter = assignment_types.split(',') if assignment_types else ['UMARead', 'UMAVocab', 'UMADebate']
+    type_filter = assignment_types.split(',') if assignment_types else ['UMARead', 'UMAVocab', 'UMADebate', 'UMAWrite']
     
     # Get all teacher's classrooms if not specified
     if not classroom_ids:
@@ -620,6 +621,114 @@ async def get_gradebook(
                 status=status
             ))
     
+    # Query 4: Get UMAWrite scores
+    if 'UMAWrite' in type_filter:
+        write_query = select(
+            StudentAssignment,
+            User,
+            ClassroomAssignment,
+            WritingAssignment,
+            Classroom,
+            StudentWritingSubmission
+        ).join(
+            User, StudentAssignment.student_id == User.id
+        ).join(
+            ClassroomAssignment, StudentAssignment.classroom_assignment_id == ClassroomAssignment.id
+        ).join(
+            WritingAssignment, ClassroomAssignment.assignment_id == WritingAssignment.id
+        ).join(
+            Classroom, ClassroomAssignment.classroom_id == Classroom.id
+        ).outerjoin(
+            StudentWritingSubmission,
+            and_(
+                StudentWritingSubmission.student_assignment_id == StudentAssignment.id,
+                StudentWritingSubmission.is_final_submission == True  # Only consider final submissions for scores
+            )
+        ).where(
+            and_(
+                Classroom.id.in_(classroom_ids),
+                Classroom.teacher_id == teacher.id,
+                Classroom.deleted_at.is_(None),
+                StudentAssignment.assignment_type == 'writing',
+                User.deleted_at.is_(None)
+            )
+        )
+        
+        # Apply filters to UMAWrite query
+        if assignment_ids:
+            write_query = write_query.where(WritingAssignment.id.in_(assignment_ids))
+        if assigned_after:
+            write_query = write_query.where(ClassroomAssignment.assigned_at >= assigned_after)
+        if assigned_before:
+            write_query = write_query.where(ClassroomAssignment.assigned_at <= assigned_before)
+        if completed_after:
+            write_query = write_query.where(StudentAssignment.completed_at >= completed_after)
+        if completed_before:
+            write_query = write_query.where(StudentAssignment.completed_at <= completed_before)
+        if student_search:
+            search_term = f"%{student_search}%"
+            write_query = write_query.where(
+                or_(
+                    User.first_name.ilike(search_term),
+                    User.last_name.ilike(search_term),
+                    func.concat(User.first_name, ' ', User.last_name).ilike(search_term)
+                )
+            )
+        if completion_status == "completed":
+            write_query = write_query.where(StudentWritingSubmission.id.isnot(None))
+        elif completion_status == "incomplete":
+            write_query = write_query.where(StudentWritingSubmission.id.is_(None))
+        if min_score is not None:
+            write_query = write_query.where(StudentWritingSubmission.score >= min_score)
+        if max_score is not None:
+            write_query = write_query.where(StudentWritingSubmission.score <= max_score)
+        
+        # Execute UMAWrite query
+        write_result = await db.execute(write_query)
+        write_rows = write_result.all()
+        
+        # Process UMAWrite results
+        for row in write_rows:
+            student_assignment = row.StudentAssignment
+            student = row.User
+            classroom_assignment = row.ClassroomAssignment
+            assignment = row.WritingAssignment
+            submission = row.StudentWritingSubmission
+            
+            # Determine status
+            if submission and submission.score is not None:
+                status = 'completed'
+                test_date = submission.submitted_at
+            elif submission:
+                status = 'in_progress'  # Submitted but not yet evaluated
+                test_date = None
+            elif student_assignment.completed_at:
+                status = 'test_available'  # Ready to submit final
+            elif student_assignment.started_at:
+                status = 'in_progress'
+            else:
+                status = 'not_started'
+            
+            # Calculate time spent (not available for writing assignments)
+            time_spent_minutes = None
+            
+            all_grades.append(StudentGrade(
+                id=str(student_assignment.id),
+                student_id=student.id,
+                student_name=f"{student.last_name}, {student.first_name}",
+                assignment_id=assignment.id,
+                assignment_title=assignment.title,
+                assignment_type='UMAWrite',
+                work_title=f"{assignment.grade_level or 'All Grades'} - {assignment.subject or 'Writing'}",
+                date_assigned=classroom_assignment.assigned_at,
+                date_completed=submission.submitted_at if submission and submission.score is not None else None,
+                test_date=submission.submitted_at if submission else None,
+                test_score=float(submission.score) if submission and submission.score else None,
+                difficulty_reached=None,  # Not applicable for writing
+                time_spent=time_spent_minutes,
+                status=status
+            ))
+    
     # Calculate summary statistics
     total_students = len(set(grade.student_id for grade in all_grades))
     scores = [grade.test_score for grade in all_grades if grade.test_score is not None]
@@ -683,7 +792,7 @@ async def export_gradebook(
     db: AsyncSession = Depends(get_db),
     classrooms: Optional[str] = Query(None, description="Comma-separated classroom IDs"),
     assignments: Optional[str] = Query(None, description="Comma-separated assignment IDs"),
-    assignment_types: Optional[str] = Query(None, description="Comma-separated assignment types (UMARead,UMAVocab,UMADebate)"),
+    assignment_types: Optional[str] = Query(None, description="Comma-separated assignment types (UMARead,UMAVocab,UMADebate,UMAWrite)"),
     assigned_after: Optional[datetime] = Query(None),
     assigned_before: Optional[datetime] = Query(None),
     completed_after: Optional[datetime] = Query(None),

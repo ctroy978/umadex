@@ -839,10 +839,43 @@ async def get_writing_progress(
             word_count=0,
             last_saved_at=None,
             status="not_started",
-            submission_count=0
+            submission_count=0,
+            is_completed=False,
+            submissions=[]
         )
     
     progress = student_assignment.progress_metadata or {}
+    
+    # Get all submissions for this assignment
+    submissions_result = await db.execute(
+        select(StudentWritingSubmission)
+        .where(
+            and_(
+                StudentWritingSubmission.student_assignment_id == student_assignment.id,
+                StudentWritingSubmission.student_id == current_user.id
+            )
+        )
+        .order_by(StudentWritingSubmission.submission_attempt.desc())
+    )
+    submissions = submissions_result.scalars().all()
+    
+    # Convert submissions to response format
+    submission_responses = []
+    for submission in submissions:
+        submission_responses.append(StudentWritingSubmissionResponse(
+            id=submission.id,
+            student_assignment_id=submission.student_assignment_id,
+            writing_assignment_id=submission.writing_assignment_id,
+            student_id=submission.student_id,
+            response_text=submission.response_text,
+            selected_techniques=submission.selected_techniques,
+            word_count=submission.word_count,
+            submission_attempt=submission.submission_attempt,
+            is_final_submission=submission.is_final_submission,
+            submitted_at=submission.submitted_at,
+            score=submission.score,
+            ai_feedback=submission.ai_feedback
+        ))
     
     return StudentWritingProgress(
         student_assignment_id=student_assignment.id,
@@ -851,5 +884,7 @@ async def get_writing_progress(
         word_count=progress.get("word_count", 0),
         last_saved_at=progress.get("last_saved_at"),
         status=student_assignment.status,
-        submission_count=progress.get("submission_count", 0)
+        submission_count=progress.get("submission_count", 0),
+        is_completed=student_assignment.status == "completed",
+        submissions=submission_responses
     )

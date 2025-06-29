@@ -38,8 +38,13 @@ export default function AssignmentCard({ assignment, classroomId }: AssignmentCa
         // Navigate to debate assignment page
         router.push(`/student/debate/${assignment.id}`)
       } else if (assignment.type === 'UMAWrite') {
-        // Navigate to writing assignment page
-        router.push(`/student/assignments/umawrite/${assignment.id}`)
+        if (assignment.is_completed) {
+          // Navigate to writing results page for completed assignments
+          router.push(`/student/assignments/umawrite/${assignment.id}?view=results`)
+        } else {
+          // Navigate to writing assignment page
+          router.push(`/student/assignments/umawrite/${assignment.id}`)
+        }
       } else if (assignment.is_completed && assignment.has_test) {
         if (assignment.test_completed && assignment.test_attempt_id) {
           // Navigate to test results for completed tests
@@ -92,6 +97,12 @@ export default function AssignmentCard({ assignment, classroomId }: AssignmentCa
           }
           return 'Continue Debate'
         }
+        if (assignment.type === 'UMAWrite') {
+          if (assignment.is_completed) {
+            return 'View Results'
+          }
+          return 'Start Assignment'
+        }
         if (assignment.is_completed) {
           if (assignment.has_test) {
             if (assignment.test_completed) {
@@ -112,7 +123,10 @@ export default function AssignmentCard({ assignment, classroomId }: AssignmentCa
   }
   
   const canStartTest = () => {
-    if (!assignment.is_completed || !assignment.has_test) return false
+    if (!assignment.is_completed) return false
+    // For UMAWrite, always allow viewing results when completed
+    if (assignment.type === 'UMAWrite') return true
+    if (!assignment.has_test) return false
     if (assignment.test_completed) return true // Always allow viewing results
     if (!availability) return true // Default to allowing if no schedule info
     return availability.allowed
@@ -231,26 +245,30 @@ export default function AssignmentCard({ assignment, classroomId }: AssignmentCa
             className={`flex items-center px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
               assignment.status === 'active'
                 ? assignment.is_completed
-                  ? assignment.has_test
-                    ? assignment.test_completed
-                      ? 'bg-blue-600 text-white hover:bg-blue-700'  // Blue for View Results
-                      : canStartTest()
-                        ? 'bg-green-600 text-white hover:bg-green-700'  // Green for Start Test
-                        : 'bg-red-100 text-red-800 cursor-not-allowed'
-                    : 'bg-green-100 text-green-800 cursor-not-allowed'
+                  ? assignment.type === 'UMAWrite'
+                    ? 'bg-blue-600 text-white hover:bg-blue-700'  // Blue for View Results (UMAWrite)
+                    : assignment.has_test
+                      ? assignment.test_completed
+                        ? 'bg-blue-600 text-white hover:bg-blue-700'  // Blue for View Results
+                        : canStartTest()
+                          ? 'bg-green-600 text-white hover:bg-green-700'  // Green for Start Test
+                          : 'bg-red-100 text-red-800 cursor-not-allowed'
+                      : 'bg-green-100 text-green-800 cursor-not-allowed'
                   : 'bg-primary-600 text-white hover:bg-primary-700'
                 : 'bg-gray-100 text-gray-400 cursor-not-allowed'
             }`}
           >
             {getButtonText()}
             {assignment.status === 'active' && (!assignment.is_completed || canStartTest()) && (
-              assignment.has_test && assignment.is_completed 
-                ? assignment.test_completed
-                  ? <CheckCircleIcon className="h-4 w-4 ml-2" />  // Check icon for view results
-                  : canStartTest()
-                    ? <FileCheckIcon className="h-4 w-4 ml-2" />  // Test icon for start test
-                    : <LockClosedIcon className="h-4 w-4 ml-2" />  // Lock icon for locked test
-                : <ArrowRightIcon className="h-4 w-4 ml-2" />  // Arrow for start assignment
+              assignment.type === 'UMAWrite' && assignment.is_completed
+                ? <CheckCircleIcon className="h-4 w-4 ml-2" />  // Check icon for view results (UMAWrite)
+                : assignment.has_test && assignment.is_completed 
+                  ? assignment.test_completed
+                    ? <CheckCircleIcon className="h-4 w-4 ml-2" />  // Check icon for view results
+                    : canStartTest()
+                      ? <FileCheckIcon className="h-4 w-4 ml-2" />  // Test icon for start test
+                      : <LockClosedIcon className="h-4 w-4 ml-2" />  // Lock icon for locked test
+                  : <ArrowRightIcon className="h-4 w-4 ml-2" />  // Arrow for start assignment
             )}
           </button>
         </div>

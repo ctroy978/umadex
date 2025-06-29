@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { studentWritingApi } from '@/lib/studentWritingApi'
 import { WritingAssignment, WritingTechnique, WRITING_TECHNIQUES, StudentWritingProgress, WritingSubmissionResponse } from '@/types/writing'
 import WritingEditor from '@/components/student/writing/WritingEditor'
@@ -12,7 +12,9 @@ import { BookOpenIcon, ChevronLeftIcon } from '@heroicons/react/24/outline'
 export default function StudentWritingAssignmentPage() {
   const params = useParams()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const assignmentId = params.id as string
+  const isResultsView = searchParams.get('view') === 'results'
 
   const [assignment, setAssignment] = useState<WritingAssignment | null>(null)
   const [progress, setProgress] = useState<StudentWritingProgress | null>(null)
@@ -226,6 +228,74 @@ export default function StudentWritingAssignmentPage() {
   const wordCountColor = wordCount < assignment.word_count_min ? 'text-red-600' :
                         wordCount > assignment.word_count_max ? 'text-red-600' :
                         'text-green-600'
+
+  // Results view - show only score for completed assignments
+  if (isResultsView && progress && progress.is_completed) {
+    const finalSubmission = progress.submissions?.find(s => s.is_final_submission)
+    
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <div className="bg-white shadow-sm border-b border-gray-200">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex items-center justify-between py-4">
+              <div className="flex items-center">
+                <button
+                  onClick={() => router.push('/student/dashboard')}
+                  className="mr-4 p-2 text-gray-400 hover:text-gray-600"
+                >
+                  <ChevronLeftIcon className="h-5 w-5" />
+                </button>
+                <div>
+                  <h1 className="text-2xl font-bold text-gray-900">{assignment.title}</h1>
+                  <p className="text-sm text-gray-600 mt-1">Assignment Results</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <div className="bg-white rounded-lg shadow-md p-8 text-center">
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">Assignment Completed</h2>
+            <p className="text-gray-600 mb-6">You have successfully completed this writing assignment.</p>
+            
+            {finalSubmission && finalSubmission.score !== null && finalSubmission.score !== undefined && (
+              <div className="mb-8">
+                <div className="text-5xl font-bold text-blue-600 mb-2">
+                  {Math.round(finalSubmission.score)}%
+                </div>
+                <p className="text-lg text-gray-700">Your Score</p>
+              </div>
+            )}
+            
+            <div className="text-sm text-gray-500 mb-6">
+              <p>Submitted on: {finalSubmission ? new Date(finalSubmission.submitted_at).toLocaleDateString() : 'N/A'}</p>
+              <p>Word Count: {finalSubmission?.word_count || 0} words</p>
+            </div>
+            
+            <button
+              onClick={() => router.push('/student/dashboard')}
+              className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              Return to Dashboard
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // If results view but not completed, redirect to regular view
+  if (isResultsView && (!progress || !progress.is_completed)) {
+    router.push(`/student/assignments/umawrite/${assignmentId}`)
+    return null
+  }
+
+  // If assignment is completed but not in results view, redirect to results view
+  if (!isResultsView && progress && progress.is_completed) {
+    router.push(`/student/assignments/umawrite/${assignmentId}?view=results`)
+    return null
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">

@@ -859,14 +859,21 @@ async def update_all_classroom_assignments(
             from app.models.writing import StudentWritingSubmission
             
             # Delete student writing submissions first
-            await db.execute(
-                delete(StudentWritingSubmission).where(
-                    and_(
-                        StudentWritingSubmission.classroom_id == classroom_id,
-                        StudentWritingSubmission.assignment_id.in_(writing_to_remove)
-                    )
+            # Get student assignment IDs for the classroom assignments being removed
+            sa_ids_result = await db.execute(
+                select(StudentAssignment.id).where(
+                    StudentAssignment.classroom_assignment_id.in_(ca_ids)
                 )
             )
+            sa_ids = [row[0] for row in sa_ids_result]
+            
+            if sa_ids:
+                # Delete student writing submissions using student_assignment_id
+                await db.execute(
+                    delete(StudentWritingSubmission).where(
+                        StudentWritingSubmission.student_assignment_id.in_(sa_ids)
+                    )
+                )
             
             # Delete student assignments
             await db.execute(

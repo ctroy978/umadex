@@ -130,6 +130,8 @@ class StudentWritingProgress(BaseModel):
     last_saved_at: Optional[str] = None
     status: str
     submission_count: int = 0
+    is_completed: bool = False
+    submissions: List[StudentWritingSubmissionResponse] = Field(default_factory=list)
 
 
 class WritingAssignmentWithProgress(WritingAssignmentResponse):

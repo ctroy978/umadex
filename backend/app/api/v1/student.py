@@ -659,14 +659,19 @@ async def get_classroom_detail(
             test_attempt_id=None
         ))
     
-    # Get writing assignments
+    # Get writing assignments with student progress
     writing_query = await db.execute(
-        select(WritingAssignment, ClassroomAssignment)
+        select(WritingAssignment, ClassroomAssignment, StudentAssignment)
         .join(ClassroomAssignment,
               and_(
                   ClassroomAssignment.assignment_id == WritingAssignment.id,
                   ClassroomAssignment.assignment_type == "writing"
               ))
+        .outerjoin(StudentAssignment,
+                   and_(
+                       StudentAssignment.classroom_assignment_id == ClassroomAssignment.id,
+                       StudentAssignment.student_id == current_user.id
+                   ))
         .where(
             and_(
                 ClassroomAssignment.classroom_id == classroom_id,
@@ -676,8 +681,10 @@ async def get_classroom_detail(
         .order_by(ClassroomAssignment.start_date, ClassroomAssignment.display_order, ClassroomAssignment.assigned_at)
     )
     
-    for writing, ca in writing_query:
+    for writing, ca, student_assignment in writing_query:
         status = calculate_assignment_status(ca.start_date, ca.end_date)
+        is_completed = student_assignment.status == "completed" if student_assignment else False
+        
         assignments.append(StudentAssignmentResponse(
             id=str(writing.id),
             title=writing.title,
@@ -691,7 +698,7 @@ async def get_classroom_detail(
             end_date=ca.end_date,
             display_order=ca.display_order,
             status=status,
-            is_completed=False,  # Will be updated when student writing tracking is implemented
+            is_completed=is_completed,
             has_test=False,  # Writing assignments don't have tests
             test_completed=False,
             test_attempt_id=None
