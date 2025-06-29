@@ -247,6 +247,25 @@ async def archive_debate_assignment(
             detail="Assignment not found"
         )
     
+    # Check if assignment is attached to any classrooms
+    from app.models.classroom import ClassroomAssignment
+    count_result = await db.execute(
+        select(func.count(ClassroomAssignment.id))
+        .where(
+            and_(
+                ClassroomAssignment.assignment_id == assignment.id,
+                ClassroomAssignment.assignment_type == "debate"
+            )
+        )
+    )
+    classroom_count = count_result.scalar() or 0
+    
+    if classroom_count > 0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot archive assignment attached to {classroom_count} classroom(s). Remove from classrooms first."
+        )
+    
     # Soft delete
     assignment.deleted_at = datetime.utcnow()
     

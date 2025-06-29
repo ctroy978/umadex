@@ -464,9 +464,18 @@ export default function VocabularyReviewPage({ params }: { params: { id: string 
       setIsProcessing(true)
       await vocabularyApi.deleteList(params.id)
       router.push('/teacher/uma-vocab')
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to delete list:', error)
-      alert('Failed to delete list')
+      
+      // Check for 400 error with specific message about classrooms
+      if (error.response?.status === 400 && error.response?.data?.detail) {
+        alert(error.response.data.detail)
+      } else if (error.response?.data?.message) {
+        // Some error responses might use 'message' instead of 'detail'
+        alert(error.response.data.message)
+      } else {
+        alert('Failed to delete list')
+      }
     } finally {
       setIsProcessing(false)
     }

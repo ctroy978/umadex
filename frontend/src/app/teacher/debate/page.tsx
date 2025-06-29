@@ -75,9 +75,18 @@ export default function UmaDebatePage() {
       setArchivingId(id)
       await debateApi.archiveAssignment(id)
       await loadAssignments()
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error archiving assignment:', err)
-      alert('Failed to archive assignment')
+      
+      // Check for 400 error with specific message about classrooms
+      if (err.response?.status === 400 && err.response?.data?.detail) {
+        alert(err.response.data.detail)
+      } else if (err.response?.data?.message) {
+        // Some error responses might use 'message' instead of 'detail'
+        alert(err.response.data.message)
+      } else {
+        alert('Failed to archive assignment')
+      }
     } finally {
       setArchivingId(null)
     }

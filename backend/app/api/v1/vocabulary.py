@@ -260,6 +260,26 @@ async def delete_vocabulary_list(
             detail="You don't have permission to delete this list"
         )
     
+    # Check if vocabulary list is attached to any classrooms
+    from app.models.classroom import ClassroomAssignment
+    from sqlalchemy import select, func, and_
+    count_result = await db.execute(
+        select(func.count(ClassroomAssignment.id))
+        .where(
+            and_(
+                ClassroomAssignment.vocabulary_list_id == list_id,
+                ClassroomAssignment.assignment_type == "vocabulary"
+            )
+        )
+    )
+    classroom_count = count_result.scalar() or 0
+    
+    if classroom_count > 0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot archive vocabulary list attached to {classroom_count} classroom(s). Remove from classrooms first."
+        )
+    
     await VocabularyService.delete_vocabulary_list(db, list_id)
 
 
