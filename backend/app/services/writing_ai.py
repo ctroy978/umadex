@@ -48,8 +48,20 @@ class WritingAIService:
             # Parse the JSON response
             evaluation = self._parse_evaluation_response(response)
             
+            # Validate and adjust scores if needed
+            evaluation = self._validate_evaluation(evaluation, student_response, selected_techniques)
+            
             # Calculate final scores
             final_scores = self._calculate_final_scores(evaluation)
+            
+            # Handle both old and new JSON structures
+            revision_suggestions = evaluation['final_assessment'].get('priority_improvements', 
+                                                                    evaluation['final_assessment'].get('next_steps', []))
+            
+            # Add any technique recommendations to suggestions
+            tech_recommendations = evaluation['final_assessment'].get('technique_recommendations', '')
+            if tech_recommendations and isinstance(tech_recommendations, str):
+                revision_suggestions.append(tech_recommendations)
             
             return {
                 'score': final_scores['final_percentage'],
@@ -64,7 +76,7 @@ class WritingAIService:
                     },
                     'technique_validation': evaluation['technique_validation'],
                     'general_feedback': evaluation['final_assessment']['overall_feedback'],
-                    'revision_suggestions': evaluation['final_assessment']['next_steps']
+                    'revision_suggestions': revision_suggestions
                 }
             }
             
@@ -84,139 +96,256 @@ class WritingAIService:
         assignment: WritingAssignment,
         grade_level: str
     ) -> str:
-        """Build the evaluation prompt for the AI"""
+        """Build a comprehensive evaluation prompt that handles all writing techniques"""
         
         # Format teacher criteria
         criteria_list = []
         evaluation_criteria = assignment.evaluation_criteria or {}
         
-        # Handle both dict and object attribute access
         if hasattr(evaluation_criteria, 'items'):
             criteria_items = evaluation_criteria.items()
         else:
-            # Try to convert from model dump if needed
             criteria_items = evaluation_criteria if isinstance(evaluation_criteria, dict) else {}
             
         for key, values in criteria_items:
             if values and isinstance(values, list):
                 criteria_list.append(f"{key}: {', '.join(str(v) for v in values)}")
         teacher_criteria = '; '.join(criteria_list) if criteria_list else "General writing quality"
+
+        # Create technique definitions for selected techniques
+        technique_definitions = {
+            'metaphor': 'Direct comparison WITHOUT "like" or "as" (e.g., "Her voice was music")',
+            'simile': 'Comparison USING "like" or "as" (e.g., "She ran like the wind")',
+            'personification': 'Giving human qualities to non-human things (e.g., "The wind whispered")',
+            'alliteration': 'Repeating same sound at word beginnings (e.g., "Peter Piper picked")',
+            'hyperbole': 'Extreme exaggeration for effect (e.g., "I\'ve told you a million times")',
+            'dialogue': 'Characters speaking in quotation marks (e.g., "Where are you going?" she asked)',
+            'flashback': 'Scene from before the main story (e.g., "She remembered when...")',
+            'foreshadowing': 'Hints about future events (e.g., "Little did she know...")',
+            'varied_sentence_length': 'Mix of short and long sentences for rhythm',
+            'parallelism': 'Same pattern of words/phrases (e.g., "reading, writing, and painting")',
+            'transitions': 'Words connecting ideas (e.g., "Furthermore," "However," "In addition")'
+        }
         
-        prompt = f"""You are an expert writing evaluator for the UMA Educational Platform. Evaluate this student writing assignment using the provided rubric structure.
+        selected_definitions = []
+        for technique in selected_techniques:
+            clean_tech = technique.lower().replace(' ', '_')
+            if clean_tech in technique_definitions:
+                selected_definitions.append(f"• {technique.upper()}: {technique_definitions[clean_tech]}")
+        
+        technique_guide = '\n'.join(selected_definitions) if selected_definitions else "No specific techniques selected"
 
-## Assignment Context
-**Assignment Prompt**: {assignment.prompt_text}
-**Teacher Instructions**: {assignment.instructions or 'None provided'}
-**Student Grade Level**: {grade_level}
-**Word Count Range**: {assignment.word_count_min} - {assignment.word_count_max} words
-**Teacher-Selected Criteria**: {teacher_criteria}
-**Student-Tagged Techniques**: {', '.join(selected_techniques) if selected_techniques else 'None'}
+        prompt = f"""WRITING EVALUATION - {grade_level} Student
 
-## Student Response
-**Student Writing**: {student_response}
-**Actual Word Count**: {word_count}
+## ASSIGNMENT
+Prompt: {assignment.prompt_text}
+Teacher's Required Criteria: {teacher_criteria}
+Word Count: {word_count} (Range: {assignment.word_count_min}-{assignment.word_count_max})
+Student's Selected Techniques: {', '.join(selected_techniques) if selected_techniques else 'None'}
 
-## Evaluation Instructions
+## STUDENT WRITING
+{student_response}
 
-### CORE SCORING (100 points total)
+## CRITICAL INSTRUCTIONS
+**ONLY evaluate what was specifically requested:**
+1. For Teacher Criteria: ONLY check the criteria listed above ({teacher_criteria})
+   - Do NOT comment on criteria not mentioned by the teacher
+   - If teacher specified "first person, hopeful tone" - ONLY check those two things
+   
+2. For Student Techniques: ONLY validate the techniques listed above
+   - Do NOT look for or comment on techniques the student didn't select
+   - If student selected "metaphor" - ONLY check for metaphor, ignore other techniques
 
-#### 1. Content & Purpose Assessment (40 points)
-Evaluate how well the student addressed the assignment prompt:
-- Excellent (36-40): Fully addresses prompt with engaging, well-developed ideas
-- Proficient (28-35): Adequately addresses most aspects with clear, relevant ideas
-- Developing (20-27): Partially addresses prompt with basic but related ideas
-- Beginning (0-19): Does not adequately address the prompt or shows confusion
+## SCORING SYSTEM
+**Core Score (100 points):**
+- Content/Purpose: 40 points (how well prompt was addressed)
+- Teacher Criteria: 35 points (ONLY the specific criteria listed above)
+- Conventions/Clarity: 25 points (basic readability and grammar)
 
-#### 2. Teacher-Selected Criteria Achievement (35 points)
-Evaluate how well the student demonstrated: {teacher_criteria}
-- Excellent (32-35): Demonstrates mastery of ALL selected criteria naturally
-- Proficient (25-31): Successfully demonstrates MOST selected criteria competently
-- Developing (18-24): Demonstrates SOME criteria with inconsistent application
-- Beginning (0-17): Fails to demonstrate most selected criteria
+**Technique Bonus (up to 25 points):**
+- +5 points: Technique used correctly and effectively
+- +3 points: Technique present but weak execution
+- +0 points: Not present or incorrectly identified
 
-#### 3. Writing Conventions & Clarity (25 points)
-Evaluate technical aspects and readability:
-- Excellent (23-25): Consistently correct with varied, well-constructed sentences
-- Proficient (18-22): Minor errors that don't impede reading
-- Developing (13-17): Some errors that occasionally affect clarity
-- Beginning (0-12): Frequent errors that significantly impede comprehension
+## SELECTED TECHNIQUE DEFINITIONS
+{technique_guide}
 
-### BONUS SCORING (Up to +25 points)
-For each technique in [{', '.join(selected_techniques)}]:
-- +5 points: Technique is present, effective, and appropriate
-- +3 points: Technique is present but could be more effective
-- +0 points: Technique is not actually present
+## EVALUATION RULES
 
-### IMPORTANT GUIDELINES
-- Be encouraging and specific in feedback
-- Use exact examples from the student's writing
-- Adjust expectations to {grade_level} level
-- Focus on growth and improvement
-- Award partial credit for attempted techniques
+### FOR TEACHER CRITERIA - Check ONLY what was specified:
+{teacher_criteria}
+- If "first person" is listed: Check for I/me/my usage
+- If "hopeful tone" is listed: Check for optimistic language
+- If "narrative style" is listed: Check for storytelling elements
+- If "sentence variety" is listed: Check for mixed sentence lengths
+- DO NOT evaluate criteria that aren't listed above
 
-Provide your evaluation in this EXACT JSON format:
+### FOR STUDENT TECHNIQUES - Validate ONLY selected techniques:
+Look ONLY for: {', '.join(selected_techniques) if selected_techniques else 'None'}
+- Be STRICT: Award points only for correctly executed techniques
+- Quote EXACT examples from student text
+- Explain WHY technique does/doesn't qualify
+- IGNORE any techniques not in the student's list
+
+### IMPORTANT REMINDERS
+- Do NOT provide feedback on elements not requested
+- Do NOT suggest techniques the student didn't attempt
+- Do NOT evaluate criteria the teacher didn't specify
+- Focus feedback ONLY on what was flagged by teacher and student
+
+Return ONLY this JSON structure:
 {{
   "content_purpose": {{
-    "score": [number between 0-40],
-    "reasoning": "Detailed explanation",
-    "strengths": ["Strength 1", "Strength 2"],
-    "suggestions": ["Suggestion 1", "Suggestion 2"]
+    "score": [0-40],
+    "reasoning": "How well prompt was addressed with specific examples",
+    "strengths": ["specific strength 1", "specific strength 2"],
+    "suggestions": ["concrete improvement 1", "concrete improvement 2"]
   }},
   "teacher_criteria": {{
-    "score": [number between 0-35],
-    "reasoning": "How well each criterion was demonstrated",
-    "criteria_breakdown": {{
-      "criterion_name": "Assessment of this criterion"
-    }},
-    "strengths": ["What criteria were handled well"],
-    "suggestions": ["How to better achieve criteria"]
+    "score": [0-35],
+    "reasoning": "Assessment of ONLY the teacher's specified criteria: {teacher_criteria}",
+    "criteria_analysis": "How each specified criterion was met/missed (ignore unspecified criteria)",
+    "perspective_check": "Only if perspective was specified by teacher",
+    "strengths": ["which of the SPECIFIED criteria were achieved"],
+    "suggestions": ["how to better meet the SPECIFIED criteria only"]
   }},
   "conventions_clarity": {{
-    "score": [number between 0-25],
-    "reasoning": "Technical quality assessment",
-    "strengths": ["Convention strengths"],
-    "suggestions": ["Technical improvements"]
+    "score": [0-25], 
+    "reasoning": "Grammar, mechanics, and readability assessment",
+    "error_patterns": ["types of errors found"],
+    "strengths": ["technical writing strengths"],
+    "suggestions": ["specific technical improvements"]
   }},
   "technique_validation": {{
-    "total_bonus": [number between 0-25],
+    "total_bonus": [0-25],
     "techniques": [
       {{
-        "name": "technique_name",
+        "name": "ONLY techniques from: {', '.join(selected_techniques) if selected_techniques else 'None'}",
         "found": true/false,
-        "example": "Quote showing technique",
-        "effectiveness": "How well used",
+        "example": "exact quote from text OR explanation why not found",
+        "analysis": "detailed explanation of why it qualifies/doesn't qualify",
+        "effectiveness": "how well the technique was executed",
         "points_awarded": [0, 3, or 5],
-        "feedback": "Specific comment"
+        "feedback": "specific guidance for this technique only"
       }}
     ]
   }},
   "final_assessment": {{
-    "core_score": [sum of three scores],
-    "bonus_points": [technique bonus],
+    "core_score": [sum of content + criteria + conventions],
+    "bonus_points": [total technique bonus],
     "final_score": [core + bonus],
-    "percentage": "[percentage]%",
-    "overall_feedback": "Encouraging summary",
-    "next_steps": ["Suggestion 1", "Suggestion 2", "Suggestion 3"]
+    "percentage": [final score as percentage],
+    "overall_feedback": "Summary focused on the SPECIFIED criteria and techniques only",
+    "priority_improvements": ["improvement for specified criteria/techniques", "second priority", "third priority"],
+    "technique_recommendations": "Suggestions ONLY for the techniques student selected"
   }}
 }}"""
         
         return prompt
     
+    def _validate_evaluation(self, evaluation: Dict, student_response: str, selected_techniques: List[str]) -> Dict:
+        """Validate AI evaluation and correct obvious errors"""
+        try:
+            response_lower = student_response.lower()
+            
+            # Validate all technique types
+            if 'technique_validation' in evaluation and 'techniques' in evaluation['technique_validation']:
+                for technique in evaluation['technique_validation']['techniques']:
+                    tech_name = technique.get('name', '').lower()
+                    example = technique.get('example', '').lower()
+                    
+                    # Validate metaphor vs simile
+                    if tech_name == 'metaphor' and technique.get('found'):
+                        if ' like ' in example or ' as ' in example:
+                            logger.warning(f"AI incorrectly identified simile as metaphor: {example}")
+                            technique['found'] = False
+                            technique['points_awarded'] = 0
+                            technique['feedback'] = "This is a simile (uses 'like' or 'as'), not a metaphor. A metaphor makes a direct comparison without these words."
+                            technique['effectiveness'] = "Not a metaphor"
+                    
+                    # Validate dialogue
+                    elif tech_name == 'dialogue' and technique.get('found'):
+                        if '"' not in student_response and "'" not in student_response:
+                            technique['found'] = False
+                            technique['points_awarded'] = 0
+                            technique['feedback'] = "No dialogue found. Dialogue requires quotation marks and speech tags."
+                    
+                    # Validate alliteration
+                    elif tech_name == 'alliteration' and technique.get('found'):
+                        # Simple check - would need more sophisticated analysis
+                        words = example.split()
+                        if len(words) < 2:
+                            technique['found'] = False
+                            technique['points_awarded'] = 0
+                            technique['feedback'] = "Alliteration requires multiple words starting with the same sound."
+            
+            # Recalculate total bonus after corrections
+            if 'technique_validation' in evaluation and 'techniques' in evaluation['technique_validation']:
+                total_bonus = sum(t.get('points_awarded', 0) for t in evaluation['technique_validation']['techniques'])
+                evaluation['technique_validation']['total_bonus'] = total_bonus
+            
+            # Check for perspective issues
+            first_person_indicators = ['i ', 'i\'', 'me ', 'my ', 'myself', 'we ', 'our ']
+            third_person_indicators = ['she ', 'he ', 'her ', 'his ', 'they ', 'their ']
+            
+            has_first_person = any(indicator in response_lower for indicator in first_person_indicators)
+            has_third_person = any(indicator in response_lower for indicator in third_person_indicators)
+            
+            # Only check perspective if it was actually specified by the teacher
+            if 'teacher_criteria' in evaluation:
+                # Get the original teacher criteria string from the prompt
+                teacher_criteria_str = str(evaluation.get('teacher_criteria', {})).lower()
+                
+                # Only validate perspective if teacher explicitly requested it
+                if any(term in teacher_criteria_str for term in ['first person', 'perspective: first person', 'first-person']):
+                    if has_third_person and not has_first_person:
+                        current_score = evaluation['teacher_criteria'].get('score', 35)
+                        evaluation['teacher_criteria']['score'] = min(current_score, 17)
+                        evaluation['teacher_criteria']['reasoning'] = "Failed to use first person perspective as required. The writing uses third person throughout."
+                        
+                        # Update perspective_check if it exists
+                        if 'perspective_check' in evaluation['teacher_criteria']:
+                            evaluation['teacher_criteria']['perspective_check'] = "Required: first person. Used: third person"
+                    
+            return evaluation
+            
+        except Exception as e:
+            logger.error(f"Error validating evaluation: {e}")
+            return evaluation
+    
     def _parse_evaluation_response(self, response: str) -> Dict:
         """Parse the AI evaluation response"""
         try:
+            # First, try to remove markdown code blocks if present
+            cleaned_response = response.strip()
+            if cleaned_response.startswith('```json'):
+                cleaned_response = cleaned_response[7:]  # Remove ```json
+            elif cleaned_response.startswith('```'):
+                cleaned_response = cleaned_response[3:]  # Remove ```
+            
+            if cleaned_response.endswith('```'):
+                cleaned_response = cleaned_response[:-3]  # Remove trailing ```
+            
+            cleaned_response = cleaned_response.strip()
+            
             # Try to extract JSON from the response
             # Sometimes AI might include extra text before/after JSON
-            json_start = response.find('{')
-            json_end = response.rfind('}') + 1
+            json_start = cleaned_response.find('{')
+            json_end = cleaned_response.rfind('}') + 1
             if json_start >= 0 and json_end > json_start:
-                json_str = response[json_start:json_end]
+                json_str = cleaned_response[json_start:json_end]
                 return json.loads(json_str)
             else:
                 raise ValueError("No JSON found in response")
         except Exception as e:
             logger.error(f"Failed to parse AI response: {e}")
-            logger.error(f"Response was: {response[:500]}...")
+            logger.error(f"Full response length: {len(response)} characters")
+            # Log the full response for debugging
+            if len(response) <= 1000:
+                logger.error(f"Full response: {response}")
+            else:
+                logger.error(f"Response start: {response[:500]}...")
+                logger.error(f"Response end: ...{response[-500:]}")
             
             # Return a default structure if parsing fails
             return self._get_default_evaluation_structure()
@@ -313,13 +442,15 @@ Provide your evaluation in this EXACT JSON format:
             'teacher_criteria': {
                 'score': 26,
                 'reasoning': 'Evaluation processing error',
-                'criteria_breakdown': {},
+                'criteria_analysis': 'Unable to analyze criteria at this time',
+                'perspective_check': 'Unable to verify perspective',
                 'strengths': [],
                 'suggestions': []
             },
             'conventions_clarity': {
                 'score': 19,
                 'reasoning': 'Evaluation processing error',
+                'error_patterns': [],
                 'strengths': [],
                 'suggestions': []
             },
@@ -333,6 +464,7 @@ Provide your evaluation in this EXACT JSON format:
                 'final_score': 75,
                 'percentage': '75%',
                 'overall_feedback': 'Technical evaluation error occurred',
-                'next_steps': []
+                'priority_improvements': ['Unable to generate specific feedback at this time'],
+                'technique_recommendations': 'Please try submitting again'
             }
         }
