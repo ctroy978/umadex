@@ -66,11 +66,14 @@ class ClassroomAssignment(Base):
         'allow_retakes': True,
         'show_explanations': True
     }, nullable=False, server_default='{"practice_required": true, "assignments_to_complete": 3, "allow_retakes": true, "show_explanations": true}')
+    removed_from_classroom_at = Column(DateTime(timezone=True), nullable=True)
+    removed_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     
     # Relationships
     classroom = relationship("Classroom", back_populates="assignments")
     assignment = relationship("ReadingAssignment")
     vocabulary_list = relationship("VocabularyList")
+    remover = relationship("User", foreign_keys=[removed_by])
     # Note: debate_assignment relationship is handled at runtime based on assignment_type
 
 

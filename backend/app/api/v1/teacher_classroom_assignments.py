@@ -4,7 +4,7 @@ Unified classroom assignment endpoints for all assignment types
 from typing import Optional, List, Union
 from uuid import UUID
 from datetime import datetime
-from sqlalchemy import select, and_, or_, func, delete
+from sqlalchemy import select, and_, or_, func, delete, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -63,7 +63,8 @@ async def check_assignment_removal(
     teacher: User = Depends(require_teacher),
     db: AsyncSession = Depends(get_db)
 ):
-    """Check how many students would be affected by removing assignments"""
+    """Check how many students would be affected by removing assignments.
+    Note: Removing assignments will prevent students from accessing them, but all student work is preserved."""
     # Verify classroom exists and belongs to teacher
     result = await db.execute(
         select(Classroom).where(
@@ -82,10 +83,15 @@ async def check_assignment_removal(
             detail="Classroom not found"
         )
     
-    # Get current assignments
+    # Get current ACTIVE assignments (not soft-deleted)
     current_result = await db.execute(
         select(ClassroomAssignment)
-        .where(ClassroomAssignment.classroom_id == classroom_id)
+        .where(
+            and_(
+                ClassroomAssignment.classroom_id == classroom_id,
+                ClassroomAssignment.removed_from_classroom_at.is_(None)
+            )
+        )
     )
     current_assignments = list(current_result.scalars())
     
@@ -271,10 +277,13 @@ async def get_all_available_assignments(
             detail="Classroom not found"
         )
     
-    # Get currently assigned items with their schedules
+    # Get currently ACTIVE assigned items with their schedules (not soft-deleted)
     assigned_result = await db.execute(
         select(ClassroomAssignment).where(
-            ClassroomAssignment.classroom_id == classroom_id
+            and_(
+                ClassroomAssignment.classroom_id == classroom_id,
+                ClassroomAssignment.removed_from_classroom_at.is_(None)
+            )
         )
     )
     assigned_items = assigned_result.scalars().all()
@@ -611,10 +620,15 @@ async def update_all_classroom_assignments(
             detail="Classroom not found"
         )
     
-    # Get current assignments
+    # Get current ACTIVE assignments (not soft-deleted)
     current_result = await db.execute(
         select(ClassroomAssignment)
-        .where(ClassroomAssignment.classroom_id == classroom_id)
+        .where(
+            and_(
+                ClassroomAssignment.classroom_id == classroom_id,
+                ClassroomAssignment.removed_from_classroom_at.is_(None)
+            )
+        )
     )
     current_assignments = list(current_result.scalars())
     
@@ -677,240 +691,76 @@ async def update_all_classroom_assignments(
     # Count students affected by removals
     students_affected = 0
     
-    # Handle reading assignment removals
-    if reading_to_remove:
-        # Get classroom assignment IDs that will be removed
-        ca_ids_result = await db.execute(
-            select(ClassroomAssignment.id).where(
-                and_(
-                    ClassroomAssignment.classroom_id == classroom_id,
-                    ClassroomAssignment.assignment_type == "reading",
-                    ClassroomAssignment.assignment_id.in_(reading_to_remove)
-                )
-            )
-        )
-        ca_ids = [row[0] for row in ca_ids_result]
-        
-        if ca_ids:
-            # Count affected students
-            count_result = await db.execute(
-                select(func.count(StudentAssignment.id)).where(
-                    StudentAssignment.classroom_assignment_id.in_(ca_ids)
-                )
-            )
-            students_affected += count_result.scalar() or 0
-            
-            # Get student assignment IDs that will be deleted
-            sa_ids_result = await db.execute(
-                select(StudentAssignment.id).where(
-                    StudentAssignment.classroom_assignment_id.in_(ca_ids)
-                )
-            )
-            sa_ids = [row[0] for row in sa_ids_result]
-            
-            if sa_ids:
-                # Import umaread models
-                from app.models.umaread import UmareadAssignmentProgress
-                
-                # Delete umaread progress first
-                await db.execute(
-                    delete(UmareadAssignmentProgress).where(
-                        UmareadAssignmentProgress.student_assignment_id.in_(sa_ids)
-                    )
-                )
-            
-            # Delete student assignments
-            await db.execute(
-                delete(StudentAssignment).where(
-                    StudentAssignment.classroom_assignment_id.in_(ca_ids)
-                )
-            )
-        
-        # Then delete classroom assignments
-        await db.execute(
-            delete(ClassroomAssignment).where(
-                and_(
-                    ClassroomAssignment.classroom_id == classroom_id,
-                    ClassroomAssignment.assignment_type == "reading",
-                    ClassroomAssignment.assignment_id.in_(reading_to_remove)
-                )
-            )
-        )
+    # Handle all assignment removals using soft delete
+    assignments_to_remove = (
+        [(id, "reading") for id in reading_to_remove] +
+        [(id, "vocabulary") for id in vocabulary_to_remove] +
+        [(id, "debate") for id in debate_to_remove] +
+        [(id, "writing") for id in writing_to_remove]
+    )
     
-    if vocabulary_to_remove:
-        # Get classroom assignment IDs that will be removed
-        ca_ids_result = await db.execute(
-            select(ClassroomAssignment.id).where(
-                and_(
-                    ClassroomAssignment.classroom_id == classroom_id,
-                    ClassroomAssignment.assignment_type == "vocabulary",
-                    ClassroomAssignment.vocabulary_list_id.in_(vocabulary_to_remove)
+    if assignments_to_remove:
+        # Soft delete assignments by setting removed_from_classroom_at
+        for assignment_id, assignment_type in assignments_to_remove:
+            update_query = (
+                update(ClassroomAssignment)
+                .where(
+                    and_(
+                        ClassroomAssignment.classroom_id == classroom_id,
+                        ClassroomAssignment.removed_from_classroom_at.is_(None)
+                    )
+                )
+                .values(
+                    removed_from_classroom_at=func.now(),
+                    removed_by=teacher.id
                 )
             )
-        )
-        ca_ids = [row[0] for row in ca_ids_result]
-        
-        if ca_ids:
-            # Count affected students
-            count_result = await db.execute(
-                select(func.count(StudentAssignment.id)).where(
-                    StudentAssignment.classroom_assignment_id.in_(ca_ids)
-                )
-            )
-            students_affected += count_result.scalar() or 0
             
-            # Delete student assignments (vocabulary progress tables cascade automatically)
-            await db.execute(
-                delete(StudentAssignment).where(
-                    StudentAssignment.classroom_assignment_id.in_(ca_ids)
+            if assignment_type == "vocabulary":
+                update_query = update_query.where(
+                    ClassroomAssignment.vocabulary_list_id == assignment_id
                 )
-            )
-        
-        # Then delete classroom assignments
-        await db.execute(
-            delete(ClassroomAssignment).where(
-                and_(
-                    ClassroomAssignment.classroom_id == classroom_id,
-                    ClassroomAssignment.assignment_type == "vocabulary",
-                    ClassroomAssignment.vocabulary_list_id.in_(vocabulary_to_remove)
+            else:
+                update_query = update_query.where(
+                    and_(
+                        ClassroomAssignment.assignment_id == assignment_id,
+                        ClassroomAssignment.assignment_type == assignment_type
+                    )
                 )
-            )
-        )
+            
+            result = await db.execute(update_query)
+            
+            # Count affected students for reporting
+            if result.rowcount > 0:
+                count_query = (
+                    select(func.count(StudentAssignment.id))
+                    .select_from(StudentAssignment)
+                    .join(ClassroomAssignment)
+                    .where(
+                        and_(
+                            ClassroomAssignment.classroom_id == classroom_id,
+                            ClassroomAssignment.removed_from_classroom_at.isnot(None),
+                            StudentAssignment.completed_at.is_(None)  # Only count incomplete assignments
+                        )
+                    )
+                )
+                
+                if assignment_type == "vocabulary":
+                    count_query = count_query.where(
+                        ClassroomAssignment.vocabulary_list_id == assignment_id
+                    )
+                else:
+                    count_query = count_query.where(
+                        and_(
+                            ClassroomAssignment.assignment_id == assignment_id,
+                            ClassroomAssignment.assignment_type == assignment_type
+                        )
+                    )
+                
+                count_result = await db.execute(count_query)
+                students_affected += count_result.scalar() or 0
     
-    if debate_to_remove:
-        # Get classroom assignment IDs that will be removed
-        ca_ids_result = await db.execute(
-            select(ClassroomAssignment.id).where(
-                and_(
-                    ClassroomAssignment.classroom_id == classroom_id,
-                    ClassroomAssignment.assignment_type == "debate",
-                    ClassroomAssignment.assignment_id.in_(debate_to_remove)
-                )
-            )
-        )
-        ca_ids = [row[0] for row in ca_ids_result]
-        
-        if ca_ids:
-            # Count affected students
-            count_result = await db.execute(
-                select(func.count(StudentAssignment.id)).where(
-                    StudentAssignment.classroom_assignment_id.in_(ca_ids)
-                )
-            )
-            students_affected += count_result.scalar() or 0
-            
-            # Import debate models
-            from app.models.debate import StudentDebate, DebatePost, DebateRoundFeedback
-            
-            # Get student debate IDs that will be deleted
-            debate_ids_result = await db.execute(
-                select(StudentDebate.id).where(
-                    StudentDebate.classroom_assignment_id.in_(ca_ids)
-                )
-            )
-            debate_ids = [row[0] for row in debate_ids_result]
-            
-            if debate_ids:
-                logger.info(f"Deleting {len(debate_ids)} student debates for classroom assignments: {ca_ids}")
-                
-                # Delete debate posts first
-                await db.execute(
-                    delete(DebatePost).where(
-                        DebatePost.student_debate_id.in_(debate_ids)
-                    )
-                )
-                
-                # Delete debate round feedback
-                await db.execute(
-                    delete(DebateRoundFeedback).where(
-                        DebateRoundFeedback.student_debate_id.in_(debate_ids)
-                    )
-                )
-                
-                # Now delete student debates
-                await db.execute(
-                    delete(StudentDebate).where(
-                        StudentDebate.classroom_assignment_id.in_(ca_ids)
-                    )
-                )
-            
-            # Delete student assignments
-            await db.execute(
-                delete(StudentAssignment).where(
-                    StudentAssignment.classroom_assignment_id.in_(ca_ids)
-                )
-            )
-        
-        # Then delete classroom assignments
-        await db.execute(
-            delete(ClassroomAssignment).where(
-                and_(
-                    ClassroomAssignment.classroom_id == classroom_id,
-                    ClassroomAssignment.assignment_type == "debate",
-                    ClassroomAssignment.assignment_id.in_(debate_to_remove)
-                )
-            )
-        )
-    
-    if writing_to_remove:
-        # Get classroom assignment IDs that will be removed
-        ca_ids_result = await db.execute(
-            select(ClassroomAssignment.id).where(
-                and_(
-                    ClassroomAssignment.classroom_id == classroom_id,
-                    ClassroomAssignment.assignment_type == "writing",
-                    ClassroomAssignment.assignment_id.in_(writing_to_remove)
-                )
-            )
-        )
-        ca_ids = [row[0] for row in ca_ids_result]
-        
-        if ca_ids:
-            # Count affected students
-            count_result = await db.execute(
-                select(func.count(StudentAssignment.id)).where(
-                    StudentAssignment.classroom_assignment_id.in_(ca_ids)
-                )
-            )
-            students_affected += count_result.scalar() or 0
-            
-            # Import writing models
-            from app.models.writing import StudentWritingSubmission
-            
-            # Delete student writing submissions first
-            # Get student assignment IDs for the classroom assignments being removed
-            sa_ids_result = await db.execute(
-                select(StudentAssignment.id).where(
-                    StudentAssignment.classroom_assignment_id.in_(ca_ids)
-                )
-            )
-            sa_ids = [row[0] for row in sa_ids_result]
-            
-            if sa_ids:
-                # Delete student writing submissions using student_assignment_id
-                await db.execute(
-                    delete(StudentWritingSubmission).where(
-                        StudentWritingSubmission.student_assignment_id.in_(sa_ids)
-                    )
-                )
-            
-            # Delete student assignments
-            await db.execute(
-                delete(StudentAssignment).where(
-                    StudentAssignment.classroom_assignment_id.in_(ca_ids)
-                )
-            )
-        
-        # Then delete classroom assignments
-        await db.execute(
-            delete(ClassroomAssignment).where(
-                and_(
-                    ClassroomAssignment.classroom_id == classroom_id,
-                    ClassroomAssignment.assignment_type == "writing",
-                    ClassroomAssignment.assignment_id.in_(writing_to_remove)
-                )
-            )
-        )
+    # Note: Old hard delete code has been removed. Assignments are now soft-deleted to preserve student work.
     
     # Update existing assignments
     for assignment_id in reading_to_update:

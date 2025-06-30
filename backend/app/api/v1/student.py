@@ -333,6 +333,7 @@ async def get_vocabulary_assignment(
         .where(
             and_(
                 VocabularyList.id == assignment_id,
+                ClassroomAssignment.removed_from_classroom_at.is_(None),  # Filter out soft-deleted assignments
                 VocabularyList.deleted_at.is_(None),
                 VocabularyList.status == "published"
             )
@@ -524,6 +525,7 @@ async def get_classroom_detail(
         .where(
             and_(
                 ClassroomAssignment.classroom_id == classroom_id,
+                ClassroomAssignment.removed_from_classroom_at.is_(None),  # Filter out soft-deleted assignments
                 ReadingAssignment.deleted_at.is_(None),
                 ReadingAssignment.status == "published"
             )
@@ -577,6 +579,7 @@ async def get_classroom_detail(
         .where(
             and_(
                 ClassroomAssignment.classroom_id == classroom_id,
+                ClassroomAssignment.removed_from_classroom_at.is_(None),  # Filter out soft-deleted assignments
                 VocabularyList.deleted_at.is_(None)
             )
         )
@@ -632,6 +635,7 @@ async def get_classroom_detail(
         .where(
             and_(
                 ClassroomAssignment.classroom_id == classroom_id,
+                ClassroomAssignment.removed_from_classroom_at.is_(None),  # Filter out soft-deleted assignments
                 DebateAssignment.deleted_at.is_(None)
             )
         )
@@ -675,6 +679,7 @@ async def get_classroom_detail(
         .where(
             and_(
                 ClassroomAssignment.classroom_id == classroom_id,
+                ClassroomAssignment.removed_from_classroom_at.is_(None),  # Filter out soft-deleted assignments
                 WritingAssignment.deleted_at.is_(None)
             )
         )
