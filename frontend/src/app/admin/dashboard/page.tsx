@@ -18,8 +18,6 @@ export default function AdminDashboardPage() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    console.log('AdminDashboardPage - useEffect triggered', { user, authLoading, is_admin: user?.is_admin });
-    
     // AdminGuard handles auth checking, so we can assume user is admin here
     // Just load the dashboard data
     loadDashboard();
@@ -27,13 +25,11 @@ export default function AdminDashboardPage() {
 
   const loadDashboard = async () => {
     try {
-      console.log('Calling adminApi.getDashboard()...');
       const data = await adminApi.getDashboard();
-      console.log('Dashboard data received:', data);
       setDashboard(data);
     } catch (err) {
-      console.error('Error loading dashboard:', err);
       setError('Failed to load dashboard');
+      console.error(err);
     } finally {
       setLoading(false);
     }

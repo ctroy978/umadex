@@ -41,22 +41,15 @@ export const useAuth = create<AuthState>((set, get) => ({
   setUser: (user) => set({ user }),
 
   loadUser: async () => {
-    console.log('useAuth.loadUser called');
     set({ isLoading: true })
     try {
-      const isAuth = authService.isAuthenticated();
-      console.log('Is authenticated:', isAuth);
-      
-      if (isAuth) {
-        console.log('Fetching current user...');
+      if (authService.isAuthenticated()) {
         const user = await authService.getCurrentUser()
-        console.log('User loaded:', user);
         set({ user, isLoading: false })
         
         // Start checking token expiry
         get().checkTokenExpiry()
       } else {
-        console.log('Not authenticated, setting user to null');
         set({ user: null, isLoading: false })
       }
     } catch (error) {
