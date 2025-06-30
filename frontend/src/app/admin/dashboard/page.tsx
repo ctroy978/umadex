@@ -12,27 +12,28 @@ import { useAuth } from '@/hooks/useAuth';
 
 export default function AdminDashboardPage() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, isLoading: authLoading } = useAuth();
   const [dashboard, setDashboard] = useState<AdminDashboard | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    if (user && !user.is_admin) {
-      router.push('/dashboard');
-      return;
-    }
+    console.log('AdminDashboardPage - useEffect triggered', { user, authLoading, is_admin: user?.is_admin });
     
+    // AdminGuard handles auth checking, so we can assume user is admin here
+    // Just load the dashboard data
     loadDashboard();
-  }, [user, router]);
+  }, []);
 
   const loadDashboard = async () => {
     try {
+      console.log('Calling adminApi.getDashboard()...');
       const data = await adminApi.getDashboard();
+      console.log('Dashboard data received:', data);
       setDashboard(data);
     } catch (err) {
+      console.error('Error loading dashboard:', err);
       setError('Failed to load dashboard');
-      console.error(err);
     } finally {
       setLoading(false);
     }

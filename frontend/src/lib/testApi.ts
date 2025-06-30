@@ -36,7 +36,10 @@ export const testApi = {
   // Submit test for grading
   async submitTest(testAttemptId: string): Promise<{ success: boolean; message: string; attempt_id: string }> {
     console.log('=== TEST API: submitTest called with testAttemptId:', testAttemptId)
-    const response = await api.post(`/v1/student/tests/${testAttemptId}/submit`)
+    // Use a longer timeout for test submission since AI evaluation can take time
+    const response = await api.post(`/v1/student/tests/${testAttemptId}/submit`, {}, {
+      timeout: 120000 // 2 minute timeout for AI evaluation
+    })
     console.log('=== TEST API: submitTest response:', response.data)
     return response.data
   },

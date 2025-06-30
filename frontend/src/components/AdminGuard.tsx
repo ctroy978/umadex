@@ -9,11 +9,20 @@ interface AdminGuardProps {
 }
 
 export default function AdminGuard({ children }: AdminGuardProps) {
-  const { user, isLoading: loading } = useAuth();
+  const { user, isLoading: loading, loadUser } = useAuth();
   const router = useRouter();
 
+  console.log('AdminGuard render:', { user, loading, is_admin: user?.is_admin });
+
   useEffect(() => {
+    console.log('AdminGuard: Calling loadUser()');
+    loadUser();
+  }, [loadUser]);
+
+  useEffect(() => {
+    console.log('AdminGuard useEffect:', { loading, user, is_admin: user?.is_admin });
     if (!loading && (!user || !user.is_admin)) {
+      console.log('AdminGuard: Redirecting to /dashboard');
       router.push('/dashboard');
     }
   }, [user, loading, router]);
