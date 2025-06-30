@@ -178,11 +178,15 @@ export default function TestInterface({ testData, readingContent, onComplete }: 
     setShowSubmitModal(false)
     setIsSubmitting(true)
     try {
-      // Save current answer first if needed
+      // Save current answer first if needed - don't let this fail the submission
       const currentAnswer = answers[String(currentQuestionIndex)] || ''
       if (currentAnswer) {
         console.log('=== FRONTEND: Saving current answer before submit ===')
-        await saveAnswer(currentQuestionIndex, currentAnswer)
+        try {
+          await saveAnswer(currentQuestionIndex, currentAnswer)
+        } catch (saveError) {
+          console.warn('Failed to save current answer, continuing with submission:', saveError)
+        }
       }
 
       // Submit test
