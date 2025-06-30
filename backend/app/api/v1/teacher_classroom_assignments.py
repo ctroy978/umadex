@@ -700,7 +700,26 @@ async def update_all_classroom_assignments(
             )
             students_affected += count_result.scalar() or 0
             
-            # Delete student assignments first
+            # Get student assignment IDs that will be deleted
+            sa_ids_result = await db.execute(
+                select(StudentAssignment.id).where(
+                    StudentAssignment.classroom_assignment_id.in_(ca_ids)
+                )
+            )
+            sa_ids = [row[0] for row in sa_ids_result]
+            
+            if sa_ids:
+                # Import umaread models
+                from app.models.umaread import UmareadAssignmentProgress
+                
+                # Delete umaread progress first
+                await db.execute(
+                    delete(UmareadAssignmentProgress).where(
+                        UmareadAssignmentProgress.student_assignment_id.in_(sa_ids)
+                    )
+                )
+            
+            # Delete student assignments
             await db.execute(
                 delete(StudentAssignment).where(
                     StudentAssignment.classroom_assignment_id.in_(ca_ids)
@@ -740,7 +759,7 @@ async def update_all_classroom_assignments(
             )
             students_affected += count_result.scalar() or 0
             
-            # Delete student assignments first
+            # Delete student assignments (vocabulary progress tables cascade automatically)
             await db.execute(
                 delete(StudentAssignment).where(
                     StudentAssignment.classroom_assignment_id.in_(ca_ids)
