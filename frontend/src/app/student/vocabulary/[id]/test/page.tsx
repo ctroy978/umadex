@@ -260,16 +260,6 @@ export default function VocabularyTestPage() {
                 <CheckCircle className="h-4 w-4" />
                 <AlertDescription>
                   You are eligible to take the vocabulary test!
-                  {eligibilityData?.attempts_used > 0 && (
-                    <span className="font-medium ml-1">
-                      ({eligibilityData.attempts_remaining} attempt{eligibilityData.attempts_remaining !== 1 ? 's' : ''} remaining)
-                    </span>
-                  )}
-                  {eligibilityData?.attempts_used === 0 && eligibilityData?.max_attempts && (
-                    <span className="font-medium ml-1">
-                      ({eligibilityData.max_attempts} attempt{eligibilityData.max_attempts !== 1 ? 's' : ''} available)
-                    </span>
-                  )}
                 </AlertDescription>
               </Alert>
 
@@ -298,11 +288,6 @@ export default function VocabularyTestPage() {
               <div className="bg-blue-50 p-4 rounded-lg">
                 <h4 className="font-medium text-blue-900 mb-2">Important Notes:</h4>
                 <ul className="text-sm text-blue-800 space-y-1">
-                  {eligibilityData?.max_attempts && (
-                    <li className="font-medium">
-                      • You have {eligibilityData.attempts_remaining} out of {eligibilityData.max_attempts} attempt{eligibilityData.max_attempts !== 1 ? 's' : ''} remaining
-                    </li>
-                  )}
                   <li>• Copy and paste functions are disabled during the test</li>
                   <li>• Right-clicking is disabled for security</li>
                   <li>• Navigate away from this page carefully - your progress will be lost</li>

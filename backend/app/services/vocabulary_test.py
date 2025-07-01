@@ -19,6 +19,10 @@ from app.services.ai_vocabulary_evaluator import AIVocabularyEvaluator
 
 logger = logging.getLogger(__name__)
 
+# Default configuration values
+DEFAULT_MAX_ATTEMPTS = 3
+DEFAULT_TIME_LIMIT_MINUTES = 30
+
 
 class VocabularyTestService:
     """Service for managing vocabulary tests"""
@@ -86,7 +90,29 @@ class VocabularyTestService:
         test_data = test_attempt_result.fetchone()
         
         attempts_used = test_data.attempt_count if test_data else 0
-        max_attempts = test_data.max_attempts if test_data and test_data.max_attempts else 3
+        
+        # Get max_attempts from config if not found in existing tests
+        if test_data and test_data.max_attempts:
+            max_attempts = test_data.max_attempts
+            logger.info(f"Using max_attempts from existing test data: {max_attempts}")
+        else:
+            # Get test configuration to find max_attempts
+            config = await VocabularyTestService.get_test_config(db, vocabulary_list_id)
+            logger.info(f"Test config retrieved for vocabulary_list_id {vocabulary_list_id}: {config}")
+            
+            # Debug: Print to console for immediate visibility
+            print(f"DEBUG: Test config for {vocabulary_list_id}: {config}")
+            
+            if config and config.get("max_attempts"):
+                max_attempts = config["max_attempts"]
+                logger.info(f"Using max_attempts from config: {max_attempts}")
+                print(f"DEBUG: Using max_attempts from config: {max_attempts}")
+            else:
+                # Default to DEFAULT_MAX_ATTEMPTS only if no config exists
+                max_attempts = DEFAULT_MAX_ATTEMPTS
+                logger.info(f"Using default max_attempts: {max_attempts}")
+                print(f"DEBUG: Using default max_attempts: {max_attempts}")
+        
         attempts_remaining = max_attempts - attempts_used
         
         # Update eligibility if all attempts are used
@@ -96,7 +122,7 @@ class VocabularyTestService:
         else:
             reason = None if is_eligible else f"Complete at least 3 vocabulary assignments to unlock test. You have completed {completed_count} out of 4."
         
-        return {
+        result = {
             "eligible": is_eligible,
             "reason": reason,
             "assignments_completed": completed_count,
@@ -111,6 +137,11 @@ class VocabularyTestService:
             "max_attempts": max_attempts,
             "attempts_remaining": attempts_remaining
         }
+        
+        # Debug output
+        print(f"DEBUG: Returning eligibility result: max_attempts={max_attempts}, attempts_remaining={attempts_remaining}")
+        
+        return result
 
     @staticmethod
     async def update_assignment_progress(
@@ -250,8 +281,8 @@ class VocabularyTestService:
                 "chain_id": str(chain_id) if chain_id else None,
                 "total_review_words": config_data.get("total_review_words", 3),
                 "current_week_questions": config_data.get("current_week_questions", 10),
-                "max_attempts": config_data.get("max_attempts", 3),
-                "time_limit_minutes": config_data.get("time_limit_minutes", 30)
+                "max_attempts": config_data.get("max_attempts", DEFAULT_MAX_ATTEMPTS),
+                "time_limit_minutes": config_data.get("time_limit_minutes", DEFAULT_TIME_LIMIT_MINUTES)
             }
         )
         
@@ -296,8 +327,8 @@ class VocabularyTestService:
                 "chained_list_ids": [],
                 "total_review_words": 3,
                 "current_week_questions": 10,
-                "max_attempts": 3,
-                "time_limit_minutes": 30
+                "max_attempts": DEFAULT_MAX_ATTEMPTS,
+                "time_limit_minutes": DEFAULT_TIME_LIMIT_MINUTES
             }
         
         # Get vocabulary words for the current list

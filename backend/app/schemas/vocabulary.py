@@ -219,8 +219,8 @@ class VocabularyTestEligibilityResponse(BaseModel):
     assignments_required: int
     progress_details: Dict[str, bool]  # flashcards_completed, practice_completed, etc.
     attempts_used: int = 0
-    max_attempts: int = 3
-    attempts_remaining: int = 3
+    max_attempts: int
+    attempts_remaining: int
 
 
 class VocabularyTestAttemptRequest(BaseModel):

@@ -979,7 +979,7 @@ class VocabularyPracticeStatusResponse(BaseModel):
     test_unlock_date: Optional[str] = None
     test_completed: bool = False
     test_attempts_count: int = 0
-    max_test_attempts: int = 3
+    max_test_attempts: int
     best_test_score: Optional[float] = None
     last_test_completed_at: Optional[datetime] = None
 

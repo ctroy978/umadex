@@ -202,7 +202,24 @@ class VocabularyPracticeService:
         test_attempts_count = test_completion_data.attempt_count if test_completion_data else 0
         best_test_score = test_completion_data.best_score if test_completion_data else None
         last_test_completed_at = test_completion_data.last_completed if test_completion_data else None
-        max_test_attempts = test_completion_data.max_attempts if test_completion_data and test_completion_data.max_attempts else 3
+        
+        # Get max_test_attempts from test config if not found in existing tests
+        if test_completion_data and test_completion_data.max_attempts:
+            max_test_attempts = test_completion_data.max_attempts
+            logger.info(f"Using max_test_attempts from existing test data: {max_test_attempts}")
+        else:
+            # Import VocabularyTestService to get test configuration
+            from app.services.vocabulary_test import VocabularyTestService
+            test_config = await VocabularyTestService.get_test_config(self.db, vocabulary_list_id)
+            logger.info(f"Test config for vocabulary list {vocabulary_list_id}: {test_config}")
+            if test_config and test_config.get("max_attempts"):
+                max_test_attempts = test_config["max_attempts"]
+                logger.info(f"Using max_test_attempts from config: {max_test_attempts}")
+            else:
+                # Default to 3 only if no config exists
+                max_test_attempts = 3
+                logger.info(f"Using default max_test_attempts: {max_test_attempts}")
+        
         test_completed = test_attempts_count >= max_test_attempts  # Test is completed when all attempts are used
         
         # Format assignment statuses
