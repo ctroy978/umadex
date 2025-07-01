@@ -15,7 +15,7 @@ from app.models.reading import ReadingAssignment
 from app.models.vocabulary import VocabularyList
 from app.models.debate import DebateAssignment
 from app.models.writing import WritingAssignment
-from app.models.vocabulary_practice import VocabularyPuzzleAttempt, VocabularyFillInBlankAttempt
+from app.models.vocabulary_practice import VocabularyPuzzleAttempt, VocabularyFillInBlankAttempt, VocabularyPracticeProgress
 from app.models.umaread import UmareadAssignmentProgress
 from app.models.tests import AssignmentTest, StudentTestAttempt
 from app.utils.deps import get_current_user
@@ -69,6 +69,7 @@ class StudentAssignmentResponse(BaseModel):
     display_order: Optional[int] = None
     status: str  # "not_started", "active", "expired"
     is_completed: bool = False
+    has_started: bool = False  # New field to track if assignment has been started
     has_test: bool = False
     test_completed: bool = False
     test_attempt_id: Optional[str] = None
@@ -490,6 +491,7 @@ async def get_classroom_detail(
             ReadingAssignment, 
             ClassroomAssignment,
             UmareadAssignmentProgress.completed_at,
+            UmareadAssignmentProgress.started_at,  # Add started_at field
             AssignmentTest.id.label("test_id"),
             AssignmentTest.status.label("test_status"),
             StudentTestAttempt.id.label("test_attempt_id"),
@@ -537,6 +539,7 @@ async def get_classroom_detail(
         assignment = row.ReadingAssignment
         ca = row.ClassroomAssignment
         completed_at = row.completed_at
+        started_at = row.started_at  # Get started_at
         test_id = row.test_id
         test_status = row.test_status
         test_attempt_id = row.test_attempt_id
@@ -563,6 +566,7 @@ async def get_classroom_detail(
             display_order=ca.display_order,
             status=status,
             is_completed=completed_at is not None,
+            has_started=started_at is not None,  # Add has_started
             has_test=has_test,
             test_completed=test_completed,
             test_attempt_id=str(test_attempt_id) if test_attempt_id else None
@@ -602,6 +606,20 @@ async def get_classroom_detail(
         )
         completed_count = completed_subtypes_query.scalar() or 0
         
+        # Check if vocabulary practice has started
+        practice_progress_query = await db.execute(
+            select(VocabularyPracticeProgress)
+            .where(
+                and_(
+                    VocabularyPracticeProgress.student_id == current_user.id,
+                    VocabularyPracticeProgress.vocabulary_list_id == vocab_list.id,
+                    VocabularyPracticeProgress.classroom_assignment_id == ca.id
+                )
+            )
+        )
+        practice_progress = practice_progress_query.scalar_one_or_none()
+        has_started_vocab = practice_progress is not None
+        
         # Vocabulary assignment is complete when 3+ practice activities are done
         is_vocabulary_complete = completed_count >= 3
         status = calculate_assignment_status(ca.start_date, ca.end_date)
@@ -619,6 +637,7 @@ async def get_classroom_detail(
             display_order=ca.display_order,
             status=status,
             is_completed=is_vocabulary_complete,  # Complete when 3+ practice activities done
+            has_started=has_started_vocab,  # Add has_started
             has_test=False,  # Vocabulary assignments don't have tests
             test_completed=False,
             test_attempt_id=None
@@ -658,6 +677,7 @@ async def get_classroom_detail(
             display_order=ca.display_order,
             status=status,
             is_completed=False,  # Will be updated when student debate tracking is implemented
+            has_started=False,  # Will be updated when debate tracking is implemented
             has_test=False,  # Debates don't have tests
             test_completed=False,
             test_attempt_id=None
@@ -704,6 +724,7 @@ async def get_classroom_detail(
             display_order=ca.display_order,
             status=status,
             is_completed=is_completed,
+            has_started=student_assignment is not None,  # Has started if StudentAssignment exists
             has_test=False,  # Writing assignments don't have tests
             test_completed=False,
             test_attempt_id=None

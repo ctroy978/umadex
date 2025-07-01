@@ -103,6 +103,34 @@ export default function AssignmentCard({ assignment, classroomId }: AssignmentCa
           }
           return 'Start Assignment'
         }
+        if (assignment.type === 'UMAVocab') {
+          if (assignment.is_completed) {
+            return 'View Results'
+          }
+          if (assignment.has_started) {
+            return 'Continue'
+          }
+          return 'Start Assignment'
+        }
+        if (assignment.type === 'UMARead') {
+          if (assignment.is_completed) {
+            if (assignment.has_test) {
+              if (assignment.test_completed) {
+                return 'View Results'
+              }
+              // Check test availability
+              if (availability && !availability.allowed) {
+                return 'Test Locked'
+              }
+              return 'Start Completion Test'
+            }
+            return 'Completed'
+          }
+          if (assignment.has_started) {
+            return 'Continue'
+          }
+          return 'Start Assignment'
+        }
         if (assignment.is_completed) {
           if (assignment.has_test) {
             if (assignment.test_completed) {
