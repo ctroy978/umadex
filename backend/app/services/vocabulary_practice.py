@@ -1887,7 +1887,8 @@ class VocabularyPracticeService:
             'passing_score': passing_score,
             'max_possible_score': max_possible_score,
             'current_prompt': 1,
-            'prompt': self._format_story_prompt(first_prompt) if first_prompt else None
+            'prompt': self._format_story_prompt(first_prompt) if first_prompt else None,
+            'current_score': story_attempt.current_score
         }
     
     async def _resume_story_builder(

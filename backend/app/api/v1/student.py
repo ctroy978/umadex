@@ -1014,6 +1014,7 @@ class StartStoryBuilderResponse(BaseModel):
     max_possible_score: int
     current_prompt: int
     prompt: Optional[Dict[str, Any]]
+    current_score: int = 0
 
 
 class SubmitStoryRequest(BaseModel):

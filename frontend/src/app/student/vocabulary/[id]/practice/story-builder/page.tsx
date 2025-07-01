@@ -133,7 +133,7 @@ export default function StoryBuilderPage() {
       setLoading(true)
       const session = await studentApi.startStoryBuilder(vocabularyId)
       setStorySession(session)
-      setCurrentScore(0)
+      setCurrentScore(session.current_score || 0)
     } catch (err: any) {
       console.error('Failed to start story builder:', err)
       
@@ -370,7 +370,7 @@ export default function StoryBuilderPage() {
             </div>
             {!showEvaluation && (
               <div className="text-sm text-gray-600">
-                Story 1 of 2
+                Story {storySession.current_prompt} of {storySession.total_prompts}
               </div>
             )}
           </div>
