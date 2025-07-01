@@ -540,14 +540,14 @@ class VocabularyTestService:
             
             result = await db.execute(
                 text("""
-                    SELECT DISTINCT vl.* FROM vocabulary_lists vl
-                    JOIN classroom_assignments ca ON ca.assignment_id = vl.id
+                    SELECT vl.*, ca.assigned_at FROM vocabulary_lists vl
+                    JOIN classroom_assignments ca ON ca.vocabulary_list_id = vl.id
                     WHERE ca.classroom_id = :classroom_id
                     AND ca.assignment_type = 'vocabulary'
                     AND ca.id != :current_assignment_id
-                    AND ca.created_at >= :cutoff_date
+                    AND ca.assigned_at >= :cutoff_date
                     AND vl.status = 'published'
-                    ORDER BY ca.created_at DESC
+                    ORDER BY ca.assigned_at DESC
                     LIMIT :max_lists
                 """),
                 {

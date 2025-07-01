@@ -6,31 +6,27 @@ import { Fragment } from 'react'
 import { XMarkIcon, InformationCircleIcon, Cog6ToothIcon, CheckIcon } from '@heroicons/react/24/outline'
 import { vocabularyApi, VocabularyTestConfig } from '@/lib/vocabularyApi'
 import { vocabularyChainApi, VocabularyChainSummary } from '@/lib/vocabularyChainApi'
-import type { VocabularyList } from '@/types/vocabulary'
 
 interface VocabularyTestConfigModalProps {
   isOpen: boolean
   onClose: () => void
   vocabularyListId: string
   vocabularyTitle: string
-  classroomId?: string
 }
 
 export default function VocabularyTestConfigModal({
   isOpen,
   onClose,
   vocabularyListId,
-  vocabularyTitle,
-  classroomId
+  vocabularyTitle
 }: VocabularyTestConfigModalProps) {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  const [availableLists, setAvailableLists] = useState<VocabularyList[]>([])
   const [availableChains, setAvailableChains] = useState<VocabularyChainSummary[]>([])
   const [config, setConfig] = useState<VocabularyTestConfig>({
     chain_enabled: false,
-    chain_type: 'weeks',
+    chain_type: 'named_chain',
     weeks_to_include: 1,
     questions_per_week: 5,
     chained_list_ids: [],
@@ -44,9 +40,6 @@ export default function VocabularyTestConfigModal({
     if (isOpen) {
       fetchConfig()
       fetchAvailableChains()
-      if (classroomId) {
-        fetchAvailableLists()
-      }
     }
   }, [isOpen])
 
@@ -57,7 +50,7 @@ export default function VocabularyTestConfigModal({
       const data = await vocabularyApi.getTestConfig(vocabularyListId)
       setConfig({
         ...data,
-        chain_type: data.chain_type || 'weeks',
+        chain_type: data.chain_type || 'named_chain',
         chained_list_ids: data.chained_list_ids || [],
         total_review_words: data.total_review_words || 3
       })
@@ -69,20 +62,6 @@ export default function VocabularyTestConfigModal({
     }
   }
 
-  const fetchAvailableLists = async () => {
-    try {
-      // Fetch all published vocabulary lists for the classroom
-      const response = await vocabularyApi.getLists({ 
-        status: 'published',
-        per_page: 100 
-      })
-      // Filter out the current list
-      const filtered = response.items.filter(list => list.id !== vocabularyListId)
-      setAvailableLists(filtered)
-    } catch (err) {
-      console.error('Failed to fetch available lists:', err)
-    }
-  }
 
   const fetchAvailableChains = async () => {
     try {
@@ -103,28 +82,8 @@ export default function VocabularyTestConfigModal({
       
       // Validate settings
       if (config.chain_enabled) {
-        if (config.chain_type === 'weeks' && config.weeks_to_include < 1) {
-          setError('Weeks to include must be at least 1')
-          return
-        }
-        
-        if (config.chain_type === 'specific_lists' && (!config.chained_list_ids || config.chained_list_ids.length === 0)) {
-          setError('Please select at least one vocabulary list to chain')
-          return
-        }
-        
-        if (config.chain_type === 'named_chain' && !config.chain_id) {
+        if (!config.chain_id) {
           setError('Please select a vocabulary chain')
-          return
-        }
-        
-        if (config.chain_type === 'weeks' && (config.questions_per_week < 3 || config.questions_per_week > 8)) {
-          setError('Questions per week must be between 3 and 8')
-          return
-        }
-        
-        if (config.chain_type === 'specific_lists' && (!config.total_review_words || config.total_review_words < 1 || config.total_review_words > 4)) {
-          setError('Review words must be between 1 and 4')
           return
         }
       }
@@ -151,27 +110,13 @@ export default function VocabularyTestConfigModal({
 
   const calculateTotalQuestions = () => {
     let total = config.current_week_questions
-    if (config.chain_enabled) {
-      if (config.chain_type === 'weeks') {
-        total += config.weeks_to_include * config.questions_per_week
-      } else if (config.chain_type === 'specific_lists') {
-        total += config.total_review_words || 0
-      } else if (config.chain_type === 'named_chain' && config.chain_id) {
-        const chain = availableChains.find(c => c.id === config.chain_id)
-        total += chain?.total_review_words || 0
-      }
+    if (config.chain_enabled && config.chain_id) {
+      const chain = availableChains.find(c => c.id === config.chain_id)
+      total += chain?.total_review_words || 0
     }
     return total
   }
 
-  const toggleListSelection = (listId: string) => {
-    setConfig(prev => ({
-      ...prev,
-      chained_list_ids: prev.chained_list_ids?.includes(listId)
-        ? prev.chained_list_ids.filter(id => id !== listId)
-        : [...(prev.chained_list_ids || []), listId]
-    }))
-  }
 
   return (
     <Transition appear show={isOpen} as={Fragment}>
@@ -241,13 +186,7 @@ export default function VocabularyTestConfigModal({
                         <p>Total questions: <strong>{calculateTotalQuestions()}</strong></p>
                         <p>Time limit: <strong>{config.time_limit_minutes} minutes</strong></p>
                         <p>Maximum attempts: <strong>{config.max_attempts}</strong></p>
-                        {config.chain_enabled && config.chain_type === 'weeks' && (
-                          <p>Includes questions from <strong>{config.weeks_to_include}</strong> previous week(s)</p>
-                        )}
-                        {config.chain_enabled && config.chain_type === 'specific_lists' && (
-                          <p>Includes <strong>{config.total_review_words}</strong> review word{config.total_review_words !== 1 ? 's' : ''} from selected lists</p>
-                        )}
-                        {config.chain_enabled && config.chain_type === 'named_chain' && config.chain_id && (
+                        {config.chain_enabled && config.chain_id && (
                           <p>Includes review words from chain: <strong>{availableChains.find(c => c.id === config.chain_id)?.name}</strong></p>
                         )}
                       </div>
@@ -277,105 +216,10 @@ export default function VocabularyTestConfigModal({
 
                         {config.chain_enabled && (
                           <div className="ml-7 space-y-4 p-4 bg-gray-50 rounded-lg">
-                            {/* Chain Type Selection */}
-                            <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-2">
-                                Chain Type
-                              </label>
-                              <div className="space-y-2">
-                                <label className="flex items-center">
-                                  <input
-                                    type="radio"
-                                    value="weeks"
-                                    checked={config.chain_type === 'weeks'}
-                                    onChange={(e) => setConfig(prev => ({ 
-                                      ...prev, 
-                                      chain_type: 'weeks',
-                                      chained_list_ids: []
-                                    }))}
-                                    className="h-4 w-4 text-primary-600 focus:ring-primary-500"
-                                  />
-                                  <span className="ml-2 text-sm text-gray-700">Previous weeks (automatic)</span>
-                                </label>
-                                <label className="flex items-center">
-                                  <input
-                                    type="radio"
-                                    value="named_chain"
-                                    checked={config.chain_type === 'named_chain'}
-                                    onChange={(e) => setConfig(prev => ({ 
-                                      ...prev, 
-                                      chain_type: 'named_chain',
-                                      chained_list_ids: [],
-                                      chain_id: undefined
-                                    }))}
-                                    className="h-4 w-4 text-primary-600 focus:ring-primary-500"
-                                  />
-                                  <span className="ml-2 text-sm text-gray-700">Use a named chain</span>
-                                </label>
-                                <label className="flex items-center">
-                                  <input
-                                    type="radio"
-                                    value="specific_lists"
-                                    checked={config.chain_type === 'specific_lists'}
-                                    onChange={(e) => setConfig(prev => ({ 
-                                      ...prev, 
-                                      chain_type: 'specific_lists',
-                                      chain_id: undefined
-                                    }))}
-                                    className="h-4 w-4 text-primary-600 focus:ring-primary-500"
-                                  />
-                                  <span className="ml-2 text-sm text-gray-700">Select specific lists</span>
-                                </label>
-                              </div>
-                            </div>
 
-                            {/* Weeks-based Configuration */}
-                            {config.chain_type === 'weeks' && (
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div>
-                                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    Previous weeks to include
-                                  </label>
-                                  <select
-                                    value={config.weeks_to_include}
-                                    onChange={(e) => setConfig(prev => ({ 
-                                      ...prev, 
-                                      weeks_to_include: parseInt(e.target.value) 
-                                    }))}
-                                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
-                                  >
-                                    {[...Array(10)].map((_, i) => (
-                                      <option key={i + 1} value={i + 1}>
-                                        {i + 1} week{i + 1 > 1 ? 's' : ''}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </div>
-
-                                <div>
-                                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    Questions per previous week
-                                  </label>
-                                  <select
-                                    value={config.questions_per_week}
-                                    onChange={(e) => setConfig(prev => ({ 
-                                      ...prev, 
-                                      questions_per_week: parseInt(e.target.value) 
-                                    }))}
-                                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
-                                  >
-                                    {[3, 4, 5, 6, 7, 8].map(num => (
-                                      <option key={num} value={num}>
-                                        {num} questions
-                                      </option>
-                                    ))}
-                                  </select>
-                                </div>
-                              </div>
-                            )}
 
                             {/* Named Chain Configuration */}
-                            {config.chain_type === 'named_chain' && (
+                            {config.chain_enabled && (
                               <div className="space-y-4">
                                 <div>
                                   <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -405,67 +249,6 @@ export default function VocabularyTestConfigModal({
                               </div>
                             )}
 
-                            {/* Specific Lists Configuration */}
-                            {config.chain_type === 'specific_lists' && (
-                              <div className="space-y-4">
-                                <div>
-                                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    Select vocabulary lists to chain
-                                  </label>
-                                  <div className="max-h-48 overflow-y-auto border rounded-lg p-2 space-y-1">
-                                    {availableLists.length === 0 ? (
-                                      <p className="text-sm text-gray-500 p-2">No other vocabulary lists available</p>
-                                    ) : (
-                                      availableLists.map(list => (
-                                        <label
-                                          key={list.id}
-                                          className="flex items-center p-2 hover:bg-gray-50 rounded cursor-pointer"
-                                        >
-                                          <input
-                                            type="checkbox"
-                                            checked={config.chained_list_ids?.includes(list.id) || false}
-                                            onChange={() => toggleListSelection(list.id)}
-                                            className="h-4 w-4 text-primary-600 focus:ring-primary-500"
-                                          />
-                                          <span className="ml-2 text-sm text-gray-700">{list.title}</span>
-                                          {list.word_count && (
-                                            <span className="ml-auto text-xs text-gray-500">{list.word_count} words</span>
-                                          )}
-                                        </label>
-                                      ))
-                                    )}
-                                  </div>
-                                  {config.chained_list_ids && config.chained_list_ids.length > 0 && (
-                                    <p className="text-xs text-gray-500 mt-1">
-                                      {config.chained_list_ids.length} list{config.chained_list_ids.length !== 1 ? 's' : ''} selected
-                                    </p>
-                                  )}
-                                </div>
-
-                                <div>
-                                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    Total review words
-                                  </label>
-                                  <select
-                                    value={config.total_review_words || 3}
-                                    onChange={(e) => setConfig(prev => ({ 
-                                      ...prev, 
-                                      total_review_words: parseInt(e.target.value) 
-                                    }))}
-                                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
-                                  >
-                                    {[1, 2, 3, 4].map(num => (
-                                      <option key={num} value={num}>
-                                        {num} review word{num > 1 ? 's' : ''}
-                                      </option>
-                                    ))}
-                                  </select>
-                                  <p className="text-xs text-gray-500 mt-1">
-                                    Words will be randomly selected from all chained lists
-                                  </p>
-                                </div>
-                              </div>
-                            )}
                           </div>
                         )}
                       </div>
