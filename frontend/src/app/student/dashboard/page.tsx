@@ -80,7 +80,7 @@ export default function StudentDashboard() {
               <div className="flex items-center justify-between">
                 <div>
                   <h1 className="text-2xl font-bold text-gray-900">
-                    {getGreeting()}! Ready to learn?
+                    {getGreeting()}!
                   </h1>
                   <p className="text-gray-600 mt-1">
                     Access your classrooms and assignments
@@ -113,50 +113,6 @@ export default function StudentDashboard() {
         </div>
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          {/* Stats Overview */}
-          {classrooms.length > 0 && (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-              <div className="bg-white rounded-lg shadow p-6">
-                <div className="flex items-center">
-                  <div className="p-2 bg-blue-100 rounded-lg">
-                    <AcademicCapIcon className="h-6 w-6 text-blue-600" />
-                  </div>
-                  <div className="ml-4">
-                    <p className="text-sm font-medium text-gray-600">Classes Enrolled</p>
-                    <p className="text-2xl font-bold text-gray-900">{classrooms.length}</p>
-                  </div>
-                </div>
-              </div>
-              
-              <div className="bg-white rounded-lg shadow p-6">
-                <div className="flex items-center">
-                  <div className="p-2 bg-green-100 rounded-lg">
-                    <BookOpenIcon className="h-6 w-6 text-green-600" />
-                  </div>
-                  <div className="ml-4">
-                    <p className="text-sm font-medium text-gray-600">Total Assignments</p>
-                    <p className="text-2xl font-bold text-gray-900">
-                      {classrooms.reduce((sum, c) => sum + c.assignment_count, 0)}
-                    </p>
-                  </div>
-                </div>
-              </div>
-              
-              <div className="bg-white rounded-lg shadow p-6">
-                <div className="flex items-center">
-                  <div className="p-2 bg-amber-100 rounded-lg">
-                    <ClockIcon className="h-6 w-6 text-amber-600" />
-                  </div>
-                  <div className="ml-4">
-                    <p className="text-sm font-medium text-gray-600">Available Now</p>
-                    <p className="text-2xl font-bold text-gray-900">
-                      {classrooms.reduce((sum, c) => sum + c.available_assignment_count, 0)}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
 
           {/* Main Content */}
           {loading ? (
@@ -221,26 +177,10 @@ export default function StudentDashboard() {
                         <ArrowRightIcon className="h-5 w-5 text-gray-400" />
                       </div>
 
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="text-gray-600">Total Assignments</span>
-                          <span className="font-medium text-gray-900">
-                            {classroom.assignment_count}
-                          </span>
-                        </div>
-                        
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="text-gray-600">Available Now</span>
-                          <span className="font-medium text-green-600">
-                            {classroom.available_assignment_count}
-                          </span>
-                        </div>
-
-                        <div className="pt-2 border-t border-gray-200">
-                          <p className="text-xs text-gray-500">
-                            Joined {new Date(classroom.joined_at).toLocaleDateString()}
-                          </p>
-                        </div>
+                      <div className="pt-4 border-t border-gray-200">
+                        <p className="text-xs text-gray-500">
+                          Joined {new Date(classroom.joined_at).toLocaleDateString()}
+                        </p>
                       </div>
                     </div>
                   </div>
