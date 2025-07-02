@@ -730,6 +730,58 @@ async def get_classroom_detail(
             test_attempt_id=None
         ))
     
+    # Get UMALecture assignments
+    lecture_query = await db.execute(
+        select(
+            ClassroomAssignment,
+            StudentAssignment.id.label("student_assignment_id"),
+            StudentAssignment.started_at,
+            StudentAssignment.completed_at,
+            StudentAssignment.progress_metadata
+        )
+        .join(StudentAssignment,
+              and_(
+                  StudentAssignment.classroom_assignment_id == ClassroomAssignment.id,
+                  StudentAssignment.student_id == current_user.id
+              ))
+        .where(
+            and_(
+                ClassroomAssignment.classroom_id == classroom_id,
+                ClassroomAssignment.assignment_type == "UMALecture",
+                ClassroomAssignment.removed_from_classroom_at.is_(None)
+            )
+        )
+        .order_by(ClassroomAssignment.start_date, ClassroomAssignment.display_order, ClassroomAssignment.assigned_at)
+    )
+    
+    for row in lecture_query:
+        ca = row.ClassroomAssignment
+        student_assignment_id = row.student_assignment_id
+        started_at = row.started_at
+        completed_at = row.completed_at
+        progress_metadata = row.progress_metadata or {}
+        
+        status = calculate_assignment_status(ca.start_date, ca.end_date)
+        assignments.append(StudentAssignmentResponse(
+            id=str(student_assignment_id),
+            title="Interactive Lecture",  # Could fetch from lecture_assignments table if needed
+            work_title=None,
+            author=None,
+            grade_level=None,
+            type="UMALecture",
+            item_type="lecture",
+            assigned_at=ca.assigned_at,
+            start_date=ca.start_date,
+            end_date=ca.end_date,
+            display_order=ca.display_order,
+            status=status,
+            is_completed=completed_at is not None,
+            has_started=started_at is not None,
+            has_test=False,
+            test_completed=False,
+            test_attempt_id=None
+        ))
+    
     # Sort assignments by start date (earliest first), then display order
     assignments.sort(key=lambda x: (
         x.start_date or datetime.min.replace(tzinfo=timezone.utc),

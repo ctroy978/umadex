@@ -13,7 +13,8 @@ import {
   DocumentCheckIcon,
   DocumentCheckIcon as FileCheckIcon,
   LockClosedIcon,
-  ExclamationTriangleIcon
+  ExclamationTriangleIcon,
+  AcademicCapIcon
 } from '@heroicons/react/24/outline'
 import { useRouter } from 'next/navigation'
 import { useTestAvailability } from '@/hooks/useTestAvailability'
@@ -81,6 +82,8 @@ export default function AssignmentCard({ assignment, classroomId }: AssignmentCa
         return <UserIcon className="h-5 w-5 text-green-600" />
       case 'writing':
         return <DocumentCheckIcon className="h-5 w-5 text-amber-600" />
+      case 'lecture':
+        return <AcademicCapIcon className="h-5 w-5 text-indigo-600" />
       default:
         return <BookOpenIcon className="h-5 w-5 text-gray-600" />
     }
@@ -102,6 +105,15 @@ export default function AssignmentCard({ assignment, classroomId }: AssignmentCa
             return 'View Results'
           }
           return 'Start Assignment'
+        }
+        if (assignment.type === 'UMALecture') {
+          if (assignment.is_completed) {
+            return 'Review Lecture'
+          }
+          if (assignment.has_started) {
+            return 'Continue Learning'
+          }
+          return 'Start Lecture'
         }
         if (assignment.type === 'UMAVocab') {
           if (assignment.is_completed) {
@@ -173,6 +185,7 @@ export default function AssignmentCard({ assignment, classroomId }: AssignmentCa
               assignment.item_type === 'vocabulary' ? 'bg-purple-100' :
               assignment.item_type === 'debate' ? 'bg-green-100' :
               assignment.item_type === 'writing' ? 'bg-amber-100' :
+              assignment.item_type === 'lecture' ? 'bg-indigo-100' :
               'bg-gray-100'
             }`}>
               {getTypeIcon()}
@@ -262,6 +275,7 @@ export default function AssignmentCard({ assignment, classroomId }: AssignmentCa
             assignment.type === 'UMAVocab' ? 'bg-purple-100 text-purple-800' :
             assignment.type === 'UMADebate' ? 'bg-green-100 text-green-800' :
             assignment.type === 'UMAWrite' ? 'bg-amber-100 text-amber-800' :
+            assignment.type === 'UMALecture' ? 'bg-indigo-100 text-indigo-800' :
             'bg-gray-100 text-gray-800'
           }`}>
             {assignment.type}
