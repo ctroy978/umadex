@@ -377,3 +377,70 @@ class UMALectureAIService:
             })
         
         return questions[:3]  # Limit to 3 questions per difficulty
+    
+    async def evaluate_student_answer(
+        self,
+        context: str,
+        student_answer: str,
+        difficulty: str
+    ) -> Dict[str, Any]:
+        """Evaluate a student's answer using AI"""
+        
+        # Create evaluation prompt
+        prompt = f"""
+You are evaluating a student's answer to a question about a lecture topic.
+
+Context:
+{context}
+
+Student's Answer:
+{student_answer}
+
+Please evaluate the student's answer and provide:
+1. Whether the answer is correct (true/false)
+2. Educational feedback that helps the student learn
+
+Consider the difficulty level ({difficulty}) when evaluating:
+- Basic: Look for fundamental understanding
+- Intermediate: Look for connections and proper terminology
+- Advanced: Look for critical thinking and analysis
+- Expert: Look for nuanced understanding and synthesis
+
+Return your evaluation in this exact JSON format:
+{{
+    "is_correct": true/false,
+    "feedback": "Your educational feedback here",
+    "points_earned": 0-10
+}}
+
+Be encouraging and educational in your feedback. If incorrect, guide the student toward the right answer without giving it away completely.
+"""
+        
+        try:
+            # Generate evaluation
+            response = await self._generate_content_async(prompt)
+            
+            # Parse JSON response
+            # Remove any markdown formatting if present
+            json_str = response.strip()
+            if json_str.startswith("```json"):
+                json_str = json_str[7:]
+            if json_str.endswith("```"):
+                json_str = json_str[:-3]
+            
+            result = json.loads(json_str.strip())
+            
+            # Ensure all required fields are present
+            return {
+                "is_correct": result.get("is_correct", False),
+                "feedback": result.get("feedback", "Unable to evaluate response. Please try again."),
+                "points_earned": result.get("points_earned", 0)
+            }
+            
+        except Exception as e:
+            print(f"Error evaluating student answer: {str(e)}")
+            return {
+                "is_correct": False,
+                "feedback": "Sorry, I couldn't evaluate your answer right now. Please try again.",
+                "points_earned": 0
+            }

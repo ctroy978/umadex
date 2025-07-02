@@ -46,6 +46,9 @@ export default function AssignmentCard({ assignment, classroomId }: AssignmentCa
           // Navigate to writing assignment page
           router.push(`/student/assignments/umawrite/${assignment.id}`)
         }
+      } else if (assignment.type === 'UMALecture') {
+        // Navigate to lecture assignment page
+        router.push(`/student/assignment/lecture/${assignment.id}?classroomId=${classroomId}`)
       } else if (assignment.is_completed && assignment.has_test) {
         if (assignment.test_completed && assignment.test_attempt_id) {
           // Navigate to test results for completed tests

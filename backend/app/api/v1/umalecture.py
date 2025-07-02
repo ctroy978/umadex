@@ -323,6 +323,82 @@ async def start_lecture_assignment(
     return progress
 
 
+@router.get("/lectures/{lecture_id}/student-view")
+async def get_lecture_student_view(
+    lecture_id: UUID,
+    assignment_id: UUID,
+    student: User = Depends(require_student),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get lecture structure with topics and AI-generated content for student view"""
+    # Verify student has access to this lecture
+    access_check = await lecture_service.verify_student_access(
+        db, student.id, assignment_id, lecture_id
+    )
+    if not access_check:
+        raise HTTPException(status_code=403, detail="Access denied to this lecture")
+    
+    # Get lecture with progress
+    lecture_data = await lecture_service.get_lecture_for_student(
+        db, lecture_id, assignment_id, student.id
+    )
+    
+    if not lecture_data:
+        raise HTTPException(status_code=404, detail="Lecture not found")
+    
+    return lecture_data
+
+
+@router.get("/lectures/{lecture_id}/topic/{topic_id}/content")
+async def get_topic_all_content(
+    lecture_id: UUID,
+    topic_id: str,
+    assignment_id: UUID,
+    student: User = Depends(require_student),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get all tab content for a specific topic including images and questions"""
+    # Verify access
+    access_check = await lecture_service.verify_student_access(
+        db, student.id, assignment_id, lecture_id
+    )
+    if not access_check:
+        raise HTTPException(status_code=403, detail="Access denied to this lecture")
+    
+    content = await lecture_service.get_all_topic_content(
+        db, lecture_id, topic_id, student.id, assignment_id
+    )
+    
+    if not content:
+        raise HTTPException(status_code=404, detail="Topic content not found")
+    
+    return content
+
+
+@router.get("/lectures/{lecture_id}/images/{image_id}")
+async def get_lecture_image(
+    lecture_id: UUID,
+    image_id: UUID,
+    assignment_id: UUID,
+    student: User = Depends(require_student),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get specific image with AI-generated educational description"""
+    # Verify access
+    access_check = await lecture_service.verify_student_access(
+        db, student.id, assignment_id, lecture_id
+    )
+    if not access_check:
+        raise HTTPException(status_code=403, detail="Access denied to this lecture")
+    
+    image = await lecture_service.get_image_with_description(db, image_id, lecture_id)
+    
+    if not image:
+        raise HTTPException(status_code=404, detail="Image not found")
+    
+    return image
+
+
 @router.get("/assignments/{assignment_id}/topics", response_model=List[LectureTopicResponse])
 async def get_lecture_topics(
     assignment_id: UUID,
@@ -400,3 +476,97 @@ async def get_student_progress(
         raise HTTPException(status_code=404, detail="Assignment not found")
     
     return progress
+
+
+@router.post("/lectures/progress/update")
+async def update_progress(
+    progress_data: Dict[str, Any],
+    student: User = Depends(require_student),
+    db: AsyncSession = Depends(get_db)
+):
+    """Update student progress for specific topic/tab/question"""
+    assignment_id = progress_data.get("assignment_id")
+    topic_id = progress_data.get("topic_id")
+    tab = progress_data.get("tab")  # difficulty level
+    question_index = progress_data.get("question_index")
+    is_correct = progress_data.get("is_correct")
+    
+    if not all([assignment_id, topic_id, tab]):
+        raise HTTPException(status_code=400, detail="Missing required fields")
+    
+    updated_progress = await lecture_service.update_student_progress(
+        db, student.id, assignment_id, topic_id, tab, question_index, is_correct
+    )
+    
+    if not updated_progress:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+    
+    return updated_progress
+
+
+@router.post("/lectures/evaluate-response")
+async def evaluate_response(
+    eval_data: Dict[str, Any],
+    background_tasks: BackgroundTasks,
+    student: User = Depends(require_student),
+    db: AsyncSession = Depends(get_db)
+):
+    """Send student response for AI evaluation"""
+    assignment_id = eval_data.get("assignment_id")
+    topic_id = eval_data.get("topic_id")
+    difficulty = eval_data.get("difficulty")
+    question_text = eval_data.get("question_text")
+    student_answer = eval_data.get("student_answer")
+    expected_answer = eval_data.get("expected_answer", "")
+    includes_images = eval_data.get("includes_images", False)
+    image_descriptions = eval_data.get("image_descriptions", [])
+    
+    if not all([assignment_id, topic_id, difficulty, question_text, student_answer]):
+        raise HTTPException(status_code=400, detail="Missing required fields")
+    
+    # Verify access
+    access_check = await lecture_service.verify_student_assignment_access(
+        db, student.id, assignment_id
+    )
+    if not access_check:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    # Get AI evaluation
+    result = await lecture_service.evaluate_student_response(
+        question_text=question_text,
+        student_answer=student_answer,
+        expected_answer=expected_answer,
+        difficulty=difficulty,
+        includes_images=includes_images,
+        image_descriptions=image_descriptions
+    )
+    
+    # Track interaction
+    background_tasks.add_task(
+        lecture_service.track_interaction,
+        db, student.id, assignment_id, topic_id, difficulty, "answer_question",
+        question_text, student_answer, result.get("is_correct", False)
+    )
+    
+    return result
+
+
+@router.put("/lectures/progress/{progress_id}/current-position")
+async def update_current_position(
+    progress_id: UUID,
+    position_data: Dict[str, Any],
+    student: User = Depends(require_student),
+    db: AsyncSession = Depends(get_db)
+):
+    """Update current topic/tab for resume capability"""
+    current_topic = position_data.get("current_topic")
+    current_tab = position_data.get("current_tab")
+    
+    success = await lecture_service.update_current_position(
+        db, progress_id, student.id, current_topic, current_tab
+    )
+    
+    if not success:
+        raise HTTPException(status_code=404, detail="Progress record not found")
+    
+    return {"message": "Position updated successfully"}

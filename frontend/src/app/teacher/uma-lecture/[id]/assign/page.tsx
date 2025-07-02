@@ -14,9 +14,10 @@ import {
   CheckCircle
 } from 'lucide-react'
 import { umalectureApi } from '@/lib/umalectureApi'
-import { classroomApi } from '@/lib/classroomApi'
+import { teacherApi } from '@/lib/teacherApi'
+import { teacherClassroomApi } from '@/lib/classroomApi'
 import type { LectureAssignment } from '@/lib/umalectureApi'
-import type { Classroom } from '@/lib/classroomApi'
+import type { Classroom } from '@/lib/teacherApi'
 
 export default function AssignLecturePage() {
   const router = useRouter()
@@ -42,7 +43,7 @@ export default function AssignLecturePage() {
     try {
       const [lectureData, classroomsData] = await Promise.all([
         umalectureApi.getLecture(lectureId),
-        classroomApi.listClassrooms()
+        teacherApi.getClassrooms()
       ])
       
       setLecture(lectureData)
@@ -83,10 +84,21 @@ export default function AssignLecturePage() {
     setError(null)
     
     try {
-      await umalectureApi.assignToClassrooms(
-        lectureId,
-        Array.from(selectedClassrooms)
-      )
+      // Convert dates to ISO format with time
+      const startDateTime = startDate ? new Date(startDate + 'T00:00:00').toISOString() : null
+      const endDateTime = endDate ? new Date(endDate + 'T23:59:59').toISOString() : null
+      
+      // Use the standard classroom assignment API with scheduling
+      for (const classroomId of selectedClassrooms) {
+        await teacherClassroomApi.updateClassroomAssignmentsAll(classroomId, {
+          assignments: [{
+            assignment_id: lectureId,
+            assignment_type: 'UMALecture',
+            start_date: startDateTime,
+            end_date: endDateTime
+          }]
+        })
+      }
       
       setSuccess(true)
       setTimeout(() => {

@@ -456,6 +456,11 @@ class UMALectureService:
         )
         
         published = result.scalar()
+        
+        # Create reading assignment entry for classroom integration
+        if published:
+            await self.create_reading_assignment_entry(db, lecture_id)
+        
         await db.commit()
         
         return bool(published)
@@ -547,7 +552,7 @@ class UMALectureService:
                 INSERT INTO classroom_assignments (
                     classroom_id, assignment_id, assignment_type
                 ) VALUES (
-                    :classroom_id, :assignment_id, 'lecture'
+                    :classroom_id, :assignment_id, 'UMALecture'
                 ) ON CONFLICT (_classroom_assignment_uc) 
                 DO NOTHING
                 RETURNING *
@@ -756,7 +761,9 @@ class UMALectureService:
         topic_id: str,
         difficulty: str,
         interaction_type: str,
-        question_data: Optional[Dict[str, Any]] = None
+        question_text: Optional[str] = None,
+        student_answer: Optional[str] = None,
+        is_correct: Optional[bool] = None
     ) -> None:
         """Track student interaction with lecture content"""
         # Get lecture ID
@@ -800,16 +807,16 @@ class UMALectureService:
             "topic_id": topic_id,
             "difficulty_level": difficulty,
             "interaction_type": interaction_type,
-            "question_text": question_data.get("question") if question_data else None,
-            "student_answer": question_data.get("answer") if question_data else None,
-            "is_correct": question_data.get("is_correct") if question_data else None,
-            "time_spent": question_data.get("time_spent", 0) if question_data else 0
+            "question_text": question_text,
+            "student_answer": student_answer,
+            "is_correct": is_correct,
+            "time_spent": 0
         }
         
         await db.execute(insert_query, params)
         
         # Update progress metadata
-        if interaction_type == "answer_question" and question_data and question_data.get("is_correct"):
+        if interaction_type == "answer_question" and is_correct:
             update_query = sql_text("""
                 UPDATE student_assignments
                 SET progress_metadata = jsonb_set(
@@ -921,3 +928,406 @@ class UMALectureService:
     ) -> Optional[LectureStudentProgress]:
         """Get detailed student progress"""
         return await self.get_or_create_student_progress(db, student_id, assignment_id)
+    
+    async def verify_student_access(
+        self,
+        db: AsyncSession,
+        student_id: UUID,
+        assignment_id: UUID,
+        lecture_id: UUID
+    ) -> bool:
+        """Verify student has access to a lecture through assignment"""
+        query = sql_text("""
+            SELECT 1
+            FROM student_assignments sa
+            JOIN classroom_assignments ca ON ca.id = sa.classroom_assignment_id
+            JOIN lecture_assignments la ON la.id = ca.assignment_id
+            WHERE sa.student_id = :student_id
+            AND sa.id = :assignment_id
+            AND la.id = :lecture_id
+            AND ca.assignment_type = 'UMALecture'
+        """)
+        
+        result = await db.execute(
+            query,
+            {
+                "student_id": student_id,
+                "assignment_id": assignment_id,
+                "lecture_id": lecture_id
+            }
+        )
+        
+        return bool(result.scalar())
+    
+    async def verify_student_assignment_access(
+        self,
+        db: AsyncSession,
+        student_id: UUID,
+        assignment_id: UUID
+    ) -> bool:
+        """Verify student has access to an assignment"""
+        query = sql_text("""
+            SELECT 1
+            FROM student_assignments sa
+            WHERE sa.student_id = :student_id
+            AND sa.id = :assignment_id
+        """)
+        
+        result = await db.execute(
+            query,
+            {"student_id": student_id, "assignment_id": assignment_id}
+        )
+        
+        return bool(result.scalar())
+    
+    async def get_lecture_for_student(
+        self,
+        db: AsyncSession,
+        lecture_id: UUID,
+        assignment_id: UUID,
+        student_id: UUID
+    ) -> Optional[Dict[str, Any]]:
+        """Get lecture data with student progress for student view"""
+        # Get lecture and progress
+        query = sql_text("""
+            SELECT 
+                la.*,
+                sa.progress_metadata
+            FROM lecture_assignments la
+            JOIN classroom_assignments ca ON ca.assignment_id = la.id
+            JOIN student_assignments sa ON sa.classroom_assignment_id = ca.id
+            WHERE la.id = :lecture_id
+            AND sa.id = :assignment_id
+            AND sa.student_id = :student_id
+        """)
+        
+        result = await db.execute(
+            query,
+            {
+                "lecture_id": lecture_id,
+                "assignment_id": assignment_id,
+                "student_id": student_id
+            }
+        )
+        
+        data = result.mappings().first()
+        if not data:
+            return None
+        
+        # Get all images for the lecture
+        image_query = sql_text("""
+            SELECT * FROM lecture_images
+            WHERE lecture_id = :lecture_id
+            ORDER BY node_id, position
+        """)
+        
+        image_result = await db.execute(image_query, {"lecture_id": lecture_id})
+        images = [dict(img) for img in image_result.mappings().all()]
+        
+        # Group images by topic
+        images_by_topic = {}
+        for img in images:
+            topic_id = img["node_id"]
+            if topic_id not in images_by_topic:
+                images_by_topic[topic_id] = []
+            images_by_topic[topic_id].append(img)
+        
+        return {
+            **dict(data),
+            "images_by_topic": images_by_topic,
+            "progress_metadata": data["progress_metadata"] or self._initialize_progress_metadata()
+        }
+    
+    async def get_all_topic_content(
+        self,
+        db: AsyncSession,
+        lecture_id: UUID,
+        topic_id: str,
+        student_id: UUID,
+        assignment_id: UUID
+    ) -> Optional[Dict[str, Any]]:
+        """Get all difficulty levels content for a topic"""
+        # Get lecture structure
+        lecture_query = sql_text("""
+            SELECT lecture_structure
+            FROM lecture_assignments
+            WHERE id = :lecture_id
+        """)
+        
+        result = await db.execute(lecture_query, {"lecture_id": lecture_id})
+        data = result.mappings().first()
+        
+        if not data or not data["lecture_structure"]:
+            return None
+        
+        structure = data["lecture_structure"]
+        topic_data = structure.get("topics", {}).get(topic_id)
+        if not topic_data:
+            return None
+        
+        # Get all images for this topic
+        image_query = sql_text("""
+            SELECT * FROM lecture_images
+            WHERE lecture_id = :lecture_id
+            AND node_id = :topic_id
+            ORDER BY position
+        """)
+        
+        image_result = await db.execute(
+            image_query,
+            {"lecture_id": lecture_id, "topic_id": topic_id}
+        )
+        
+        images = [dict(img) for img in image_result.mappings().all()]
+        
+        # Get student progress for this topic
+        progress_query = sql_text("""
+            SELECT progress_metadata
+            FROM student_assignments
+            WHERE id = :assignment_id
+            AND student_id = :student_id
+        """)
+        
+        progress_result = await db.execute(
+            progress_query,
+            {"assignment_id": assignment_id, "student_id": student_id}
+        )
+        
+        progress_data = progress_result.mappings().first()
+        progress_metadata = progress_data["progress_metadata"] if progress_data else {}
+        topic_progress = progress_metadata.get("topic_completion", {}).get(topic_id, {})
+        
+        return {
+            "topic_id": topic_id,
+            "title": topic_data.get("title", ""),
+            "difficulty_levels": topic_data.get("difficulty_levels", {}),
+            "images": images,
+            "completed_tabs": topic_progress.get("completed_tabs", []),
+            "questions_correct": topic_progress.get("questions_correct", {})
+        }
+    
+    async def get_image_with_description(
+        self,
+        db: AsyncSession,
+        image_id: UUID,
+        lecture_id: UUID
+    ) -> Optional[Dict[str, Any]]:
+        """Get image with AI-generated educational description"""
+        query = sql_text("""
+            SELECT * FROM lecture_images
+            WHERE id = :image_id
+            AND lecture_id = :lecture_id
+        """)
+        
+        result = await db.execute(
+            query,
+            {"image_id": image_id, "lecture_id": lecture_id}
+        )
+        
+        image = result.mappings().first()
+        return dict(image) if image else None
+    
+    async def update_student_progress(
+        self,
+        db: AsyncSession,
+        student_id: UUID,
+        assignment_id: UUID,
+        topic_id: str,
+        tab: str,
+        question_index: Optional[int],
+        is_correct: Optional[bool]
+    ) -> Optional[Dict[str, Any]]:
+        """Update student progress for topic/tab/question"""
+        # Get current progress
+        progress_query = sql_text("""
+            SELECT id, progress_metadata
+            FROM student_assignments
+            WHERE id = :assignment_id
+            AND student_id = :student_id
+        """)
+        
+        result = await db.execute(
+            progress_query,
+            {"assignment_id": assignment_id, "student_id": student_id}
+        )
+        
+        data = result.mappings().first()
+        if not data:
+            return None
+        
+        progress_metadata = data["progress_metadata"] or self._initialize_progress_metadata()
+        
+        # Initialize topic completion if needed
+        if "topic_completion" not in progress_metadata:
+            progress_metadata["topic_completion"] = {}
+        
+        if topic_id not in progress_metadata["topic_completion"]:
+            progress_metadata["topic_completion"][topic_id] = {
+                "completed_tabs": [],
+                "completed_at": None,
+                "questions_correct": {}
+            }
+        
+        topic_progress = progress_metadata["topic_completion"][topic_id]
+        
+        # Update question correctness if provided
+        if question_index is not None and is_correct is not None:
+            if tab not in topic_progress["questions_correct"]:
+                topic_progress["questions_correct"][tab] = []
+            
+            # Ensure list is long enough
+            while len(topic_progress["questions_correct"][tab]) <= question_index:
+                topic_progress["questions_correct"][tab].append(False)
+            
+            topic_progress["questions_correct"][tab][question_index] = is_correct
+            
+            # Check if tab is complete (all questions correct)
+            if all(topic_progress["questions_correct"][tab]):
+                if tab not in topic_progress["completed_tabs"]:
+                    topic_progress["completed_tabs"].append(tab)
+                    if not topic_progress["completed_at"]:
+                        topic_progress["completed_at"] = datetime.utcnow().isoformat()
+        
+        # Update current position
+        progress_metadata["current_topic"] = topic_id
+        progress_metadata["current_tab"] = tab
+        
+        # Check if lecture is complete
+        progress_metadata["lecture_complete"] = self._check_lecture_complete(progress_metadata)
+        
+        # Update in database
+        update_query = sql_text("""
+            UPDATE student_assignments
+            SET progress_metadata = :metadata,
+                updated_at = NOW()
+            WHERE id = :assignment_id
+            AND student_id = :student_id
+        """)
+        
+        await db.execute(
+            update_query,
+            {
+                "metadata": json.dumps(progress_metadata),
+                "assignment_id": assignment_id,
+                "student_id": student_id
+            }
+        )
+        
+        await db.commit()
+        
+        return progress_metadata
+    
+    async def evaluate_student_response(
+        self,
+        question_text: str,
+        student_answer: str,
+        expected_answer: str,
+        difficulty: str,
+        includes_images: bool = False,
+        image_descriptions: List[str] = None
+    ) -> Dict[str, Any]:
+        """Evaluate student response using AI"""
+        from app.services.umalecture_ai import UMALectureAIService
+        
+        ai_service = UMALectureAIService()
+        
+        # Build context for evaluation
+        context = f"Difficulty Level: {difficulty}\n"
+        context += f"Question: {question_text}\n"
+        
+        if includes_images and image_descriptions:
+            context += "\nImage Context:\n"
+            for i, desc in enumerate(image_descriptions):
+                context += f"Image {i+1}: {desc}\n"
+        
+        if expected_answer:
+            context += f"\nExpected Answer Guidance: {expected_answer}\n"
+        
+        # Get AI evaluation
+        evaluation = await ai_service.evaluate_student_answer(
+            context=context,
+            student_answer=student_answer,
+            difficulty=difficulty
+        )
+        
+        return evaluation
+    
+    async def update_current_position(
+        self,
+        db: AsyncSession,
+        assignment_id: UUID,
+        student_id: UUID,
+        current_topic: Optional[str],
+        current_tab: Optional[str]
+    ) -> bool:
+        """Update student's current position in lecture"""
+        # Get current progress
+        progress_query = sql_text("""
+            SELECT progress_metadata
+            FROM student_assignments
+            WHERE id = :assignment_id
+            AND student_id = :student_id
+        """)
+        
+        result = await db.execute(
+            progress_query,
+            {"assignment_id": assignment_id, "student_id": student_id}
+        )
+        
+        data = result.mappings().first()
+        if not data:
+            return False
+        
+        progress_metadata = data["progress_metadata"] or self._initialize_progress_metadata()
+        
+        # Update position
+        if current_topic:
+            progress_metadata["current_topic"] = current_topic
+        if current_tab:
+            progress_metadata["current_tab"] = current_tab
+        
+        # Update in database
+        update_query = sql_text("""
+            UPDATE student_assignments
+            SET progress_metadata = :metadata,
+                updated_at = NOW()
+            WHERE id = :assignment_id
+            AND student_id = :student_id
+        """)
+        
+        await db.execute(
+            update_query,
+            {
+                "metadata": json.dumps(progress_metadata),
+                "assignment_id": assignment_id,
+                "student_id": student_id
+            }
+        )
+        
+        await db.commit()
+        
+        return True
+    
+    def _initialize_progress_metadata(self) -> Dict[str, Any]:
+        """Initialize empty progress metadata structure"""
+        return {
+            "topic_completion": {},
+            "current_topic": None,
+            "current_tab": None,
+            "lecture_complete": False
+        }
+    
+    def _check_lecture_complete(self, progress_metadata: Dict[str, Any]) -> bool:
+        """Check if lecture is complete (all topics have at least one completed tab)"""
+        topic_completion = progress_metadata.get("topic_completion", {})
+        
+        if not topic_completion:
+            return False
+        
+        # For now, just check if any topics have completed tabs
+        # In production, we'd check against the actual lecture structure
+        for topic_id, progress in topic_completion.items():
+            if progress.get("completed_tabs"):
+                return True
+        
+        return False

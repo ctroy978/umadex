@@ -2,10 +2,12 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter, useParams, useSearchParams } from 'next/navigation'
-import { ChevronLeft, BookOpen, CheckCircle, Clock, AlertCircle } from 'lucide-react'
-import { studentApi } from '@/lib/studentApi'
+import { ChevronLeft, X, CheckCircle, Circle, RotateCcw } from 'lucide-react'
 import { umalectureApi } from '@/lib/umalectureApi'
-import type { LectureStudentProgress, LectureTopicResponse } from '@/lib/umalectureApi'
+import { TopicContentPanel } from '@/components/student/lecture/TopicContentPanel'
+import { QuestionPanel } from '@/components/student/lecture/QuestionPanel'
+import { TopicNavigation } from '@/components/student/lecture/TopicNavigation'
+import type { LectureData, TopicContent } from '@/lib/umalectureApi'
 
 export default function StudentLecturePage() {
   const router = useRouter()
@@ -14,25 +16,45 @@ export default function StudentLecturePage() {
   const assignmentId = params.id as string
   const classroomId = searchParams.get('classroomId')
   
-  const [progress, setProgress] = useState<LectureStudentProgress | null>(null)
-  const [topics, setTopics] = useState<LectureTopicResponse[]>([])
+  const [lectureData, setLectureData] = useState<LectureData | null>(null)
+  const [currentTopic, setCurrentTopic] = useState<string | null>(null)
+  const [currentTab, setCurrentTab] = useState<'basic' | 'intermediate' | 'advanced' | 'expert'>('basic')
+  const [topicContent, setTopicContent] = useState<TopicContent | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [exitConfirm, setExitConfirm] = useState(false)
 
   useEffect(() => {
     fetchLectureData()
   }, [assignmentId])
 
+  useEffect(() => {
+    if (currentTopic && lectureData) {
+      fetchTopicContent()
+    }
+  }, [currentTopic, lectureData])
+
   const fetchLectureData = async () => {
     try {
       setLoading(true)
-      const [progressData, topicsData] = await Promise.all([
-        umalectureApi.startLectureAssignment(assignmentId),
-        umalectureApi.getLectureTopics(assignmentId)
-      ])
+      // Start the assignment to get/create progress
+      const progress = await umalectureApi.startLectureAssignment(assignmentId)
       
-      setProgress(progressData)
-      setTopics(topicsData)
+      // Get full lecture data for student view
+      const data = await umalectureApi.getLectureStudentView(
+        progress.lecture_id,
+        assignmentId
+      )
+      
+      setLectureData(data)
+      
+      // Resume from last position or start with first topic
+      const resumeTopic = data.progress_metadata?.current_topic || 
+        Object.keys(data.lecture_structure?.topics || {})[0]
+      const resumeTab = data.progress_metadata?.current_tab || 'basic'
+      
+      setCurrentTopic(resumeTopic)
+      setCurrentTab(resumeTab as any)
     } catch (err) {
       console.error('Failed to load lecture:', err)
       setError('Failed to load lecture. Please try again.')
@@ -41,30 +63,134 @@ export default function StudentLecturePage() {
     }
   }
 
-  const handleTopicClick = (topicId: string) => {
-    router.push(`/student/assignments/lecture/${assignmentId}/topic/${topicId}?classroomId=${classroomId}`)
+  const fetchTopicContent = async () => {
+    if (!currentTopic || !lectureData) return
+    
+    try {
+      const content = await umalectureApi.getTopicAllContent(
+        lectureData.id,
+        currentTopic,
+        assignmentId
+      )
+      setTopicContent(content)
+      
+      // Update current position
+      await umalectureApi.updateCurrentPosition(assignmentId, {
+        current_topic: currentTopic,
+        current_tab: currentTab
+      })
+    } catch (err) {
+      console.error('Failed to load topic content:', err)
+    }
+  }
+
+  const handleTopicChange = (topicId: string) => {
+    setCurrentTopic(topicId)
+    // Reset to basic tab when changing topics
+    setCurrentTab('basic')
+  }
+
+  const handleTabChange = async (tab: typeof currentTab) => {
+    setCurrentTab(tab)
+    
+    // Update position
+    if (lectureData) {
+      await umalectureApi.updateCurrentPosition(assignmentId, {
+        current_topic: currentTopic || undefined,
+        current_tab: tab
+      })
+    }
+  }
+
+  const handleQuestionComplete = async (
+    questionIndex: number,
+    isCorrect: boolean
+  ) => {
+    if (!currentTopic) return
+    
+    // Update progress
+    await umalectureApi.updateProgress({
+      assignment_id: assignmentId,
+      topic_id: currentTopic,
+      tab: currentTab,
+      question_index: questionIndex,
+      is_correct: isCorrect
+    })
+    
+    // Refresh topic content to get updated progress
+    await fetchTopicContent()
+  }
+
+  const handleExit = () => {
+    if (exitConfirm) {
+      router.push(classroomId 
+        ? `/student/classrooms/${classroomId}` 
+        : '/student/dashboard'
+      )
+    } else {
+      setExitConfirm(true)
+      setTimeout(() => setExitConfirm(false), 3000)
+    }
+  }
+
+  const getTopicCompletionStatus = (topicId: string) => {
+    const topicProgress = lectureData?.progress_metadata?.topic_completion?.[topicId]
+    if (!topicProgress) return 'not-started'
+    
+    if (topicProgress.completed_tabs?.length > 0) {
+      // Check if all tabs have been completed
+      const allTabs = ['basic', 'intermediate', 'advanced', 'expert']
+      const allCompleted = allTabs.every(tab => 
+        topicProgress.completed_tabs.includes(tab)
+      )
+      return allCompleted ? 'fully-complete' : 'complete'
+    }
+    
+    if (topicProgress.questions_correct && 
+        Object.keys(topicProgress.questions_correct).length > 0) {
+      return 'in-progress'
+    }
+    
+    return 'not-started'
+  }
+
+  const calculateOverallProgress = () => {
+    if (!lectureData?.lecture_structure?.topics) return { completed: 0, total: 0 }
+    
+    const topics = Object.keys(lectureData.lecture_structure.topics)
+    const completedTopics = topics.filter(topicId => {
+      const status = getTopicCompletionStatus(topicId)
+      return status === 'complete' || status === 'fully-complete'
+    })
+    
+    return {
+      completed: completedTopics.length,
+      total: topics.length
+    }
   }
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
-          <p className="mt-4 text-gray-500">Loading lecture...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto"></div>
+          <p className="mt-4 text-gray-400">Loading lecture...</p>
         </div>
       </div>
     )
   }
 
-  if (error || !progress) {
+  if (error || !lectureData) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
         <div className="text-center">
-          <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
-          <p className="text-red-600">{error || 'Failed to load lecture'}</p>
+          <p className="text-red-400 mb-4">{error || 'Failed to load lecture'}</p>
           <button
-            onClick={() => router.push(classroomId ? `/student/classrooms/${classroomId}` : '/student/dashboard')}
-            className="mt-4 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark"
+            onClick={() => router.push(classroomId 
+              ? `/student/classrooms/${classroomId}` 
+              : '/student/dashboard'
+            )}
+            className="px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600"
           >
             Go Back
           </button>
@@ -73,107 +199,79 @@ export default function StudentLecturePage() {
     )
   }
 
+  const progress = calculateOverallProgress()
+
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white shadow">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="py-4 flex items-center justify-between">
-            <div className="flex items-center">
-              <button
-                onClick={() => router.push(classroomId ? `/student/classrooms/${classroomId}` : '/student/dashboard')}
-                className="mr-4 text-gray-500 hover:text-gray-700"
-              >
-                <ChevronLeft className="h-5 w-5" />
-              </button>
-              <div>
-                <h1 className="text-xl font-semibold text-gray-900">{progress.title}</h1>
-                <p className="text-sm text-gray-500">
-                  {progress.subject} • {progress.grade_level}
-                </p>
-              </div>
+    <div className="min-h-screen bg-gray-900 flex flex-col">
+      {/* Header Bar */}
+      <div className="bg-gray-800 border-b border-gray-700 px-6 py-3 flex items-center justify-between">
+        <div className="flex items-center space-x-4">
+          <h1 className="text-white font-medium">{lectureData.title}</h1>
+          <div className="flex items-center space-x-2 text-sm text-gray-400">
+            <span>{progress.completed} of {progress.total} topics complete</span>
+            <div className="w-32 h-2 bg-gray-700 rounded-full overflow-hidden">
+              <div 
+                className="h-full bg-green-500 transition-all duration-300"
+                style={{ width: `${(progress.completed / progress.total) * 100}%` }}
+              />
             </div>
           </div>
         </div>
+        <button
+          onClick={handleExit}
+          className="text-gray-400 hover:text-white transition-colors"
+        >
+          {exitConfirm ? (
+            <span className="text-sm">Click again to exit</span>
+          ) : (
+            <X className="h-5 w-5" />
+          )}
+        </button>
       </div>
 
-      {/* Content */}
-      <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Progress Overview */}
-        <div className="bg-white rounded-lg shadow p-6 mb-6">
-          <h2 className="text-lg font-medium text-gray-900 mb-4">Your Progress</h2>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <p className="text-sm text-gray-600">Topics Completed</p>
-              <p className="text-2xl font-bold text-gray-900">
-                {progress.topics_completed} / {progress.total_topics}
-              </p>
-            </div>
-            <div>
-              <p className="text-sm text-gray-600">Questions Answered</p>
-              <p className="text-2xl font-bold text-gray-900">
-                {progress.questions_answered} / {progress.total_questions}
-              </p>
-            </div>
-          </div>
-          {progress.topics_completed === progress.total_topics && (
-            <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
-              <div className="flex items-center text-green-800">
-                <CheckCircle className="h-5 w-5 mr-2" />
-                <span className="font-medium">Congratulations! You've completed all topics.</span>
-              </div>
-            </div>
+      {/* Main Content Area */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Left Panel - Tabbed Content */}
+        <div className="flex-1 bg-gray-800">
+          {currentTopic && topicContent && (
+            <TopicContentPanel
+              topic={topicContent}
+              currentTab={currentTab}
+              onTabChange={handleTabChange}
+              completedTabs={topicContent.completed_tabs || []}
+              questionsCorrect={topicContent.questions_correct || {}}
+            />
           )}
         </div>
 
-        {/* Learning Objectives */}
-        {progress.learning_objectives && progress.learning_objectives.length > 0 && (
-          <div className="bg-white rounded-lg shadow p-6 mb-6">
-            <h2 className="text-lg font-medium text-gray-900 mb-4">Learning Objectives</h2>
-            <ul className="space-y-2">
-              {progress.learning_objectives.map((objective, index) => (
-                <li key={index} className="flex items-start">
-                  <span className="text-primary mr-2">•</span>
-                  <span className="text-gray-700">{objective}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        {/* Topics */}
-        <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-lg font-medium text-gray-900 mb-4">Choose a Topic to Explore</h2>
-          <div className="space-y-3">
-            {topics.map((topic) => (
-              <button
-                key={topic.id}
-                onClick={() => handleTopicClick(topic.id)}
-                className="w-full text-left p-4 rounded-lg border-2 transition-all hover:shadow-md hover:border-primary"
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex-1">
-                    <h3 className="font-medium text-gray-900">{topic.title}</h3>
-                    <div className="mt-1 flex items-center space-x-4 text-sm text-gray-600">
-                      <span className="flex items-center">
-                        <BookOpen className="h-4 w-4 mr-1" />
-                        {topic.difficulty_levels_available} difficulty levels
-                      </span>
-                      {topic.completed_levels > 0 && (
-                        <span className="flex items-center text-green-600">
-                          <CheckCircle className="h-4 w-4 mr-1" />
-                          {topic.completed_levels} completed
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <ChevronLeft className="h-5 w-5 text-gray-400 rotate-180" />
-                </div>
-              </button>
-            ))}
-          </div>
+        {/* Right Panel - Questions */}
+        <div className="w-[480px] bg-gray-850 border-l border-gray-700">
+          {currentTopic && topicContent && (
+            <QuestionPanel
+              questions={topicContent.difficulty_levels[currentTab]?.questions || []}
+              difficulty={currentTab}
+              topicId={currentTopic}
+              assignmentId={assignmentId}
+              lectureId={lectureData.id}
+              questionsCorrect={topicContent.questions_correct?.[currentTab] || []}
+              images={topicContent.images}
+              onQuestionComplete={handleQuestionComplete}
+            />
+          )}
         </div>
-      </main>
+      </div>
+
+      {/* Bottom Navigation */}
+      <div className="bg-gray-800 border-t border-gray-700 px-6 py-4">
+        {lectureData.lecture_structure?.topics && (
+          <TopicNavigation
+            topics={lectureData.lecture_structure.topics}
+            currentTopic={currentTopic}
+            onTopicChange={handleTopicChange}
+            getCompletionStatus={getTopicCompletionStatus}
+          />
+        )}
+      </div>
     </div>
   )
 }
