@@ -19,7 +19,7 @@ export interface StudentAssignment {
   author?: string
   grade_level?: string
   type: string
-  item_type: 'reading' | 'vocabulary' | 'debate' | 'writing'
+  item_type: 'reading' | 'vocabulary' | 'debate' | 'writing' | 'lecture'
   assigned_at: string
   start_date?: string
   end_date?: string

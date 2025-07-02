@@ -37,12 +37,27 @@ class UMALectureService:
         lecture_data: LectureAssignmentCreate
     ) -> Dict[str, Any]:
         """Create a new lecture assignment"""
-        # Execute raw SQL to insert into lecture_assignments
+        # Create metadata JSON that includes learning objectives and other lecture-specific data
+        metadata = {
+            "learning_objectives": lecture_data.learning_objectives,
+            "topic_outline": None,
+            "lecture_structure": None,
+            "processing_started_at": None,
+            "processing_completed_at": None,
+            "processing_error": None
+        }
+        
+        # Insert into reading_assignments table with UMALecture type
+        # Note: Due to schema constraints, we need to provide values for all NOT NULL fields
         query = sql_text("""
-            INSERT INTO lecture_assignments (
-                teacher_id, title, subject, grade_level, learning_objectives, status
+            INSERT INTO reading_assignments (
+                teacher_id, assignment_title, work_title, subject, grade_level, 
+                assignment_type, status, work_type, literary_form, genre, 
+                raw_content, author
             ) VALUES (
-                :teacher_id, :title, :subject, :grade_level, :learning_objectives, 'draft'
+                :teacher_id, :title, :title, :subject, :grade_level, 
+                'UMALecture', 'draft', 'non-fiction', 'prose', 'educational',
+                :metadata, 'Teacher'
             ) RETURNING *
         """)
         
@@ -53,14 +68,15 @@ class UMALectureService:
                 "title": lecture_data.title,
                 "subject": lecture_data.subject,
                 "grade_level": lecture_data.grade_level,
-                "learning_objectives": lecture_data.learning_objectives
+                "metadata": json.dumps(metadata)
             }
         )
         
         lecture = result.mappings().first()
         await db.commit()
         
-        return dict(lecture)
+        # Transform the result to match expected lecture format
+        return self._transform_to_lecture_format(dict(lecture))
     
     async def list_teacher_lectures(
         self,
@@ -73,8 +89,9 @@ class UMALectureService:
     ) -> List[Dict[str, Any]]:
         """List lectures for a teacher with filtering"""
         query = """
-            SELECT * FROM lecture_assignments
+            SELECT * FROM reading_assignments
             WHERE teacher_id = :teacher_id
+            AND assignment_type = 'UMALecture'
             AND deleted_at IS NULL
         """
         
@@ -85,7 +102,7 @@ class UMALectureService:
             params["status"] = status
         
         if search:
-            query += " AND (title ILIKE :search OR subject ILIKE :search)"
+            query += " AND (assignment_title ILIKE :search OR subject ILIKE :search)"
             params["search"] = f"%{search}%"
         
         query += " ORDER BY created_at DESC LIMIT :limit OFFSET :skip"
@@ -95,7 +112,8 @@ class UMALectureService:
         result = await db.execute(sql_text(query), params)
         lectures = result.mappings().all()
         
-        return [dict(lecture) for lecture in lectures]
+        # Transform each lecture to expected format
+        return [self._transform_to_lecture_format(dict(lecture)) for lecture in lectures]
     
     async def get_lecture(
         self, 
@@ -105,9 +123,10 @@ class UMALectureService:
     ) -> Optional[Dict[str, Any]]:
         """Get a specific lecture assignment"""
         query = sql_text("""
-            SELECT * FROM lecture_assignments
+            SELECT * FROM reading_assignments
             WHERE id = :lecture_id 
             AND teacher_id = :teacher_id
+            AND assignment_type = 'UMALecture'
             AND deleted_at IS NULL
         """)
         
@@ -117,7 +136,7 @@ class UMALectureService:
         )
         
         lecture = result.mappings().first()
-        return dict(lecture) if lecture else None
+        return self._transform_to_lecture_format(dict(lecture)) if lecture else None
     
     async def update_lecture(
         self,
@@ -127,12 +146,21 @@ class UMALectureService:
         update_data: LectureAssignmentUpdate
     ) -> Optional[Dict[str, Any]]:
         """Update a lecture assignment"""
+        # Get current lecture to preserve metadata
+        current = await self.get_lecture(db, lecture_id, teacher_id)
+        if not current:
+            return None
+        
+        # Update metadata
+        metadata = json.loads(current.get("raw_content", "{}"))
+        
         # Build update query dynamically
         update_fields = []
         params = {"lecture_id": lecture_id, "teacher_id": teacher_id}
         
         if update_data.title is not None:
-            update_fields.append("title = :title")
+            update_fields.append("assignment_title = :title")
+            update_fields.append("work_title = :title")
             params["title"] = update_data.title
         
         if update_data.subject is not None:
@@ -143,26 +171,33 @@ class UMALectureService:
             update_fields.append("grade_level = :grade_level")
             params["grade_level"] = update_data.grade_level
         
+        # Update metadata fields
+        metadata_updated = False
         if update_data.learning_objectives is not None:
-            update_fields.append("learning_objectives = :learning_objectives")
-            params["learning_objectives"] = update_data.learning_objectives
+            metadata["learning_objectives"] = update_data.learning_objectives
+            metadata_updated = True
         
         if update_data.topic_outline is not None:
-            update_fields.append("topic_outline = :topic_outline")
-            params["topic_outline"] = update_data.topic_outline
+            metadata["topic_outline"] = update_data.topic_outline
+            metadata_updated = True
         
         if update_data.lecture_structure is not None:
-            update_fields.append("lecture_structure = :lecture_structure")
-            params["lecture_structure"] = json.dumps(update_data.lecture_structure)
+            metadata["lecture_structure"] = update_data.lecture_structure
+            metadata_updated = True
+        
+        if metadata_updated:
+            update_fields.append("raw_content = :metadata")
+            params["metadata"] = json.dumps(metadata)
         
         if not update_fields:
             return await self.get_lecture(db, lecture_id, teacher_id)
         
         query = sql_text(f"""
-            UPDATE lecture_assignments
+            UPDATE reading_assignments
             SET {', '.join(update_fields)}, updated_at = NOW()
             WHERE id = :lecture_id 
             AND teacher_id = :teacher_id
+            AND assignment_type = 'UMALecture'
             AND deleted_at IS NULL
             RETURNING *
         """)
@@ -171,7 +206,7 @@ class UMALectureService:
         lecture = result.mappings().first()
         await db.commit()
         
-        return dict(lecture) if lecture else None
+        return self._transform_to_lecture_format(dict(lecture)) if lecture else None
     
     async def delete_lecture(
         self, 
@@ -181,10 +216,11 @@ class UMALectureService:
     ) -> bool:
         """Soft delete a lecture assignment"""
         query = sql_text("""
-            UPDATE lecture_assignments
+            UPDATE reading_assignments
             SET deleted_at = NOW()
             WHERE id = :lecture_id 
             AND teacher_id = :teacher_id
+            AND assignment_type = 'UMALecture'
             AND deleted_at IS NULL
             RETURNING id
         """)
@@ -207,10 +243,11 @@ class UMALectureService:
     ) -> bool:
         """Restore a soft-deleted lecture assignment"""
         query = sql_text("""
-            UPDATE lecture_assignments
+            UPDATE reading_assignments
             SET deleted_at = NULL
             WHERE id = :lecture_id 
             AND teacher_id = :teacher_id
+            AND assignment_type = 'UMALecture'
             AND deleted_at IS NOT NULL
             RETURNING id
         """)
@@ -233,46 +270,49 @@ class UMALectureService:
         error: Optional[str] = None
     ) -> bool:
         """Update lecture processing status"""
-        params = {
-            "lecture_id": lecture_id,
-            "status": status
-        }
+        # Get current metadata
+        get_query = sql_text("""
+            SELECT raw_content FROM reading_assignments
+            WHERE id = :lecture_id
+            AND assignment_type = 'UMALecture'
+        """)
         
+        result = await db.execute(get_query, {"lecture_id": lecture_id})
+        data = result.mappings().first()
+        if not data:
+            return False
+        
+        metadata = json.loads(data["raw_content"] or "{}")
+        
+        # Update metadata based on status
         if status == "processing":
-            query = sql_text("""
-                UPDATE lecture_assignments
-                SET status = :status, 
-                    processing_started_at = NOW(),
-                    processing_error = NULL
-                WHERE id = :lecture_id
-                RETURNING id
-            """)
+            metadata["processing_started_at"] = datetime.utcnow().isoformat()
+            metadata["processing_error"] = None
         elif status == "published":
-            query = sql_text("""
-                UPDATE lecture_assignments
-                SET status = :status, 
-                    processing_completed_at = NOW()
-                WHERE id = :lecture_id
-                RETURNING id
-            """)
+            metadata["processing_completed_at"] = datetime.utcnow().isoformat()
         elif status == "draft" and error:
-            query = sql_text("""
-                UPDATE lecture_assignments
-                SET status = :status, 
-                    processing_error = :error
-                WHERE id = :lecture_id
-                RETURNING id
-            """)
-            params["error"] = error
-        else:
-            query = sql_text("""
-                UPDATE lecture_assignments
-                SET status = :status
-                WHERE id = :lecture_id
-                RETURNING id
-            """)
+            metadata["processing_error"] = error
         
-        result = await db.execute(query, params)
+        # Update in database
+        update_query = sql_text("""
+            UPDATE reading_assignments
+            SET status = :status,
+                raw_content = :metadata,
+                updated_at = NOW()
+            WHERE id = :lecture_id
+            AND assignment_type = 'UMALecture'
+            RETURNING id
+        """)
+        
+        result = await db.execute(
+            update_query,
+            {
+                "lecture_id": lecture_id,
+                "status": status,
+                "metadata": json.dumps(metadata)
+            }
+        )
+        
         updated = result.scalar()
         await db.commit()
         
@@ -365,9 +405,10 @@ class UMALectureService:
         """Delete an image from a lecture"""
         # Verify ownership through lecture
         verify_query = sql_text("""
-            SELECT 1 FROM lecture_assignments
+            SELECT 1 FROM reading_assignments
             WHERE id = :lecture_id 
             AND teacher_id = :teacher_id
+            AND assignment_type = 'UMALecture'
             AND deleted_at IS NULL
         """)
         
@@ -406,12 +447,21 @@ class UMALectureService:
         structure: Dict[str, Any]
     ) -> bool:
         """Update the AI-generated structure"""
+        # Get current metadata
+        current = await self.get_lecture(db, lecture_id, teacher_id)
+        if not current:
+            return False
+        
+        metadata = json.loads(current.get("raw_content", "{}"))
+        metadata["lecture_structure"] = structure
+        
         query = sql_text("""
-            UPDATE lecture_assignments
-            SET lecture_structure = :structure,
+            UPDATE reading_assignments
+            SET raw_content = :metadata,
                 updated_at = NOW()
             WHERE id = :lecture_id 
             AND teacher_id = :teacher_id
+            AND assignment_type = 'UMALecture'
             AND deleted_at IS NULL
             RETURNING id
         """)
@@ -421,7 +471,7 @@ class UMALectureService:
             {
                 "lecture_id": lecture_id,
                 "teacher_id": teacher_id,
-                "structure": json.dumps(structure)
+                "metadata": json.dumps(metadata)
             }
         )
         
@@ -438,14 +488,22 @@ class UMALectureService:
     ) -> bool:
         """Publish a lecture for student use"""
         # Verify lecture has structure and is ready
+        current = await self.get_lecture(db, lecture_id, teacher_id)
+        if not current:
+            return False
+        
+        metadata = json.loads(current.get("raw_content", "{}"))
+        if not metadata.get("lecture_structure"):
+            return False
+        
         query = sql_text("""
-            UPDATE lecture_assignments
+            UPDATE reading_assignments
             SET status = 'published',
                 updated_at = NOW()
             WHERE id = :lecture_id 
             AND teacher_id = :teacher_id
+            AND assignment_type = 'UMALecture'
             AND deleted_at IS NULL
-            AND lecture_structure IS NOT NULL
             AND status != 'published'
             RETURNING id
         """)
@@ -456,69 +514,9 @@ class UMALectureService:
         )
         
         published = result.scalar()
-        
-        # Create reading assignment entry for classroom integration
-        if published:
-            await self.create_reading_assignment_entry(db, lecture_id)
-        
         await db.commit()
         
         return bool(published)
-    
-    async def create_reading_assignment_entry(
-        self,
-        db: AsyncSession,
-        lecture_id: UUID
-    ) -> UUID:
-        """Create an entry in reading_assignments for classroom integration"""
-        # Get lecture details
-        lecture_query = sql_text("""
-            SELECT title, subject, grade_level, teacher_id
-            FROM lecture_assignments
-            WHERE id = :lecture_id
-        """)
-        
-        result = await db.execute(lecture_query, {"lecture_id": lecture_id})
-        lecture = result.mappings().first()
-        
-        if not lecture:
-            raise ValueError("Lecture not found")
-        
-        # Check if entry already exists
-        check_query = sql_text("""
-            SELECT id FROM reading_assignments
-            WHERE id = :lecture_id
-        """)
-        
-        existing = await db.execute(check_query, {"lecture_id": lecture_id})
-        if existing.scalar():
-            return lecture_id
-        
-        # Create reading assignment entry
-        insert_query = sql_text("""
-            INSERT INTO reading_assignments (
-                id, teacher_id, assignment_title, subject, 
-                grade_level, assignment_type, status
-            ) VALUES (
-                :id, :teacher_id, :title, :subject,
-                :grade_level, 'UMALecture', 'published'
-            ) ON CONFLICT (id) DO NOTHING
-            RETURNING id
-        """)
-        
-        result = await db.execute(
-            insert_query,
-            {
-                "id": lecture_id,
-                "teacher_id": lecture["teacher_id"],
-                "title": lecture["title"],
-                "subject": lecture["subject"],
-                "grade_level": lecture["grade_level"]
-            }
-        )
-        
-        await db.commit()
-        return lecture_id
     
     async def assign_to_classrooms(
         self,
@@ -577,80 +575,118 @@ class UMALectureService:
         self,
         db: AsyncSession,
         student_id: UUID,
-        assignment_id: UUID
+        assignment_id: int
     ) -> LectureStudentProgress:
         """Get or create student progress for a lecture"""
-        # Get student assignment
-        sa_query = sql_text("""
-            SELECT sa.*, la.id as lecture_id
-            FROM student_assignments sa
-            JOIN classroom_assignments ca ON ca.id = sa.classroom_assignment_id
-            JOIN lecture_assignments la ON la.id = ca.assignment_id
-            WHERE sa.student_id = :student_id
-            AND sa.id = :assignment_id
-            AND ca.assignment_type = 'UMALecture'
-        """)
-        
-        result = await db.execute(
-            sa_query,
-            {"student_id": student_id, "assignment_id": assignment_id}
+        # First check if student assignment exists
+        query = (
+            select(StudentAssignment)
+            .where(
+                and_(
+                    StudentAssignment.student_id == student_id,
+                    StudentAssignment.classroom_assignment_id == assignment_id
+                )
+            )
         )
         
-        student_assignment = result.mappings().first()
+        result = await db.execute(query)
+        student_assignment = result.scalar_one_or_none()
+        
         if not student_assignment:
-            raise ValueError("Assignment not found")
+            # Create student assignment if it doesn't exist
+            # First get the classroom assignment and reading assignment
+            ca_query = (
+                select(ClassroomAssignment, ReadingAssignment)
+                .join(ReadingAssignment, ClassroomAssignment.assignment_id == ReadingAssignment.id)
+                .where(
+                    and_(
+                        ClassroomAssignment.id == assignment_id,
+                        ClassroomAssignment.assignment_type == "UMALecture"
+                    )
+                )
+            )
+            
+            ca_result = await db.execute(ca_query)
+            ca_row = ca_result.first()
+            
+            if not ca_row:
+                raise ValueError("Classroom assignment not found")
+            
+            classroom_assignment, reading_assignment = ca_row
+            
+            # Create new student assignment
+            student_assignment = StudentAssignment(
+                student_id=student_id,
+                assignment_id=reading_assignment.id,
+                classroom_assignment_id=assignment_id,
+                assignment_type="UMALecture",
+                status="in_progress",
+                started_at=datetime.utcnow(),
+                progress_metadata={
+                    "lecture_path": [],
+                    "topic_progress": {},
+                    "total_points": 0
+                }
+            )
+            db.add(student_assignment)
+            await db.commit()
+            await db.refresh(student_assignment)
+            
+            lecture_id = reading_assignment.id
+        else:
+            # Get the lecture ID from the assignment
+            lecture_id = student_assignment.assignment_id
         
         # Initialize progress if needed
-        progress_metadata = student_assignment.get("progress_metadata") or {}
+        progress_metadata = student_assignment.progress_metadata or {}
         if "lecture_path" not in progress_metadata:
             progress_metadata["lecture_path"] = []
             progress_metadata["topic_progress"] = {}
             progress_metadata["total_points"] = 0
             
-            update_query = sql_text("""
-                UPDATE student_assignments
-                SET progress_metadata = :metadata,
-                    started_at = COALESCE(started_at, NOW())
-                WHERE id = :assignment_id
-            """)
+            # Update using SQLAlchemy
+            student_assignment.progress_metadata = progress_metadata
+            if not student_assignment.started_at:
+                student_assignment.started_at = datetime.utcnow()
             
             await db.execute(
-                update_query,
-                {
-                    "metadata": json.dumps(progress_metadata),
-                    "assignment_id": assignment_id
-                }
+                update(StudentAssignment)
+                .where(StudentAssignment.id == student_assignment.id)
+                .values(
+                    progress_metadata=progress_metadata,
+                    started_at=StudentAssignment.started_at or datetime.utcnow()
+                )
             )
             await db.commit()
         
         return LectureStudentProgress(
             assignment_id=assignment_id,
-            lecture_id=student_assignment["lecture_id"],
+            lecture_id=lecture_id,
             current_topic=progress_metadata.get("current_topic"),
             current_difficulty=progress_metadata.get("current_difficulty"),
             topics_completed=progress_metadata.get("topics_completed", []),
             topic_progress=progress_metadata.get("topic_progress", {}),
             total_points=progress_metadata.get("total_points", 0),
-            last_activity_at=student_assignment.get("last_activity_at"),
-            started_at=student_assignment["started_at"],
-            completed_at=student_assignment.get("completed_at")
+            last_activity_at=student_assignment.last_activity_at,
+            started_at=student_assignment.started_at,
+            completed_at=student_assignment.completed_at
         )
     
     async def get_lecture_topics(
         self,
         db: AsyncSession,
-        assignment_id: UUID,
+        assignment_id: int,
         student_id: UUID
     ) -> List[Dict[str, Any]]:
         """Get available topics for a lecture"""
-        # Get lecture structure
+        # Get lecture structure and student progress
         query = sql_text("""
-            SELECT la.lecture_structure, sa.progress_metadata
-            FROM lecture_assignments la
-            JOIN classroom_assignments ca ON ca.assignment_id = la.id
-            JOIN student_assignments sa ON sa.classroom_assignment_id = ca.id
-            WHERE sa.id = :assignment_id
-            AND sa.student_id = :student_id
+            SELECT ra.raw_content, sa.progress_metadata
+            FROM reading_assignments ra
+            JOIN classroom_assignments ca ON ca.assignment_id = ra.id
+            LEFT JOIN student_assignments sa ON sa.classroom_assignment_id = ca.id
+                AND sa.student_id = :student_id
+            WHERE ca.id = :assignment_id
             AND ca.assignment_type = 'UMALecture'
         """)
         
@@ -660,10 +696,14 @@ class UMALectureService:
         )
         
         data = result.mappings().first()
-        if not data or not data["lecture_structure"]:
+        if not data:
             return []
         
-        structure = data["lecture_structure"]
+        metadata = json.loads(data.get("raw_content", "{}"))
+        structure = metadata.get("lecture_structure", {})
+        if not structure:
+            return []
+        
         progress = data.get("progress_metadata", {})
         topic_progress = progress.get("topic_progress", {})
         
@@ -681,7 +721,7 @@ class UMALectureService:
     async def get_topic_content(
         self,
         db: AsyncSession,
-        assignment_id: UUID,
+        assignment_id: int,
         topic_id: str,
         difficulty: str,
         student_id: UUID
@@ -689,25 +729,27 @@ class UMALectureService:
         """Get content for a specific topic and difficulty"""
         # Get lecture structure and images
         query = sql_text("""
-            SELECT la.lecture_structure, la.id as lecture_id
-            FROM lecture_assignments la
-            JOIN classroom_assignments ca ON ca.assignment_id = la.id
-            JOIN student_assignments sa ON sa.classroom_assignment_id = ca.id
-            WHERE sa.id = :assignment_id
-            AND sa.student_id = :student_id
+            SELECT ra.raw_content, ra.id as lecture_id
+            FROM reading_assignments ra
+            JOIN classroom_assignments ca ON ca.assignment_id = ra.id
+            WHERE ca.id = :assignment_id
             AND ca.assignment_type = 'UMALecture'
         """)
         
         result = await db.execute(
             query,
-            {"assignment_id": assignment_id, "student_id": student_id}
+            {"assignment_id": assignment_id}
         )
         
         data = result.mappings().first()
-        if not data or not data["lecture_structure"]:
+        if not data:
             return None
         
-        structure = data["lecture_structure"]
+        metadata = json.loads(data.get("raw_content", "{}"))
+        structure = metadata.get("lecture_structure", {})
+        if not structure:
+            return None
+        
         lecture_id = data["lecture_id"]
         
         # Get topic content
@@ -757,7 +799,7 @@ class UMALectureService:
         self,
         db: AsyncSession,
         student_id: UUID,
-        assignment_id: UUID,
+        assignment_id: int,
         topic_id: str,
         difficulty: str,
         interaction_type: str,
@@ -768,9 +810,9 @@ class UMALectureService:
         """Track student interaction with lecture content"""
         # Get lecture ID
         lecture_query = sql_text("""
-            SELECT la.id as lecture_id
-            FROM lecture_assignments la
-            JOIN classroom_assignments ca ON ca.assignment_id = la.id
+            SELECT ra.id as lecture_id
+            FROM reading_assignments ra
+            JOIN classroom_assignments ca ON ca.assignment_id = ra.id
             JOIN student_assignments sa ON sa.classroom_assignment_id = ca.id
             WHERE sa.id = :assignment_id
             AND sa.student_id = :student_id
@@ -825,14 +867,14 @@ class UMALectureService:
                     to_jsonb(COALESCE((progress_metadata->>'total_points')::int, 0) + :points)
                 ),
                 last_activity_at = NOW()
-                WHERE id = :assignment_id
+                WHERE classroom_assignment_id = :assignment_id
             """)
             
             await db.execute(
                 update_query,
                 {
                     "assignment_id": assignment_id,
-                    "points": question_data.get("points_earned", 1)
+                    "points": 1  # Default points
                 }
             )
         
@@ -842,7 +884,7 @@ class UMALectureService:
         self,
         db: AsyncSession,
         student_id: UUID,
-        assignment_id: UUID,
+        assignment_id: int,
         topic_id: str,
         difficulty: str,
         question_index: int,
@@ -865,12 +907,7 @@ class UMALectureService:
         # Track interaction
         await self.track_interaction(
             db, student_id, assignment_id, topic_id, difficulty, "answer_question",
-            {
-                "question": question["question"],
-                "answer": answer,
-                "is_correct": is_correct,
-                "points_earned": 10 if is_correct else 0
-            }
+            question["question"], answer, is_correct
         )
         
         # Determine next action
@@ -899,7 +936,7 @@ class UMALectureService:
                         :topic_id
                     ))
                 )
-                WHERE id = :assignment_id
+                WHERE classroom_assignment_id = :assignment_id
                 AND NOT (progress_metadata->'topics_completed' ? :topic_id)
             """)
             
@@ -933,18 +970,18 @@ class UMALectureService:
         self,
         db: AsyncSession,
         student_id: UUID,
-        assignment_id: UUID,
+        assignment_id: int,
         lecture_id: UUID
     ) -> bool:
         """Verify student has access to a lecture through assignment"""
         query = sql_text("""
             SELECT 1
-            FROM student_assignments sa
-            JOIN classroom_assignments ca ON ca.id = sa.classroom_assignment_id
-            JOIN lecture_assignments la ON la.id = ca.assignment_id
-            WHERE sa.student_id = :student_id
-            AND sa.id = :assignment_id
-            AND la.id = :lecture_id
+            FROM classroom_assignments ca
+            JOIN reading_assignments ra ON ra.id = ca.assignment_id
+            LEFT JOIN student_assignments sa ON sa.classroom_assignment_id = ca.id
+                AND sa.student_id = :student_id
+            WHERE ca.id = :assignment_id
+            AND ra.id = :lecture_id
             AND ca.assignment_type = 'UMALecture'
         """)
         
@@ -963,14 +1000,14 @@ class UMALectureService:
         self,
         db: AsyncSession,
         student_id: UUID,
-        assignment_id: UUID
+        assignment_id: int
     ) -> bool:
         """Verify student has access to an assignment"""
         query = sql_text("""
             SELECT 1
             FROM student_assignments sa
             WHERE sa.student_id = :student_id
-            AND sa.id = :assignment_id
+            AND sa.classroom_assignment_id = :assignment_id
         """)
         
         result = await db.execute(
@@ -984,20 +1021,20 @@ class UMALectureService:
         self,
         db: AsyncSession,
         lecture_id: UUID,
-        assignment_id: UUID,
+        assignment_id: int,
         student_id: UUID
     ) -> Optional[Dict[str, Any]]:
         """Get lecture data with student progress for student view"""
         # Get lecture and progress
         query = sql_text("""
             SELECT 
-                la.*,
+                ra.*,
                 sa.progress_metadata
-            FROM lecture_assignments la
-            JOIN classroom_assignments ca ON ca.assignment_id = la.id
+            FROM reading_assignments ra
+            JOIN classroom_assignments ca ON ca.assignment_id = ra.id
             JOIN student_assignments sa ON sa.classroom_assignment_id = ca.id
-            WHERE la.id = :lecture_id
-            AND sa.id = :assignment_id
+            WHERE ra.id = :lecture_id
+            AND ca.id = :assignment_id
             AND sa.student_id = :student_id
         """)
         
@@ -1013,6 +1050,9 @@ class UMALectureService:
         data = result.mappings().first()
         if not data:
             return None
+        
+        # Transform to lecture format
+        lecture_data = self._transform_to_lecture_format(dict(data))
         
         # Get all images for the lecture
         image_query = sql_text("""
@@ -1033,7 +1073,7 @@ class UMALectureService:
             images_by_topic[topic_id].append(img)
         
         return {
-            **dict(data),
+            **lecture_data,
             "images_by_topic": images_by_topic,
             "progress_metadata": data["progress_metadata"] or self._initialize_progress_metadata()
         }
@@ -1049,18 +1089,23 @@ class UMALectureService:
         """Get all difficulty levels content for a topic"""
         # Get lecture structure
         lecture_query = sql_text("""
-            SELECT lecture_structure
-            FROM lecture_assignments
+            SELECT raw_content
+            FROM reading_assignments
             WHERE id = :lecture_id
+            AND assignment_type = 'UMALecture'
         """)
         
         result = await db.execute(lecture_query, {"lecture_id": lecture_id})
         data = result.mappings().first()
         
-        if not data or not data["lecture_structure"]:
+        if not data:
             return None
         
-        structure = data["lecture_structure"]
+        metadata = json.loads(data.get("raw_content", "{}"))
+        structure = metadata.get("lecture_structure", {})
+        if not structure:
+            return None
+        
         topic_data = structure.get("topics", {}).get(topic_id)
         if not topic_data:
             return None
@@ -1084,7 +1129,7 @@ class UMALectureService:
         progress_query = sql_text("""
             SELECT progress_metadata
             FROM student_assignments
-            WHERE id = :assignment_id
+            WHERE classroom_assignment_id = :assignment_id
             AND student_id = :student_id
         """)
         
@@ -1131,7 +1176,7 @@ class UMALectureService:
         self,
         db: AsyncSession,
         student_id: UUID,
-        assignment_id: UUID,
+        assignment_id: int,
         topic_id: str,
         tab: str,
         question_index: Optional[int],
@@ -1142,7 +1187,7 @@ class UMALectureService:
         progress_query = sql_text("""
             SELECT id, progress_metadata
             FROM student_assignments
-            WHERE id = :assignment_id
+            WHERE classroom_assignment_id = :assignment_id
             AND student_id = :student_id
         """)
         
@@ -1200,7 +1245,7 @@ class UMALectureService:
             UPDATE student_assignments
             SET progress_metadata = :metadata,
                 updated_at = NOW()
-            WHERE id = :assignment_id
+            WHERE classroom_assignment_id = :assignment_id
             AND student_id = :student_id
         """)
         
@@ -1255,7 +1300,7 @@ class UMALectureService:
     async def update_current_position(
         self,
         db: AsyncSession,
-        assignment_id: UUID,
+        assignment_id: int,
         student_id: UUID,
         current_topic: Optional[str],
         current_tab: Optional[str]
@@ -1265,7 +1310,7 @@ class UMALectureService:
         progress_query = sql_text("""
             SELECT progress_metadata
             FROM student_assignments
-            WHERE id = :assignment_id
+            WHERE classroom_assignment_id = :assignment_id
             AND student_id = :student_id
         """)
         
@@ -1291,7 +1336,7 @@ class UMALectureService:
             UPDATE student_assignments
             SET progress_metadata = :metadata,
                 updated_at = NOW()
-            WHERE id = :assignment_id
+            WHERE classroom_assignment_id = :assignment_id
             AND student_id = :student_id
         """)
         
@@ -1331,3 +1376,27 @@ class UMALectureService:
                 return True
         
         return False
+    
+    def _transform_to_lecture_format(self, reading_assignment: Dict[str, Any]) -> Dict[str, Any]:
+        """Transform reading_assignments row to lecture format"""
+        # Parse metadata from raw_content
+        metadata = json.loads(reading_assignment.get("raw_content", "{}"))
+        
+        return {
+            "id": reading_assignment["id"],
+            "teacher_id": reading_assignment["teacher_id"],
+            "title": reading_assignment["assignment_title"],
+            "subject": reading_assignment["subject"],
+            "grade_level": reading_assignment["grade_level"],
+            "learning_objectives": metadata.get("learning_objectives", []),
+            "topic_outline": metadata.get("topic_outline"),
+            "lecture_structure": metadata.get("lecture_structure"),
+            "status": reading_assignment["status"],
+            "processing_started_at": metadata.get("processing_started_at"),
+            "processing_completed_at": metadata.get("processing_completed_at"),
+            "processing_error": metadata.get("processing_error"),
+            "created_at": reading_assignment["created_at"],
+            "updated_at": reading_assignment["updated_at"],
+            "deleted_at": reading_assignment["deleted_at"],
+            "raw_content": reading_assignment["raw_content"]  # Keep original for reference
+        }

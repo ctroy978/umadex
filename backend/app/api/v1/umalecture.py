@@ -311,7 +311,7 @@ async def assign_to_classrooms(
 # Student Endpoints
 @router.get("/assignments/{assignment_id}/start")
 async def start_lecture_assignment(
-    assignment_id: UUID,
+    assignment_id: int,
     student: User = Depends(require_student),
     db: AsyncSession = Depends(get_db)
 ):
@@ -326,7 +326,7 @@ async def start_lecture_assignment(
 @router.get("/lectures/{lecture_id}/student-view")
 async def get_lecture_student_view(
     lecture_id: UUID,
-    assignment_id: UUID,
+    assignment_id: int,
     student: User = Depends(require_student),
     db: AsyncSession = Depends(get_db)
 ):
@@ -353,7 +353,7 @@ async def get_lecture_student_view(
 async def get_topic_all_content(
     lecture_id: UUID,
     topic_id: str,
-    assignment_id: UUID,
+    assignment_id: int,
     student: User = Depends(require_student),
     db: AsyncSession = Depends(get_db)
 ):
@@ -379,7 +379,7 @@ async def get_topic_all_content(
 async def get_lecture_image(
     lecture_id: UUID,
     image_id: UUID,
-    assignment_id: UUID,
+    assignment_id: int,
     student: User = Depends(require_student),
     db: AsyncSession = Depends(get_db)
 ):
@@ -401,7 +401,7 @@ async def get_lecture_image(
 
 @router.get("/assignments/{assignment_id}/topics", response_model=List[LectureTopicResponse])
 async def get_lecture_topics(
-    assignment_id: UUID,
+    assignment_id: int,
     student: User = Depends(require_student),
     db: AsyncSession = Depends(get_db)
 ):
@@ -415,7 +415,7 @@ async def get_lecture_topics(
 
 @router.get("/assignments/{assignment_id}/topics/{topic_id}/content")
 async def get_topic_content(
-    assignment_id: UUID,
+    assignment_id: int,
     topic_id: str,
     difficulty: str = "basic",
     student: User = Depends(require_student),
@@ -439,7 +439,7 @@ async def get_topic_content(
 
 @router.post("/assignments/{assignment_id}/topics/{topic_id}/answer")
 async def answer_topic_question(
-    assignment_id: UUID,
+    assignment_id: int,
     topic_id: str,
     answer_data: Dict[str, Any],
     student: User = Depends(require_student),
@@ -465,7 +465,7 @@ async def answer_topic_question(
 
 @router.get("/assignments/{assignment_id}/progress")
 async def get_student_progress(
-    assignment_id: UUID,
+    assignment_id: int,
     student: User = Depends(require_student),
     db: AsyncSession = Depends(get_db)
 ):
@@ -493,6 +493,12 @@ async def update_progress(
     
     if not all([assignment_id, topic_id, tab]):
         raise HTTPException(status_code=400, detail="Missing required fields")
+    
+    # Convert assignment_id to int
+    try:
+        assignment_id = int(assignment_id)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="Invalid assignment_id format")
     
     updated_progress = await lecture_service.update_student_progress(
         db, student.id, assignment_id, topic_id, tab, question_index, is_correct
@@ -524,6 +530,12 @@ async def evaluate_response(
     if not all([assignment_id, topic_id, difficulty, question_text, student_answer]):
         raise HTTPException(status_code=400, detail="Missing required fields")
     
+    # Convert assignment_id to int
+    try:
+        assignment_id = int(assignment_id)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="Invalid assignment_id format")
+    
     # Verify access
     access_check = await lecture_service.verify_student_assignment_access(
         db, student.id, assignment_id
@@ -551,9 +563,9 @@ async def evaluate_response(
     return result
 
 
-@router.put("/lectures/progress/{progress_id}/current-position")
+@router.put("/lectures/progress/{assignment_id}/current-position")
 async def update_current_position(
-    progress_id: UUID,
+    assignment_id: int,
     position_data: Dict[str, Any],
     student: User = Depends(require_student),
     db: AsyncSession = Depends(get_db)
@@ -563,7 +575,7 @@ async def update_current_position(
     current_tab = position_data.get("current_tab")
     
     success = await lecture_service.update_current_position(
-        db, progress_id, student.id, current_topic, current_tab
+        db, assignment_id, student.id, current_topic, current_tab
     )
     
     if not success:

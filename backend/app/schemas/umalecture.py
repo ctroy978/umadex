@@ -126,7 +126,7 @@ class LectureAnswerResult(BaseModel):
 
 class LectureStudentProgress(BaseModel):
     """Schema for student progress on a lecture"""
-    assignment_id: UUID
+    assignment_id: int  # classroom_assignment_id
     lecture_id: UUID
     current_topic: Optional[str] = None
     current_difficulty: Optional[str] = None

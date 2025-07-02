@@ -245,7 +245,7 @@ export const umalectureApi = {
   ) => {
     const params = new URLSearchParams({ difficulty })
     return apiRequest<LectureTopicContent>(
-      `/v1/umalecture/assignments/${assignmentId}/topics/${topicId}/content?${params}`
+      `/v1/umalecture/assignments/${assignmentId}/topics/${encodeURIComponent(topicId)}/content?${params}`
     )
   },
 
@@ -256,7 +256,7 @@ export const umalectureApi = {
     questionIndex: number,
     answer: string
   ) =>
-    apiRequest(`/v1/umalecture/assignments/${assignmentId}/topics/${topicId}/answer`, {
+    apiRequest(`/v1/umalecture/assignments/${assignmentId}/topics/${encodeURIComponent(topicId)}/answer`, {
       method: 'POST',
       body: JSON.stringify({
         difficulty,
@@ -278,7 +278,7 @@ export const umalectureApi = {
 
   getTopicAllContent: (lectureId: string, topicId: string, assignmentId: string) =>
     apiRequest<TopicContent>(
-      `/v1/umalecture/lectures/${lectureId}/topic/${topicId}/content?assignment_id=${assignmentId}`
+      `/v1/umalecture/lectures/${lectureId}/topic/${encodeURIComponent(topicId)}/content?assignment_id=${assignmentId}`
     ),
 
   getLectureImage: (lectureId: string, imageId: string, assignmentId: string) =>

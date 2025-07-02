@@ -733,13 +733,19 @@ async def get_classroom_detail(
     # Get UMALecture assignments
     lecture_query = await db.execute(
         select(
+            ReadingAssignment,
             ClassroomAssignment,
             StudentAssignment.id.label("student_assignment_id"),
             StudentAssignment.started_at,
             StudentAssignment.completed_at,
             StudentAssignment.progress_metadata
         )
-        .join(StudentAssignment,
+        .join(ClassroomAssignment,
+              and_(
+                  ClassroomAssignment.assignment_id == ReadingAssignment.id,
+                  ClassroomAssignment.assignment_type == "UMALecture"
+              ))
+        .outerjoin(StudentAssignment,
               and_(
                   StudentAssignment.classroom_assignment_id == ClassroomAssignment.id,
                   StudentAssignment.student_id == current_user.id
@@ -748,26 +754,26 @@ async def get_classroom_detail(
             and_(
                 ClassroomAssignment.classroom_id == classroom_id,
                 ClassroomAssignment.assignment_type == "UMALecture",
-                ClassroomAssignment.removed_from_classroom_at.is_(None)
+                ClassroomAssignment.removed_from_classroom_at.is_(None),
+                ReadingAssignment.deleted_at.is_(None)
             )
         )
         .order_by(ClassroomAssignment.start_date, ClassroomAssignment.display_order, ClassroomAssignment.assigned_at)
     )
     
-    for row in lecture_query:
-        ca = row.ClassroomAssignment
-        student_assignment_id = row.student_assignment_id
-        started_at = row.started_at
-        completed_at = row.completed_at
-        progress_metadata = row.progress_metadata or {}
-        
+    for reading, ca, student_assignment_id, started_at, completed_at, progress_metadata in lecture_query:
         status = calculate_assignment_status(ca.start_date, ca.end_date)
+        
+        # For UMALecture, we use the classroom_assignment id as the ID
+        # since student_assignment records may not exist yet
+        assignment_id = str(ca.id)
+        
         assignments.append(StudentAssignmentResponse(
-            id=str(student_assignment_id),
-            title="Interactive Lecture",  # Could fetch from lecture_assignments table if needed
+            id=assignment_id,
+            title=reading.assignment_title,  # Use the actual lecture title
             work_title=None,
             author=None,
-            grade_level=None,
+            grade_level=reading.grade_level,
             type="UMALecture",
             item_type="lecture",
             assigned_at=ca.assigned_at,
