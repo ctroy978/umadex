@@ -29,13 +29,17 @@ export default function LectureProcessingPage() {
   
   const [status, setStatus] = useState<LectureProcessingStatus | null>(null)
   const [currentStep, setCurrentStep] = useState(0)
+  const [stepProgress, setStepProgress] = useState(0)
   const [error, setError] = useState<string | null>(null)
+  const [elapsedTime, setElapsedTime] = useState(0)
+  const [stepStatuses, setStepStatuses] = useState<{[key: string]: string}>({})
 
   useEffect(() => {
     const checkStatus = async () => {
       try {
         const processingStatus = await umalectureApi.getProcessingStatus(lectureId)
         setStatus(processingStatus)
+        console.log('Processing status:', processingStatus)
         
         if (processingStatus.status === 'published') {
           // Processing complete, redirect to review
@@ -43,12 +47,62 @@ export default function LectureProcessingPage() {
         } else if (processingStatus.status === 'draft' && processingStatus.processing_error) {
           setError(processingStatus.processing_error)
         } else if (processingStatus.status === 'processing') {
-          // Simulate progress through steps
-          const stepProgress = Math.min(
-            Math.floor((Date.now() - new Date(processingStatus.processing_started_at!).getTime()) / 10000),
-            processingSteps.length - 1
-          )
-          setCurrentStep(stepProgress)
+          // Calculate elapsed time
+          const startTime = new Date(processingStatus.processing_started_at!).getTime()
+          const elapsed = Date.now() - startTime
+          setElapsedTime(Math.floor(elapsed / 1000))
+          
+          // Use actual processing steps if available
+          if (processingStatus.processing_steps) {
+            let activeStepIndex = -1
+            let activeStepProgress = 0
+            const newStepStatuses: {[key: string]: string} = {}
+            
+            // Build step statuses map
+            processingSteps.forEach((step, index) => {
+              const stepData = processingStatus.processing_steps?.[step.id]
+              if (stepData) {
+                newStepStatuses[step.id] = stepData.status
+                if (stepData.status === 'in_progress') {
+                  activeStepIndex = index
+                  // Calculate progress based on time in current step
+                  if (stepData.started_at) {
+                    const stepElapsed = Date.now() - new Date(stepData.started_at).getTime()
+                    activeStepProgress = Math.min((stepElapsed / 15000) * 100, 90) // Cap at 90%
+                  }
+                }
+              } else {
+                newStepStatuses[step.id] = 'pending'
+              }
+            })
+            
+            // If no step is in progress, find the last completed step
+            if (activeStepIndex === -1) {
+              processingSteps.forEach((step, index) => {
+                if (newStepStatuses[step.id] === 'completed') {
+                  activeStepIndex = index
+                }
+              })
+              activeStepProgress = 100 // Last completed step is 100% done
+            }
+            
+            setStepStatuses(newStepStatuses)
+            setCurrentStep(Math.max(0, activeStepIndex))
+            setStepProgress(activeStepProgress)
+          } else {
+            // Fallback to estimation
+            const estimatedStep = Math.min(
+              Math.floor(elapsed / 20000),
+              processingSteps.length - 1
+            )
+            setCurrentStep(estimatedStep)
+            
+            const progressInStep = Math.min(
+              ((elapsed % 20000) / 20000) * 100,
+              100
+            )
+            setStepProgress(progressInStep)
+          }
         }
       } catch (err) {
         console.error('Error checking status:', err)
@@ -101,11 +155,47 @@ export default function LectureProcessingPage() {
     <div className="max-w-2xl mx-auto p-8">
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
         {/* Header */}
-        <div className="flex items-center space-x-3 mb-8">
-          <AcademicCapIcon className="h-8 w-8 text-red-500" />
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Creating Your Interactive Lecture</h1>
-            <p className="text-gray-600 mt-1">AI is processing your content. This may take a few minutes.</p>
+        <div className="flex items-center justify-between mb-8">
+          <div className="flex items-center space-x-3">
+            <AcademicCapIcon className="h-8 w-8 text-red-500" />
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">Creating Your Interactive Lecture</h1>
+              <p className="text-gray-600 mt-1">AI is processing your content. This may take a few minutes.</p>
+            </div>
+          </div>
+          {elapsedTime > 0 && (
+            <div className="text-right">
+              <p className="text-sm text-gray-500">Elapsed time</p>
+              <p className="text-lg font-medium text-gray-900">
+                {Math.floor(elapsedTime / 60)}:{(elapsedTime % 60).toString().padStart(2, '0')}
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Overall Progress Bar */}
+        <div className="mb-8">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium text-gray-700">Overall Progress</span>
+            <span className="text-sm text-gray-500">
+              {(() => {
+                const completedSteps = Object.values(stepStatuses).filter(s => s === 'completed').length
+                const inProgressBonus = Object.values(stepStatuses).some(s => s === 'in_progress') ? stepProgress / 100 : 0
+                return Math.round((completedSteps + inProgressBonus) / processingSteps.length * 100)
+              })()}%
+            </span>
+          </div>
+          <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+            <div 
+              className="bg-gradient-to-r from-primary-500 to-primary-600 h-3 rounded-full transition-all duration-500 ease-out"
+              style={{ width: `${(() => {
+                const completedSteps = Object.values(stepStatuses).filter(s => s === 'completed').length
+                const inProgressBonus = Object.values(stepStatuses).some(s => s === 'in_progress') ? stepProgress / 100 : 0
+                return (completedSteps + inProgressBonus) / processingSteps.length * 100
+              })()}%` }}
+            >
+              <div className="h-full bg-white/20 animate-pulse"></div>
+            </div>
           </div>
         </div>
 
@@ -113,8 +203,10 @@ export default function LectureProcessingPage() {
         <div className="space-y-4 mb-8">
           {processingSteps.map((step, index) => {
             const StepIcon = step.icon
-            const isActive = index === currentStep
-            const isComplete = index < currentStep
+            const stepStatus = stepStatuses[step.id] || 'pending'
+            const isActive = stepStatus === 'in_progress'
+            const isComplete = stepStatus === 'completed'
+            const isPending = stepStatus === 'pending'
             
             return (
               <div key={step.id} className="flex items-center space-x-3">
@@ -129,12 +221,15 @@ export default function LectureProcessingPage() {
                   )}
                 </div>
                 <div className="flex-1">
-                  <p className={`text-sm font-medium ${isActive ? 'text-gray-900' : 'text-gray-500'}`}>
+                  <p className={`text-sm font-medium ${isActive ? 'text-gray-900' : isComplete ? 'text-gray-700' : 'text-gray-500'}`}>
                     {step.label}
                   </p>
-                  {isActive && (
-                    <div className="mt-1 w-full bg-gray-200 rounded-full h-1.5">
-                      <div className="bg-primary-600 h-1.5 rounded-full animate-pulse" style={{ width: '60%' }}></div>
+                  {isActive && index === currentStep && (
+                    <div className="mt-1 w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+                      <div 
+                        className="bg-primary-600 h-2 rounded-full transition-all duration-500 ease-out"
+                        style={{ width: `${stepProgress}%` }}
+                      ></div>
                     </div>
                   )}
                 </div>

@@ -59,6 +59,13 @@ export interface LectureProcessingStatus {
   processing_started_at?: string
   processing_completed_at?: string
   processing_error?: string
+  processing_steps?: {
+    [key: string]: {
+      status: string
+      started_at?: string
+      completed_at?: string
+    }
+  }
 }
 
 export interface LectureTopicContent {

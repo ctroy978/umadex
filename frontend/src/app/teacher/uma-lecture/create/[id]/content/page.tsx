@@ -57,8 +57,35 @@ export default function CreateLectureContentPage() {
   // Extract topics from outline for image association
   const extractedTopics = outline
     .split('\n')
-    .filter(line => line.trim() && !line.trim().startsWith('-'))
-    .map(line => line.trim().replace(':', ''))
+    .map((line, index, lines) => {
+      const trimmed = line.trim()
+      const originalIndent = line.length - trimmed.length
+      
+      // Skip empty lines or sub-items
+      if (!trimmed || trimmed.startsWith('-') || trimmed.startsWith('*') || trimmed.startsWith('•')) {
+        return null
+      }
+      
+      // Check if next line is more indented (making this a topic)
+      if (index + 1 < lines.length) {
+        const nextLine = lines[index + 1]
+        const nextTrimmed = nextLine.trim()
+        const nextIndent = nextLine.length - nextTrimmed.length
+        
+        // This is a topic if next line is more indented or starts with a bullet
+        if (nextIndent > originalIndent || nextTrimmed.startsWith('-') || nextTrimmed.startsWith('*')) {
+          return trimmed.replace(':', '')
+        }
+      }
+      
+      // Also include lines that look like topics (no indent, not too short)
+      if (originalIndent === 0 && trimmed.length > 3) {
+        return trimmed.replace(':', '')
+      }
+      
+      return null
+    })
+    .filter(topic => topic !== null)
 
   useEffect(() => {
     loadLecture()
@@ -84,6 +111,25 @@ export default function CreateLectureContentPage() {
 
   const handleOutlineChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setOutline(e.target.value)
+  }
+
+  const handleOutlineKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Tab') {
+      e.preventDefault()
+      const textarea = e.currentTarget
+      const start = textarea.selectionStart
+      const end = textarea.selectionEnd
+      const value = textarea.value
+      
+      // Insert tab character (or spaces)
+      const tabChar = '  ' // Using 2 spaces instead of tab for better compatibility
+      setOutline(value.substring(0, start) + tabChar + value.substring(end))
+      
+      // Move cursor after the inserted tab
+      setTimeout(() => {
+        textarea.selectionStart = textarea.selectionEnd = start + tabChar.length
+      }, 0)
+    }
   }
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -291,6 +337,7 @@ export default function CreateLectureContentPage() {
             <textarea
               value={outline}
               onChange={handleOutlineChange}
+              onKeyDown={handleOutlineKeyDown}
               className="w-full h-96 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 font-mono text-sm"
               placeholder="Enter your lecture outline here..."
             />

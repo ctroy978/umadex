@@ -242,12 +242,18 @@ async def get_processing_status(
     if not lecture:
         raise HTTPException(status_code=404, detail="Lecture not found")
     
+    # Extract processing steps from metadata
+    import json
+    metadata = json.loads(lecture.get("raw_content", "{}"))
+    processing_steps = metadata.get("processing_steps", {})
+    
     return LectureProcessingStatus(
         lecture_id=lecture_id,
         status=lecture.get("status"),
         processing_started_at=lecture.get("processing_started_at"),
         processing_completed_at=lecture.get("processing_completed_at"),
-        processing_error=lecture.get("processing_error")
+        processing_error=lecture.get("processing_error"),
+        processing_steps=processing_steps
     )
 
 

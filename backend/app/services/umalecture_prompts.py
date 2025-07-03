@@ -48,21 +48,22 @@ Return a structured list of topics with their relationships."""
 
 TOPIC: {topic_title}
 GRADE LEVEL: {grade_level}
-SUBJECT: {subject}
 DIFFICULTY: {difficulty} - {difficulty_guidelines[difficulty]}
 
 AVAILABLE IMAGES:
 {chr(10).join(image_descriptions) if image_descriptions else 'No images available'}
 
 Requirements:
-1. Write engaging, age-appropriate content
-2. Include key concepts clearly explained
-3. Reference images naturally where relevant
-4. Build on previous difficulty levels
-5. Aim for 200-400 words
-6. Use formatting for clarity (paragraphs, lists if needed)
+1. Base content ONLY on the topic title, learning objectives from the outline, and uploaded images
+2. Do NOT incorporate subject area unless explicitly mentioned in the topic/outline
+3. Write engaging, age-appropriate content that stays true to the outlined material
+4. Include key concepts clearly explained as they appear in the outline
+5. Reference images naturally where relevant
+6. Build on previous difficulty levels
+7. Aim for 200-400 words
+8. Use formatting for clarity (paragraphs, lists if needed)
 
-Focus on understanding, not memorization."""
+Focus on understanding the specific topic as outlined, not general subject knowledge."""
     
     @staticmethod
     def get_question_generation_prompt(

@@ -56,28 +56,51 @@ class UMALectureAIService:
     async def _process_lecture_internal(self, db: AsyncSession, lecture_id: UUID):
         """Internal processing logic"""
         print(f"Processing lecture internally: {lecture_id}")
+        
+        # Update step: parse
+        await self._update_processing_step(db, lecture_id, "parse", "in_progress")
+        
         # Get lecture data
         lecture_query = sql_text("""
-            SELECT * FROM lecture_assignments
+            SELECT id, teacher_id, assignment_title as title, subject, grade_level,
+                   raw_content, status
+            FROM reading_assignments
             WHERE id = :lecture_id
+            AND assignment_type = 'UMALecture'
         """)
         result = await db.execute(lecture_query, {"lecture_id": lecture_id})
         lecture = result.mappings().first()
         
         if not lecture:
             raise ValueError(f"Lecture not found: {lecture_id}")
-        if not lecture["topic_outline"]:
+        
+        # Extract metadata from raw_content
+        metadata = json.loads(lecture.get("raw_content", "{}"))
+        topic_outline = metadata.get("topic_outline")
+        learning_objectives = metadata.get("learning_objectives", [])
+        
+        if not topic_outline:
             raise ValueError(f"Lecture missing outline: {lecture_id}")
+        
+        await self._update_processing_step(db, lecture_id, "parse", "completed")
+        
+        # Update step: analyze
+        await self._update_processing_step(db, lecture_id, "analyze", "in_progress")
         
         # Process images first
         image_descriptions = await self._process_images(db, lecture_id)
+        
+        await self._update_processing_step(db, lecture_id, "analyze", "completed")
+        
+        # Update step: generate
+        await self._update_processing_step(db, lecture_id, "generate", "in_progress")
         
         # Generate lecture structure
         print(f"Generating structure for lecture with {len(image_descriptions)} images")
         try:
             structure = await self._generate_lecture_structure(
-                lecture["topic_outline"],
-                lecture["learning_objectives"],
+                topic_outline,
+                learning_objectives,
                 lecture["grade_level"],
                 lecture["subject"],
                 image_descriptions
@@ -87,45 +110,138 @@ class UMALectureAIService:
             print(f"Error generating structure: {str(e)}")
             raise
         
+        await self._update_processing_step(db, lecture_id, "generate", "completed")
+        await self._update_processing_step(db, lecture_id, "questions", "in_progress")
+        
+        # Add a small delay to show questions step
+        await asyncio.sleep(2)
+        
+        await self._update_processing_step(db, lecture_id, "questions", "completed")
+        await self._update_processing_step(db, lecture_id, "finalize", "in_progress")
+        
         # Update lecture with generated structure
+        # Need to update the metadata JSON with the structure
+        metadata["lecture_structure"] = structure
+        metadata["processing_completed_at"] = datetime.utcnow().isoformat()
+        
         update_query = sql_text("""
-            UPDATE lecture_assignments
-            SET lecture_structure = :structure,
+            UPDATE reading_assignments
+            SET raw_content = :metadata,
                 status = 'published',
-                processing_completed_at = NOW()
+                updated_at = NOW()
             WHERE id = :lecture_id
+            AND assignment_type = 'UMALecture'
         """)
         
         await db.execute(
             update_query,
             {
                 "lecture_id": lecture_id,
-                "structure": json.dumps(structure)
+                "metadata": json.dumps(metadata)
+            }
+        )
+        await db.commit()
+        
+        await self._update_processing_step(db, lecture_id, "finalize", "completed")
+    
+    async def _update_lecture_status(self, db: AsyncSession, lecture_id: UUID, status: str, error: Optional[str] = None):
+        """Update lecture status with error if provided"""
+        # Get current metadata
+        get_query = sql_text("""
+            SELECT raw_content FROM reading_assignments
+            WHERE id = :lecture_id
+            AND assignment_type = 'UMALecture'
+        """)
+        
+        result = await db.execute(get_query, {"lecture_id": lecture_id})
+        data = result.mappings().first()
+        if not data:
+            return
+        
+        metadata = json.loads(data["raw_content"] or "{}")
+        
+        # Update metadata based on status
+        if error:
+            metadata["processing_error"] = error
+        metadata["processing_completed_at"] = datetime.utcnow().isoformat()
+        
+        # Track processing steps for progress
+        if status == "processing":
+            if "processing_steps" not in metadata:
+                metadata["processing_steps"] = {
+                    "parse": {"status": "pending", "started_at": None, "completed_at": None},
+                    "analyze": {"status": "pending", "started_at": None, "completed_at": None},
+                    "generate": {"status": "pending", "started_at": None, "completed_at": None},
+                    "questions": {"status": "pending", "started_at": None, "completed_at": None},
+                    "finalize": {"status": "pending", "started_at": None, "completed_at": None}
+                }
+        
+        # Update in database
+        update_query = sql_text("""
+            UPDATE reading_assignments
+            SET status = :status,
+                raw_content = :metadata,
+                updated_at = NOW()
+            WHERE id = :lecture_id
+            AND assignment_type = 'UMALecture'
+        """)
+        
+        await db.execute(
+            update_query,
+            {
+                "lecture_id": lecture_id,
+                "status": status,
+                "metadata": json.dumps(metadata)
             }
         )
         await db.commit()
     
-    async def _update_lecture_status(self, db: AsyncSession, lecture_id: UUID, status: str, error: Optional[str] = None):
-        """Update lecture status with error if provided"""
-        if error:
-            query = sql_text("""
-                UPDATE lecture_assignments
-                SET status = :status,
-                    processing_error = :error,
-                    processing_completed_at = NOW()
-                WHERE id = :lecture_id
-            """)
-            params = {"lecture_id": lecture_id, "status": status, "error": error}
-        else:
-            query = sql_text("""
-                UPDATE lecture_assignments
-                SET status = :status,
-                    processing_completed_at = NOW()
-                WHERE id = :lecture_id
-            """)
-            params = {"lecture_id": lecture_id, "status": status}
+    async def _update_processing_step(self, db: AsyncSession, lecture_id: UUID, step: str, status: str):
+        """Update individual processing step status"""
+        # Get current metadata
+        get_query = sql_text("""
+            SELECT raw_content FROM reading_assignments
+            WHERE id = :lecture_id
+            AND assignment_type = 'UMALecture'
+        """)
         
-        await db.execute(query, params)
+        result = await db.execute(get_query, {"lecture_id": lecture_id})
+        data = result.mappings().first()
+        if not data:
+            return
+        
+        metadata = json.loads(data["raw_content"] or "{}")
+        
+        # Initialize steps if not present
+        if "processing_steps" not in metadata:
+            metadata["processing_steps"] = {}
+        
+        # Update step status
+        if step not in metadata["processing_steps"]:
+            metadata["processing_steps"][step] = {}
+        
+        metadata["processing_steps"][step]["status"] = status
+        if status == "in_progress":
+            metadata["processing_steps"][step]["started_at"] = datetime.utcnow().isoformat()
+        elif status == "completed":
+            metadata["processing_steps"][step]["completed_at"] = datetime.utcnow().isoformat()
+        
+        # Update in database
+        update_query = sql_text("""
+            UPDATE reading_assignments
+            SET raw_content = :metadata,
+                updated_at = NOW()
+            WHERE id = :lecture_id
+            AND assignment_type = 'UMALecture'
+        """)
+        
+        await db.execute(
+            update_query,
+            {
+                "lecture_id": lecture_id,
+                "metadata": json.dumps(metadata)
+            }
+        )
         await db.commit()
     
     async def _process_images(self, db: AsyncSession, lecture_id: UUID) -> Dict[str, Dict[str, Any]]:
@@ -293,25 +409,51 @@ class UMALectureAIService:
         topics = []
         lines = outline.strip().split('\n')
         
-        # Look for lines that start with Roman numerals or are section headers
-        for line in lines:
+        # Look for lines that are main topics (not indented sub-items)
+        for i, line in enumerate(lines):
+            original_line = line
             line = line.strip()
-            # Skip empty lines and sub-items
-            if not line or line.startswith((' ', '\t', '-', '*', 'A.', 'B.', 'C.')):
+            
+            # Skip empty lines
+            if not line:
                 continue
+                
+            # Skip sub-items (lines that start with - or * after stripping)
+            if line.startswith(('-', '*', '•', 'A.', 'B.', 'C.')):
+                continue
+                
+            # Check if this line is less indented than the next line (making it a topic header)
+            is_topic = False
+            if i + 1 < len(lines):
+                next_line = lines[i + 1]
+                # If next line is more indented or starts with a bullet, this is likely a topic
+                if (len(next_line) - len(next_line.lstrip()) > len(original_line) - len(original_line.lstrip()) or
+                    next_line.strip().startswith(('-', '*', '•'))):
+                    is_topic = True
+            
+            # Also consider lines without colons that aren't sub-items as topics
+            if not is_topic and len(line) > 3 and ':' not in line:
+                # Check if it's not a sub-item by looking at original indentation
+                if original_line == line or (len(original_line) - len(line)) < 2:
+                    is_topic = True
             
             # Check for Roman numerals or "#### " headers
             if (line.startswith(('I.', 'II.', 'III.', 'IV.', 'V.', 'VI.', 'VII.')) or
                 line.startswith('####')):
+                is_topic = True
+            
+            if is_topic:
                 # Clean up the title
                 topic_title = line
                 topic_title = topic_title.replace('####', '').strip()
                 topic_title = topic_title.split('.', 1)[-1].strip() if '.' in topic_title else topic_title
+                topic_title = topic_title.rstrip(':')  # Remove trailing colon if present
                 
                 # Generate ID
                 topic_id = topic_title.lower()
                 topic_id = topic_id.replace("'", "").replace(" ", "_").replace("-", "_")
                 topic_id = topic_id.replace("(", "").replace(")", "").replace(".", "")
+                topic_id = topic_id.replace(":", "")
                 
                 if topic_title and len(topic_title) > 3:
                     topics.append({

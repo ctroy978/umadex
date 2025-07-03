@@ -82,6 +82,7 @@ class LectureProcessingStatus(BaseModel):
     processing_started_at: Optional[datetime] = None
     processing_completed_at: Optional[datetime] = None
     processing_error: Optional[str] = None
+    processing_steps: Optional[Dict[str, Any]] = None
 
 
 class LectureTopicContent(BaseModel):

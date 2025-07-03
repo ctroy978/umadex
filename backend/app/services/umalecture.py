@@ -615,22 +615,30 @@ class UMALectureService:
             classroom_assignment, reading_assignment = ca_row
             
             # Create new student assignment
-            student_assignment = StudentAssignment(
-                student_id=student_id,
-                assignment_id=reading_assignment.id,
-                classroom_assignment_id=assignment_id,
-                assignment_type="UMALecture",
-                status="in_progress",
-                started_at=datetime.utcnow(),
-                progress_metadata={
-                    "lecture_path": [],
-                    "topic_progress": {},
-                    "total_points": 0
-                }
-            )
-            db.add(student_assignment)
-            await db.commit()
-            await db.refresh(student_assignment)
+            try:
+                student_assignment = StudentAssignment(
+                    student_id=student_id,
+                    assignment_id=reading_assignment.id,
+                    classroom_assignment_id=assignment_id,
+                    assignment_type="UMALecture",
+                    status="in_progress",
+                    started_at=datetime.utcnow(),
+                    progress_metadata={
+                        "lecture_path": [],
+                        "topic_progress": {},
+                        "total_points": 0
+                    }
+                )
+                db.add(student_assignment)
+                await db.commit()
+                await db.refresh(student_assignment)
+            except Exception as e:
+                # Handle duplicate key constraint - fetch the existing record
+                await db.rollback()
+                result = await db.execute(query)
+                student_assignment = result.scalar_one_or_none()
+                if not student_assignment:
+                    raise e  # Re-raise if it's a different error
             
             lecture_id = reading_assignment.id
         else:
@@ -1087,6 +1095,9 @@ class UMALectureService:
         assignment_id: UUID
     ) -> Optional[Dict[str, Any]]:
         """Get all difficulty levels content for a topic"""
+        # Clean topic_id by removing trailing periods
+        topic_id = topic_id.rstrip('.')
+        
         # Get lecture structure
         lecture_query = sql_text("""
             SELECT raw_content
@@ -1183,6 +1194,9 @@ class UMALectureService:
         is_correct: Optional[bool]
     ) -> Optional[Dict[str, Any]]:
         """Update student progress for topic/tab/question"""
+        # Clean topic_id by removing trailing periods
+        topic_id = topic_id.rstrip('.')
+        
         # Get current progress
         progress_query = sql_text("""
             SELECT id, progress_metadata
@@ -1306,6 +1320,10 @@ class UMALectureService:
         current_tab: Optional[str]
     ) -> bool:
         """Update student's current position in lecture"""
+        # Clean topic_id by removing trailing periods
+        if current_topic:
+            current_topic = current_topic.rstrip('.')
+        
         # Get current progress
         progress_query = sql_text("""
             SELECT progress_metadata
