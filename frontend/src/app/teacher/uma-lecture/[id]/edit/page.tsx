@@ -337,13 +337,13 @@ export default function EditLecturePage() {
                               <textarea
                                 value={editValue}
                                 onChange={(e) => setEditValue(e.target.value)}
-                                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-600 focus:border-transparent"
                                 rows={6}
                               />
                               <div className="mt-2 flex space-x-2">
                                 <button
                                   onClick={saveEdit}
-                                  className="px-3 py-1 bg-primary text-white rounded text-sm hover:bg-primary-dark"
+                                  className="px-3 py-1 bg-primary-600 text-white rounded text-sm hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500"
                                 >
                                   Save
                                 </button>
@@ -405,7 +405,7 @@ export default function EditLecturePage() {
       {saving && (
         <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4">
           <div className="container mx-auto flex items-center justify-center">
-            <Loader className="w-5 h-5 mr-2 animate-spin text-primary" />
+            <Loader className="w-5 h-5 mr-2 animate-spin text-primary-600" />
             <span>Saving changes...</span>
           </div>
         </div>
