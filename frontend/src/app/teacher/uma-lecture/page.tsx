@@ -72,9 +72,18 @@ export default function UMALecturePage() {
     try {
       await umalectureApi.deleteLecture(lectureId)
       await loadLectures()
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error deleting lecture:', err)
-      alert('Failed to delete lecture')
+      
+      // Check for 400 error with specific message about classrooms
+      if (err.response?.status === 400 && err.response?.data?.detail) {
+        alert(err.response.data.detail)
+      } else if (err.response?.data?.message) {
+        // Some error responses might use 'message' instead of 'detail'
+        alert(err.response.data.message)
+      } else {
+        alert('Failed to archive lecture')
+      }
     }
   }
 

@@ -121,6 +121,25 @@ async def delete_lecture(
     db: AsyncSession = Depends(get_db)
 ):
     """Soft delete a lecture assignment"""
+    # Check if lecture is attached to any classrooms
+    from app.models.classroom import ClassroomAssignment
+    count_result = await db.execute(
+        select(func.count(ClassroomAssignment.id))
+        .where(
+            and_(
+                ClassroomAssignment.assignment_id == lecture_id,
+                ClassroomAssignment.assignment_type == "lecture"
+            )
+        )
+    )
+    classroom_count = count_result.scalar() or 0
+    
+    if classroom_count > 0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot archive lecture attached to {classroom_count} classroom(s). Remove from classrooms first."
+        )
+    
     success = await lecture_service.delete_lecture(db, lecture_id, teacher.id)
     if not success:
         raise HTTPException(status_code=404, detail="Lecture not found")
