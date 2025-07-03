@@ -76,7 +76,9 @@ class UMALectureService:
         await db.commit()
         
         # Transform the result to match expected lecture format
-        return self._transform_to_lecture_format(dict(lecture))
+        lecture_data = self._transform_to_lecture_format(dict(lecture))
+        lecture_data["classroom_count"] = 0  # New lectures have no classrooms yet
+        return lecture_data
     
     async def list_teacher_lectures(
         self,
@@ -85,15 +87,19 @@ class UMALectureService:
         skip: int = 0,
         limit: int = 100,
         status: Optional[str] = None,
-        search: Optional[str] = None
+        search: Optional[str] = None,
+        include_archived: bool = False
     ) -> List[Dict[str, Any]]:
         """List lectures for a teacher with filtering"""
         query = """
             SELECT * FROM reading_assignments
             WHERE teacher_id = :teacher_id
             AND assignment_type = 'UMALecture'
-            AND deleted_at IS NULL
         """
+        
+        # Only filter out archived if include_archived is False
+        if not include_archived:
+            query += " AND deleted_at IS NULL"
         
         params = {"teacher_id": teacher_id}
         
@@ -112,8 +118,29 @@ class UMALectureService:
         result = await db.execute(sql_text(query), params)
         lectures = result.mappings().all()
         
-        # Transform each lecture to expected format
-        return [self._transform_to_lecture_format(dict(lecture)) for lecture in lectures]
+        # Transform each lecture to expected format and add classroom count
+        lecture_list = []
+        for lecture in lectures:
+            lecture_data = self._transform_to_lecture_format(dict(lecture))
+            
+            # Get classroom count
+            from app.models.classroom import ClassroomAssignment
+            from sqlalchemy import select, func, and_
+            count_result = await db.execute(
+                select(func.count(ClassroomAssignment.id))
+                .where(
+                    and_(
+                        ClassroomAssignment.assignment_id == lecture_data["id"],
+                        ClassroomAssignment.assignment_type == "UMALecture"
+                    )
+                )
+            )
+            classroom_count = count_result.scalar() or 0
+            lecture_data["classroom_count"] = classroom_count
+            
+            lecture_list.append(lecture_data)
+        
+        return lecture_list
     
     async def get_lecture(
         self, 
@@ -136,7 +163,27 @@ class UMALectureService:
         )
         
         lecture = result.mappings().first()
-        return self._transform_to_lecture_format(dict(lecture)) if lecture else None
+        if not lecture:
+            return None
+            
+        lecture_data = self._transform_to_lecture_format(dict(lecture))
+        
+        # Get classroom count
+        from app.models.classroom import ClassroomAssignment
+        from sqlalchemy import select, func, and_
+        count_result = await db.execute(
+            select(func.count(ClassroomAssignment.id))
+            .where(
+                and_(
+                    ClassroomAssignment.assignment_id == lecture_data["id"],
+                    ClassroomAssignment.assignment_type == "UMALecture"
+                )
+            )
+        )
+        classroom_count = count_result.scalar() or 0
+        lecture_data["classroom_count"] = classroom_count
+        
+        return lecture_data
     
     async def update_lecture(
         self,
@@ -206,7 +253,27 @@ class UMALectureService:
         lecture = result.mappings().first()
         await db.commit()
         
-        return self._transform_to_lecture_format(dict(lecture)) if lecture else None
+        if not lecture:
+            return None
+            
+        lecture_data = self._transform_to_lecture_format(dict(lecture))
+        
+        # Get classroom count
+        from app.models.classroom import ClassroomAssignment
+        from sqlalchemy import select, func, and_
+        count_result = await db.execute(
+            select(func.count(ClassroomAssignment.id))
+            .where(
+                and_(
+                    ClassroomAssignment.assignment_id == lecture_data["id"],
+                    ClassroomAssignment.assignment_type == "UMALecture"
+                )
+            )
+        )
+        classroom_count = count_result.scalar() or 0
+        lecture_data["classroom_count"] = classroom_count
+        
+        return lecture_data
     
     async def delete_lecture(
         self, 

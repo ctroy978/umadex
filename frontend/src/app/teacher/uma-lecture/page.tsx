@@ -48,8 +48,9 @@ export default function UMALecturePage() {
     try {
       setLoading(true)
       const data = await umalectureApi.listLectures({
-        status: statusFilter === 'all' ? undefined : statusFilter,
+        status: statusFilter === 'all' || statusFilter === 'archived' ? undefined : statusFilter,
         search: searchTerm || undefined,
+        include_archived: statusFilter === 'archived',
       })
       setLectures(data)
       setError(null)
@@ -67,6 +68,15 @@ export default function UMALecturePage() {
   }
 
   const handleDelete = async (lectureId: string) => {
+    // Find the lecture to check classroom count
+    const lecture = lectures.find(l => l.id === lectureId)
+    
+    // Client-side validation like writing module
+    if (lecture && lecture.classroom_count > 0) {
+      alert(`Cannot archive lecture attached to ${lecture.classroom_count} classroom(s). Remove from classrooms first.`)
+      return
+    }
+    
     if (!confirm('Are you sure you want to archive this lecture?')) return
 
     try {
@@ -187,7 +197,10 @@ export default function UMALecturePage() {
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {filteredLectures.map((lecture) => {
-            const StatusIcon = statusIcons[lecture.status]
+            // Determine if lecture is archived based on deleted_at
+            const isArchived = !!lecture.deleted_at
+            const displayStatus = isArchived ? 'archived' : lecture.status
+            const StatusIcon = statusIcons[displayStatus]
             return (
               <div
                 key={lecture.id}
@@ -198,9 +211,9 @@ export default function UMALecturePage() {
                     <h3 className="text-lg font-semibold text-gray-900 line-clamp-2">
                       {lecture.title}
                     </h3>
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusColors[lecture.status]}`}>
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusColors[displayStatus]}`}>
                       <StatusIcon className="h-3 w-3 mr-1" />
-                      {lecture.status}
+                      {displayStatus}
                     </span>
                   </div>
 
@@ -242,7 +255,7 @@ export default function UMALecturePage() {
                           <PencilSquareIcon className="h-5 w-5" />
                         </Link>
                       )}
-                      {lecture.status === 'archived' ? (
+                      {isArchived ? (
                         <button
                           onClick={() => handleRestore(lecture.id)}
                           className="text-green-600 hover:text-green-700"

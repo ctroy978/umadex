@@ -19,6 +19,7 @@ export interface LectureAssignment {
   created_at: string
   updated_at: string
   deleted_at?: string
+  classroom_count?: number
 }
 
 export interface LectureAssignmentCreate {
@@ -159,12 +160,14 @@ export const umalectureApi = {
     limit?: number
     status?: string
     search?: string
+    include_archived?: boolean
   }) => {
     const queryParams = new URLSearchParams()
     if (params?.skip) queryParams.append('skip', params.skip.toString())
     if (params?.limit) queryParams.append('limit', params.limit.toString())
     if (params?.status) queryParams.append('status', params.status)
     if (params?.search) queryParams.append('search', params.search)
+    if (params?.include_archived) queryParams.append('include_archived', 'true')
     
     const queryString = queryParams.toString()
     return apiRequest<LectureAssignment[]>(

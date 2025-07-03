@@ -77,11 +77,12 @@ async def list_lectures(
     skip: int = 0,
     limit: int = 100,
     status: Optional[str] = None,
-    search: Optional[str] = None
+    search: Optional[str] = None,
+    include_archived: bool = False
 ):
     """List teacher's lecture assignments"""
     return await lecture_service.list_teacher_lectures(
-        db, teacher.id, skip, limit, status, search
+        db, teacher.id, skip, limit, status, search, include_archived
     )
 
 
@@ -128,7 +129,7 @@ async def delete_lecture(
         .where(
             and_(
                 ClassroomAssignment.assignment_id == lecture_id,
-                ClassroomAssignment.assignment_type == "lecture"
+                ClassroomAssignment.assignment_type == "UMALecture"
             )
         )
     )
