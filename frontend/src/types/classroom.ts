@@ -52,7 +52,7 @@ export interface JoinClassroomResponse {
 
 export interface AssignmentSchedule {
   assignment_id: string;
-  assignment_type?: string;  // "reading" or "vocabulary"
+  assignment_type?: string;  // "reading", "vocabulary", "debate", "writing", or "lecture"
   start_date?: string | null;
   end_date?: string | null;
 }

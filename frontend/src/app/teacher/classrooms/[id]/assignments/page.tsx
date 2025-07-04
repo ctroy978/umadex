@@ -6,6 +6,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { teacherClassroomApi } from '@/lib/classroomApi'
 import { Dialog, Transition } from '@headlessui/react'
 import { ExclamationTriangleIcon } from '@heroicons/react/24/outline'
+import { formatAssignmentForAPI, getBackendType } from '@/utils/assignmentTypes'
 // Simple debounce implementation
 const debounce = (func: Function, wait: number) => {
   let timeout: NodeJS.Timeout
@@ -269,10 +270,12 @@ export default function AssignmentManagementPage() {
       const assignmentsToSave = Array.from(selectedIds).map(id => {
         const schedule = schedules.get(id) || { assignment_id: id, start_date: null, end_date: null }
         const assignment = assignments.find(a => a.id === id)
-        return {
-          ...schedule,
-          assignment_type: assignment?.assignment_type || (assignment?.item_type === 'lecture' ? 'UMALecture' : assignment?.item_type) || 'reading'
-        }
+        return formatAssignmentForAPI(
+          id,
+          assignment?.assignment_type || assignment?.item_type || 'reading',
+          schedule.start_date,
+          schedule.end_date
+        )
       })
       
       // Check if any students will be affected
@@ -317,10 +320,12 @@ export default function AssignmentManagementPage() {
       const assignmentsToSave = Array.from(selectedIds).map(id => {
         const schedule = schedules.get(id) || { assignment_id: id, start_date: null, end_date: null }
         const assignment = assignments.find(a => a.id === id)
-        return {
-          ...schedule,
-          assignment_type: assignment?.assignment_type || (assignment?.item_type === 'lecture' ? 'UMALecture' : assignment?.item_type) || 'reading'
-        }
+        return formatAssignmentForAPI(
+          id,
+          assignment?.assignment_type || assignment?.item_type || 'reading',
+          schedule.start_date,
+          schedule.end_date
+        )
       })
       
       await teacherClassroomApi.updateClassroomAssignmentsAll(classroomId, {

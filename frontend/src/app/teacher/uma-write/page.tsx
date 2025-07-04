@@ -22,6 +22,7 @@ export default function UmaWritePage() {
   const [error, setError] = useState('')
   const [archivingId, setArchivingId] = useState<string | null>(null)
   const [restoringId, setRestoringId] = useState<string | null>(null)
+  const [showSuccessMessage, setShowSuccessMessage] = useState(false)
   
   // Search and filter state
   const [search, setSearch] = useState(searchParams.get('search') || '')
@@ -73,6 +74,22 @@ export default function UmaWritePage() {
   useEffect(() => {
     loadAssignments()
   }, [loadAssignments])
+
+  // Check for success message from creation
+  useEffect(() => {
+    if (searchParams.get('created') === 'true') {
+      setShowSuccessMessage(true)
+      // Remove the query parameter after showing the message
+      setTimeout(() => {
+        router.push('/teacher/uma-write')
+      }, 100)
+      // Hide the message after 5 seconds
+      setTimeout(() => {
+        setShowSuccessMessage(false)
+      }, 5000)
+    }
+  }, [searchParams, router])
+
 
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value
@@ -137,6 +154,15 @@ export default function UmaWritePage() {
           Create New Assignment
         </Link>
       </div>
+
+      {/* Success Message */}
+      {showSuccessMessage && (
+        <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
+          <p className="text-green-800">
+            ✓ Writing assignment created successfully! To assign it to classrooms, go to Classroom Management → Select a classroom → Manage Assignments.
+          </p>
+        </div>
+      )}
 
       {/* Search and Filters */}
       <div className="mb-6 space-y-4">
@@ -238,12 +264,6 @@ export default function UmaWritePage() {
                 
                 <div className="flex justify-between items-center">
                   <div className="flex space-x-2">
-                    <Link
-                      href={`/teacher/uma-write/${assignment.id}/edit`}
-                      className="p-2 text-gray-600 hover:text-primary-600 hover:bg-gray-100 rounded-lg transition-colors"
-                    >
-                      <PencilIcon className="h-5 w-5" />
-                    </Link>
                     
                     {!assignment.is_archived ? (
                       <button

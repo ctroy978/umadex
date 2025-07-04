@@ -65,7 +65,8 @@ export default function CreateWritingAssignmentPage() {
     
     try {
       const assignment = await writingApi.createAssignment(formData)
-      router.push(`/teacher/uma-write/${assignment.id}/classrooms`)
+      // Redirect to the list page - assignments should be added to classrooms through Classroom Management
+      router.push('/teacher/uma-write?created=true')
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Failed to create assignment')
       setLoading(false)

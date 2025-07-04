@@ -24,6 +24,25 @@ from app.models.reading import ReadingAssignment as UMALectureAssignment
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+# Assignment type normalization mapping
+# Maps any variation to the canonical backend type
+ASSIGNMENT_TYPE_MAP = {
+    "reading": "reading",
+    "UMARead": "reading",
+    "vocabulary": "vocabulary",
+    "UMAVocab": "vocabulary",
+    "debate": "debate",
+    "UMADebate": "debate",
+    "writing": "writing",
+    "UMAWrite": "writing",
+    "lecture": "lecture",
+    "UMALecture": "lecture"
+}
+
+def normalize_assignment_type(assignment_type: str) -> str:
+    """Normalize assignment type to canonical backend form"""
+    return ASSIGNMENT_TYPE_MAP.get(assignment_type, "reading")
+
 def require_teacher(current_user: User = Depends(get_current_user)) -> User:
     """Require the current user to be a teacher"""
     if current_user.role != UserRole.TEACHER:
@@ -111,7 +130,7 @@ async def check_assignment_removal(
             current_debate[ca.assignment_id] = ca
         elif ca.assignment_type == "writing" and ca.assignment_id:
             current_writing[ca.assignment_id] = ca
-        elif ca.assignment_type == "UMALecture" and ca.assignment_id:
+        elif ca.assignment_type in ["UMALecture", "lecture"] and ca.assignment_id:
             current_lecture[ca.assignment_id] = ca
     
     # Process requested assignments
@@ -307,7 +326,7 @@ async def get_all_available_assignments(
             assigned_debate[ca.assignment_id] = ca
         elif ca.assignment_type == "writing" and ca.assignment_id:
             assigned_writing[ca.assignment_id] = ca
-        elif ca.assignment_type == "UMALecture" and ca.assignment_id:
+        elif ca.assignment_type in ["UMALecture", "lecture"] and ca.assignment_id:
             assigned_lecture[ca.assignment_id] = ca
     
     all_assignments = []
@@ -660,7 +679,7 @@ async def update_all_classroom_assignments(
             current_debate[ca.assignment_id] = ca
         elif ca.assignment_type == "writing" and ca.assignment_id:
             current_writing[ca.assignment_id] = ca
-        elif ca.assignment_type == "UMALecture" and ca.assignment_id:
+        elif ca.assignment_type in ["UMALecture", "lecture"] and ca.assignment_id:
             current_lecture[ca.assignment_id] = ca
     
     # Process requested assignments
@@ -673,13 +692,16 @@ async def update_all_classroom_assignments(
         try:
             # Ensure assignment_id is a valid UUID
             assignment_id = sched.assignment_id
-            if sched.assignment_type == "vocabulary":
+            # Normalize the assignment type
+            normalized_type = normalize_assignment_type(sched.assignment_type)
+            
+            if normalized_type == "vocabulary":
                 requested_vocabulary[assignment_id] = sched
-            elif sched.assignment_type == "debate":
+            elif normalized_type == "debate":
                 requested_debate[assignment_id] = sched
-            elif sched.assignment_type == "writing":
+            elif normalized_type == "writing":
                 requested_writing[assignment_id] = sched
-            elif sched.assignment_type == "UMALecture":
+            elif normalized_type == "lecture":
                 requested_lecture[assignment_id] = sched
             else:  # Default to reading
                 requested_reading[assignment_id] = sched
@@ -720,7 +742,7 @@ async def update_all_classroom_assignments(
         [(id, "vocabulary") for id in vocabulary_to_remove] +
         [(id, "debate") for id in debate_to_remove] +
         [(id, "writing") for id in writing_to_remove] +
-        [(id, "UMALecture") for id in lecture_to_remove]
+        [(id, "lecture") for id in lecture_to_remove]
     )
     
     if assignments_to_remove:
@@ -743,6 +765,14 @@ async def update_all_classroom_assignments(
             if assignment_type == "vocabulary":
                 update_query = update_query.where(
                     ClassroomAssignment.vocabulary_list_id == assignment_id
+                )
+            elif assignment_type == "lecture":
+                # Handle both "UMALecture" and "lecture" types
+                update_query = update_query.where(
+                    and_(
+                        ClassroomAssignment.assignment_id == assignment_id,
+                        ClassroomAssignment.assignment_type.in_(["UMALecture", "lecture"])
+                    )
                 )
             else:
                 update_query = update_query.where(
@@ -772,6 +802,13 @@ async def update_all_classroom_assignments(
                 if assignment_type == "vocabulary":
                     count_query = count_query.where(
                         ClassroomAssignment.vocabulary_list_id == assignment_id
+                    )
+                elif assignment_type == "lecture":
+                    count_query = count_query.where(
+                        and_(
+                            ClassroomAssignment.assignment_id == assignment_id,
+                            ClassroomAssignment.assignment_type.in_(["UMALecture", "lecture"])
+                        )
                     )
                 else:
                     count_query = count_query.where(
@@ -1011,7 +1048,7 @@ async def update_all_classroom_assignments(
             ca = ClassroomAssignment(
                 classroom_id=classroom_id,
                 assignment_id=assignment_id,
-                assignment_type="UMALecture",
+                assignment_type="lecture",
                 display_order=display_order,
                 start_date=schedule.start_date,
                 end_date=schedule.end_date
