@@ -363,7 +363,7 @@ async def get_all_available_assignments(
                 "created_at": assignment.created_at,
                 "is_assigned": assignment.id in assigned_reading or assignment.id in assigned_lecture,
                 "is_archived": assignment.deleted_at is not None,
-                "item_type": "UMALecture" if assignment.assignment_type == "UMALecture" else "reading"
+                "item_type": "lecture" if assignment.assignment_type == "UMALecture" else "reading"
             }
             
             # Add schedule info if assigned

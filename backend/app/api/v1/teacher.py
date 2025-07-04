@@ -111,10 +111,15 @@ async def list_classrooms(
         )
         student_count = student_count_result.scalar() or 0
         
-        # Count assignments (all types)
+        # Count assignments (all types, excluding soft-deleted)
         assignment_count_result = await db.execute(
             select(func.count(ClassroomAssignment.id))
-            .where(ClassroomAssignment.classroom_id == classroom.id)
+            .where(
+                and_(
+                    ClassroomAssignment.classroom_id == classroom.id,
+                    ClassroomAssignment.removed_from_classroom_at.is_(None)
+                )
+            )
         )
         assignment_count = assignment_count_result.scalar() or 0
         
@@ -287,7 +292,12 @@ async def get_classroom_details(
                   ClassroomAssignment.assignment_id == ReadingAssignmentModel.id,
                   ClassroomAssignment.assignment_type == "reading"
               ))
-        .where(ClassroomAssignment.classroom_id == classroom_id)
+        .where(
+            and_(
+                ClassroomAssignment.classroom_id == classroom_id,
+                ClassroomAssignment.removed_from_classroom_at.is_(None)
+            )
+        )
         .order_by(ClassroomAssignment.display_order, ClassroomAssignment.assigned_at)
     )
     
@@ -312,7 +322,12 @@ async def get_classroom_details(
                   ClassroomAssignment.vocabulary_list_id == VocabularyList.id,
                   ClassroomAssignment.assignment_type == "vocabulary"
               ))
-        .where(ClassroomAssignment.classroom_id == classroom_id)
+        .where(
+            and_(
+                ClassroomAssignment.classroom_id == classroom_id,
+                ClassroomAssignment.removed_from_classroom_at.is_(None)
+            )
+        )
         .order_by(ClassroomAssignment.display_order, ClassroomAssignment.assigned_at)
     )
     
@@ -337,7 +352,12 @@ async def get_classroom_details(
                   ClassroomAssignment.assignment_id == DebateAssignment.id,
                   ClassroomAssignment.assignment_type == "debate"
               ))
-        .where(ClassroomAssignment.classroom_id == classroom_id)
+        .where(
+            and_(
+                ClassroomAssignment.classroom_id == classroom_id,
+                ClassroomAssignment.removed_from_classroom_at.is_(None)
+            )
+        )
         .order_by(ClassroomAssignment.display_order, ClassroomAssignment.assigned_at)
     )
     
@@ -362,7 +382,12 @@ async def get_classroom_details(
                   ClassroomAssignment.assignment_id == WritingAssignment.id,
                   ClassroomAssignment.assignment_type == "writing"
               ))
-        .where(ClassroomAssignment.classroom_id == classroom_id)
+        .where(
+            and_(
+                ClassroomAssignment.classroom_id == classroom_id,
+                ClassroomAssignment.removed_from_classroom_at.is_(None)
+            )
+        )
         .order_by(ClassroomAssignment.display_order, ClassroomAssignment.assigned_at)
     )
     
@@ -372,6 +397,35 @@ async def get_classroom_details(
             assignment_id=writing.id,
             title=writing.title,
             assignment_type="UMAWrite",
+            assigned_at=ca.assigned_at,
+            display_order=ca.display_order,
+            start_date=ca.start_date,
+            end_date=ca.end_date
+        ))
+    
+    # Get UMALecture assignments
+    lecture_assignments_result = await db.execute(
+        select(ReadingAssignmentModel, ClassroomAssignment)
+        .join(ClassroomAssignment, 
+              and_(
+                  ClassroomAssignment.assignment_id == ReadingAssignmentModel.id,
+                  ClassroomAssignment.assignment_type == "UMALecture"
+              ))
+        .where(
+            and_(
+                ClassroomAssignment.classroom_id == classroom_id,
+                ClassroomAssignment.removed_from_classroom_at.is_(None)
+            )
+        )
+        .order_by(ClassroomAssignment.display_order, ClassroomAssignment.assigned_at)
+    )
+    
+    for assignment, ca in lecture_assignments_result:
+        assignment_list.append(AssignmentInClassroom(
+            id=ca.id,
+            assignment_id=assignment.id,
+            title=assignment.assignment_title,
+            assignment_type=assignment.assignment_type,
             assigned_at=ca.assigned_at,
             display_order=ca.display_order,
             start_date=ca.start_date,
@@ -507,7 +561,12 @@ async def list_classroom_assignments(
     assignments_result = await db.execute(
         select(ReadingAssignmentModel, ClassroomAssignment)
         .join(ClassroomAssignment, ClassroomAssignment.assignment_id == ReadingAssignmentModel.id)
-        .where(ClassroomAssignment.classroom_id == classroom_id)
+        .where(
+            and_(
+                ClassroomAssignment.classroom_id == classroom_id,
+                ClassroomAssignment.removed_from_classroom_at.is_(None)
+            )
+        )
         .order_by(ClassroomAssignment.display_order, ClassroomAssignment.assigned_at)
     )
     
@@ -556,7 +615,10 @@ async def get_classroom_available_assignments(
     # Get currently assigned assignments with their schedules
     assigned_result = await db.execute(
         select(ClassroomAssignment).where(
-            ClassroomAssignment.classroom_id == classroom_id
+            and_(
+                ClassroomAssignment.classroom_id == classroom_id,
+                ClassroomAssignment.removed_from_classroom_at.is_(None)
+            )
         )
     )
     assigned_assignments = {ca.assignment_id: ca for ca in assigned_result.scalars()}
@@ -670,7 +732,12 @@ async def update_classroom_assignments(
     # Get current assignments
     current_result = await db.execute(
         select(ClassroomAssignment)
-        .where(ClassroomAssignment.classroom_id == classroom_id)
+        .where(
+            and_(
+                ClassroomAssignment.classroom_id == classroom_id,
+                ClassroomAssignment.removed_from_classroom_at.is_(None)
+            )
+        )
     )
     current_assignments = {ca.assignment_id: ca for ca in current_result.scalars()}
     current_assignment_ids = set(current_assignments.keys())
@@ -759,7 +826,12 @@ async def get_available_assignments(
     if classroom_id:
         assigned_result = await db.execute(
             select(ClassroomAssignment.assignment_id)
-            .where(ClassroomAssignment.classroom_id == classroom_id)
+            .where(
+                and_(
+                    ClassroomAssignment.classroom_id == classroom_id,
+                    ClassroomAssignment.removed_from_classroom_at.is_(None)
+                )
+            )
         )
         assigned_ids = {row[0] for row in assigned_result}
     
@@ -1385,7 +1457,8 @@ async def archive_assignment(
         .where(
             and_(
                 ClassroomAssignment.assignment_id == assignment.id,
-                ClassroomAssignment.assignment_type == "reading"
+                ClassroomAssignment.assignment_type == "reading",
+                ClassroomAssignment.removed_from_classroom_at.is_(None)
             )
         )
     )

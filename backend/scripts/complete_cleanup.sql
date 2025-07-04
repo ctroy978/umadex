@@ -1,0 +1,98 @@
+-- Complete database cleanup for UMADex
+-- This will TRUNCATE all tables with CASCADE to handle foreign keys
+
+TRUNCATE TABLE 
+    admin_actions,
+    ai_debate_points,
+    ai_personalities,
+    answer_evaluations,
+    assignment_images,
+    assignment_tests,
+    assignments,
+    classroom_assignments,
+    classroom_students,
+    classroom_test_overrides,
+    classroom_test_schedules,
+    classrooms,
+    content_flags,
+    debate_assignments,
+    debate_challenges,
+    debate_posts,
+    debate_round_feedback,
+    email_whitelist,
+    fallacy_templates,
+    gradebook_entries,
+    lecture_assignments,
+    lecture_content_cache,
+    lecture_images,
+    lecture_student_interactions,
+    otp_requests,
+    question_cache,
+    question_evaluations,
+    reading_assignments,
+    reading_cache_flush_log,
+    reading_chunks,
+    reading_comprehensive_tests,
+    reading_question_cache,
+    reading_student_responses,
+    refresh_tokens,
+    rhetorical_techniques,
+    role_changes,
+    student_assignments,
+    student_debates,
+    student_events,
+    student_test_attempts,
+    student_vocabulary_progress,
+    student_writing_submissions,
+    teacher_bypass_codes,
+    teacher_evaluation_overrides,
+    test_evaluation_audits,
+    test_evaluation_queue,
+    test_evaluation_results,
+    test_override_usage,
+    test_question_evaluations,
+    test_results,
+    test_security_incidents,
+    text_simplification_cache,
+    umaread_assignment_progress,
+    umaread_chunk_progress,
+    umaread_student_responses,
+    user_deletions,
+    user_sessions,
+    users,
+    vocabulary_chain_members,
+    vocabulary_chains,
+    vocabulary_concept_map_attempts,
+    vocabulary_concept_maps,
+    vocabulary_fill_in_blank_attempts,
+    vocabulary_fill_in_blank_responses,
+    vocabulary_fill_in_blank_sentences,
+    vocabulary_game_attempts,
+    vocabulary_game_questions,
+    vocabulary_lists,
+    vocabulary_practice_progress,
+    vocabulary_puzzle_attempts,
+    vocabulary_puzzle_games,
+    vocabulary_puzzle_responses,
+    vocabulary_story_attempts,
+    vocabulary_story_prompts,
+    vocabulary_story_responses,
+    vocabulary_test_attempts,
+    vocabulary_test_configs,
+    vocabulary_tests,
+    vocabulary_word_reviews,
+    vocabulary_words,
+    writing_assignments
+CASCADE;
+
+-- Verify cleanup
+SELECT 'Database cleanup complete!' as message;
+SELECT 'users' as table_name, COUNT(*) as count FROM users
+UNION ALL
+SELECT 'classrooms', COUNT(*) FROM classrooms
+UNION ALL
+SELECT 'classroom_students', COUNT(*) FROM classroom_students
+UNION ALL
+SELECT 'classroom_assignments', COUNT(*) FROM classroom_assignments
+UNION ALL
+SELECT 'student_assignments', COUNT(*) FROM student_assignments;

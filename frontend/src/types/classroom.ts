@@ -85,7 +85,7 @@ export interface AvailableAssignment {
   is_assigned: boolean;
   is_archived?: boolean;
   current_schedule?: CurrentSchedule;
-  item_type?: string;  // "reading" or "vocabulary"
+  item_type?: string;  // "reading", "vocabulary", or "lecture"
   word_count?: number;  // For vocabulary lists
 }
 

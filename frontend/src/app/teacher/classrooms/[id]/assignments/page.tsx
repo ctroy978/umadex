@@ -271,7 +271,7 @@ export default function AssignmentManagementPage() {
         const assignment = assignments.find(a => a.id === id)
         return {
           ...schedule,
-          assignment_type: assignment?.item_type || 'reading'
+          assignment_type: assignment?.assignment_type || (assignment?.item_type === 'lecture' ? 'UMALecture' : assignment?.item_type) || 'reading'
         }
       })
       
@@ -291,7 +291,16 @@ export default function AssignmentManagementPage() {
       await teacherClassroomApi.updateClassroomAssignmentsAll(classroomId, {
         assignments: assignmentsToSave
       })
-      router.push(`/teacher/classrooms/${classroomId}`)
+      
+      // Update the original state to reflect saved changes
+      setOriginalIds(new Set(selectedIds))
+      setOriginalSchedules(new Map(schedules))
+      
+      // Refresh assignments to get updated state
+      await fetchAssignments()
+      
+      // Show success message
+      alert('Assignments saved successfully!')
     } catch (error: any) {
       console.error('Failed to save assignments:', error)
       const errorMessage = error?.response?.data?.detail || error?.message || 'Failed to save assignments'
@@ -310,14 +319,23 @@ export default function AssignmentManagementPage() {
         const assignment = assignments.find(a => a.id === id)
         return {
           ...schedule,
-          assignment_type: assignment?.item_type || 'reading'
+          assignment_type: assignment?.assignment_type || (assignment?.item_type === 'lecture' ? 'UMALecture' : assignment?.item_type) || 'reading'
         }
       })
       
       await teacherClassroomApi.updateClassroomAssignmentsAll(classroomId, {
         assignments: assignmentsToSave
       })
-      router.push(`/teacher/classrooms/${classroomId}`)
+      
+      // Update the original state to reflect saved changes
+      setOriginalIds(new Set(selectedIds))
+      setOriginalSchedules(new Map(schedules))
+      
+      // Refresh assignments to get updated state
+      await fetchAssignments()
+      
+      // Show success message
+      alert('Assignments saved successfully!')
     } catch (error: any) {
       console.error('Failed to save assignments:', error)
       const errorMessage = error?.response?.data?.detail || error?.message || 'Failed to save assignments'
