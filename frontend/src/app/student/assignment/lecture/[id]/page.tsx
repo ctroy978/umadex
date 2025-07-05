@@ -288,6 +288,8 @@ export default function StudentLecturePage() {
               onTabChange={handleTabChange}
               completedTabs={topicContent.completed_tabs || []}
               questionsCorrect={topicContent.questions_correct || {}}
+              lectureId={lectureData.id}
+              gradeLevel={lectureData.grade_level}
             />
           )}
         </div>

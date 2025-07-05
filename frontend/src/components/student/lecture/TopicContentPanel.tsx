@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { CheckCircle, Circle, Lock, X } from 'lucide-react'
+import { ExplorationContent } from './ExplorationContent'
 import type { TopicContent } from '@/lib/umalectureApi'
 
 interface TopicContentPanelProps {
@@ -8,6 +9,8 @@ interface TopicContentPanelProps {
   onTabChange: (tab: 'basic' | 'intermediate' | 'advanced' | 'expert') => void
   completedTabs: string[]
   questionsCorrect: Record<string, boolean[]>
+  lectureId: string
+  gradeLevel: string
 }
 
 const TABS = [
@@ -23,6 +26,8 @@ export function TopicContentPanel({
   onTabChange,
   completedTabs,
   questionsCorrect,
+  lectureId,
+  gradeLevel,
 }: TopicContentPanelProps) {
   const [expandedImage, setExpandedImage] = useState<string | null>(null)
 
@@ -48,47 +53,19 @@ export function TopicContentPanel({
     const content = topic.difficulty_levels[currentTab]?.content
     if (!content) return <p className="text-gray-400">Content not available</p>
 
-    // Split content into paragraphs and detect image placeholders
-    const paragraphs = content.split('\n\n')
-    const relevantImages = topic.images.filter(img => 
-      topic.difficulty_levels[currentTab]?.content?.includes('[Image')
-    )
+    // Process content with exploration points
+    const processedContent = processContentWithImages(content)
 
     return (
       <div className="prose prose-invert max-w-none">
-        {paragraphs.map((paragraph, index) => {
-          // Check if paragraph references an image
-          const imageMatch = paragraph.match(/\[Image (\d+)\]/)
-          if (imageMatch && relevantImages[parseInt(imageMatch[1]) - 1]) {
-            const image = relevantImages[parseInt(imageMatch[1]) - 1]
-            return (
-              <div key={index} className="my-6">
-                <div 
-                  className="cursor-pointer group"
-                  onClick={() => setExpandedImage(image.display_url || image.original_url)}
-                >
-                  <img
-                    src={image.thumbnail_url || image.original_url}
-                    alt={image.teacher_description}
-                    className="rounded-lg shadow-lg max-w-xs mx-auto group-hover:opacity-90 transition-opacity"
-                  />
-                  <p className="text-sm text-gray-400 mt-2 text-center italic">
-                    {image.ai_description || image.teacher_description}
-                  </p>
-                  <p className="text-xs text-gray-500 text-center mt-1">
-                    Click to enlarge
-                  </p>
-                </div>
-              </div>
-            )
-          }
-
-          return (
-            <p key={index} className="mb-4 text-gray-300 leading-relaxed">
-              {paragraph}
-            </p>
-          )
-        })}
+        <ExplorationContent
+          content={processedContent}
+          topicId={topic.id}
+          topicTitle={topic.title}
+          difficultyLevel={currentTab}
+          gradeLevel={gradeLevel}
+          lectureId={lectureId}
+        />
 
         {/* Show remaining images at the end if not already shown */}
         {topic.images.length > 0 && (
@@ -116,6 +93,24 @@ export function TopicContentPanel({
         )}
       </div>
     )
+  }
+
+  const processContentWithImages = (content: string) => {
+    // Split content into paragraphs and process image placeholders
+    const paragraphs = content.split('\n\n')
+    const relevantImages = topic.images.filter(img => 
+      content.includes('[Image')
+    )
+
+    return paragraphs.map((paragraph, index) => {
+      // Check if paragraph references an image
+      const imageMatch = paragraph.match(/\[Image (\d+)\]/)
+      if (imageMatch && relevantImages[parseInt(imageMatch[1]) - 1]) {
+        const image = relevantImages[parseInt(imageMatch[1]) - 1]
+        return `\n\n![${image.ai_description || image.teacher_description}](${image.display_url || image.original_url})\n\n`
+      }
+      return paragraph
+    }).join('\n\n')
   }
 
   return (

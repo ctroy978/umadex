@@ -44,6 +44,13 @@ Return a structured list of topics with their relationships."""
             "expert": "Explore nuanced perspectives, cutting-edge information, synthesis of ideas"
         }
         
+        explore_guidelines = {
+            "basic": "Mark 3-5 fundamental vocabulary words and basic process names",
+            "intermediate": "Mark 3-5 mechanism names, system components, and key processes",
+            "advanced": "Mark 3-5 complex processes, specialized terminology, and analytical concepts", 
+            "expert": "Mark 3-5 research terminology, interdisciplinary connections, and advanced concepts"
+        }
+        
         return f"""Create educational content for this topic at {difficulty} level:
 
 TOPIC: {topic_title}
@@ -53,15 +60,28 @@ DIFFICULTY: {difficulty} - {difficulty_guidelines[difficulty]}
 AVAILABLE IMAGES:
 {chr(10).join(image_descriptions) if image_descriptions else 'No images available'}
 
+CRITICAL INSTRUCTION - EXPLORATION POINTS:
+You MUST include 3-5 strategic exploration points in your content using <explore>term</explore> tags.
+{explore_guidelines[difficulty]}
+
+Examples:
+- "The process of <explore>photosynthesis</explore> converts light energy..."
+- "Scientists use <explore>spectroscopy</explore> to analyze..."
+- "The <explore>mitochondria</explore> are often called..."
+
+IMPORTANT: Create strategic knowledge gaps - don't fully explain terms marked with <explore> tags. 
+Instead, mention them in context but leave room for students to explore deeper.
+
 Requirements:
 1. Base content ONLY on the topic title, learning objectives from the outline, and uploaded images
 2. Do NOT incorporate subject area unless explicitly mentioned in the topic/outline
 3. Write engaging, age-appropriate content that stays true to the outlined material
-4. Include key concepts clearly explained as they appear in the outline
+4. Include key concepts clearly explained EXCEPT for <explore> tagged terms
 5. Reference images naturally where relevant
 6. Build on previous difficulty levels
 7. Aim for 200-400 words
 8. Use formatting for clarity (paragraphs, lists if needed)
+9. MUST include 3-5 <explore> tags for key terms students should investigate
 
 Focus on understanding the specific topic as outlined, not general subject knowledge."""
     
@@ -148,3 +168,90 @@ Provide:
 4. Suggested learning path for students
 
 Keep it brief but informative."""
+    
+    @staticmethod
+    def get_exploration_validation_prompt(exploration_term: str, student_question: str) -> str:
+        """Get prompt for validating if a student question is on-topic"""
+        return f"""Determine if this student question is relevant to understanding the exploration term.
+
+EXPLORATION TERM: {exploration_term}
+STUDENT QUESTION: {student_question}
+
+Is this question directly related to understanding, explaining, or learning about "{exploration_term}"?
+
+Consider ON-TOPIC if the question asks about:
+- Definition or explanation of the term
+- How the term works or functions
+- Examples of the term
+- Connection between the term and other concepts
+- Details, mechanisms, or components of the term
+- Why the term is important
+
+Consider OFF-TOPIC if the question asks about:
+- Completely different concepts
+- Personal or non-academic topics
+- Other homework or assignments
+- Topics not related to understanding this specific term
+
+Respond with EXACTLY one of these two responses:
+- "ON_TOPIC" if the question is relevant
+- "OFF_TOPIC" if the question is not relevant
+
+Do not include any other text in your response."""
+    
+    @staticmethod
+    def get_exploration_response_prompt(
+        exploration_term: str,
+        student_question: str,
+        lecture_context: str,
+        conversation_history: List[Dict[str, str]],
+        difficulty_level: str,
+        grade_level: str
+    ) -> str:
+        """Get prompt for generating exploration responses"""
+        
+        history_text = ""
+        if conversation_history:
+            history_text = "\n\nPREVIOUS CONVERSATION:\n"
+            for msg in conversation_history[-4:]:  # Last 4 messages for context
+                history_text += f"{msg['role'].upper()}: {msg['content']}\n"
+        
+        return f"""Provide an educational explanation for this exploration term.
+
+EXPLORATION TERM: {exploration_term}
+CURRENT DIFFICULTY LEVEL: {difficulty_level}
+GRADE LEVEL: {grade_level}
+
+LECTURE CONTEXT:
+{lecture_context[:500]}...
+
+STUDENT QUESTION: {student_question if student_question else "Please explain this term"}
+{history_text}
+
+Requirements:
+1. Provide a clear, engaging explanation appropriate for {grade_level} students
+2. Connect the explanation back to the lecture content when possible
+3. Use language appropriate for the {difficulty_level} level
+4. Keep response between 150-300 words
+5. If this is the first message (no question provided), give a foundational explanation
+6. Build on previous conversation if there is history
+7. Include a relevant example or analogy when helpful
+8. End with an encouraging prompt for further exploration
+
+Focus on helping the student understand this specific concept deeply."""
+    
+    @staticmethod
+    def get_exploration_redirect_prompt(exploration_term: str, student_question: str) -> str:
+        """Get prompt for redirecting off-topic questions"""
+        return f"""The student asked an off-topic question while exploring a specific term.
+
+EXPLORATION TERM: {exploration_term}
+OFF-TOPIC QUESTION: {student_question}
+
+Generate a friendly, encouraging message that:
+1. Acknowledges their question
+2. Gently redirects them back to the exploration term
+3. Suggests how they might reframe their question
+4. Provides 1-2 example questions they could ask instead
+
+Keep the tone supportive and educational. Maximum 100 words."""

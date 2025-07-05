@@ -684,11 +684,14 @@ class UMALectureService:
             
             classroom_assignment, reading_assignment = ca_row
             
+            # Extract the lecture ID before any session operations
+            lecture_id = reading_assignment.id
+            
             # Create new student assignment
             try:
                 student_assignment = StudentAssignment(
                     student_id=student_id,
-                    assignment_id=reading_assignment.id,
+                    assignment_id=lecture_id,
                     classroom_assignment_id=assignment_id,
                     assignment_type="UMALecture",
                     status="in_progress",
@@ -709,8 +712,6 @@ class UMALectureService:
                 student_assignment = result.scalar_one_or_none()
                 if not student_assignment:
                     raise e  # Re-raise if it's a different error
-            
-            lecture_id = reading_assignment.id
         else:
             # Get the lecture ID from the assignment
             lecture_id = student_assignment.assignment_id
@@ -1224,6 +1225,7 @@ class UMALectureService:
         topic_progress = progress_metadata.get("topic_completion", {}).get(topic_id, {})
         
         return {
+            "id": topic_id,
             "topic_id": topic_id,
             "title": topic_data.get("title", ""),
             "difficulty_levels": topic_data.get("difficulty_levels", {}),
@@ -1488,3 +1490,85 @@ class UMALectureService:
             "deleted_at": reading_assignment["deleted_at"],
             "raw_content": reading_assignment["raw_content"]  # Keep original for reference
         }
+    
+    async def validate_exploration_question(
+        self,
+        exploration_term: str,
+        student_question: str
+    ) -> bool:
+        """Validate if a student's question is on-topic for the exploration term"""
+        from app.services.umalecture_ai import UMALectureAIService
+        from app.services.umalecture_prompts import UMALecturePromptManager
+        
+        ai_service = UMALectureAIService()
+        prompt = UMALecturePromptManager.get_exploration_validation_prompt(
+            exploration_term, student_question
+        )
+        
+        response = await ai_service._generate_content_async(prompt)
+        return response.strip().upper() == "ON_TOPIC"
+    
+    async def generate_exploration_explanation(
+        self,
+        exploration_term: str,
+        difficulty_level: str,
+        grade_level: str,
+        lecture_context: str,
+        conversation_history: List[Dict[str, str]]
+    ) -> str:
+        """Generate initial explanation for an exploration term"""
+        from app.services.umalecture_ai import UMALectureAIService
+        from app.services.umalecture_prompts import UMALecturePromptManager
+        
+        ai_service = UMALectureAIService()
+        prompt = UMALecturePromptManager.get_exploration_response_prompt(
+            exploration_term=exploration_term,
+            student_question=None,
+            lecture_context=lecture_context,
+            conversation_history=conversation_history,
+            difficulty_level=difficulty_level,
+            grade_level=grade_level
+        )
+        
+        return await ai_service._generate_content_async(prompt)
+    
+    async def generate_exploration_response(
+        self,
+        exploration_term: str,
+        student_question: str,
+        difficulty_level: str,
+        grade_level: str,
+        lecture_context: str,
+        conversation_history: List[Dict[str, str]]
+    ) -> str:
+        """Generate response to a student's on-topic question"""
+        from app.services.umalecture_ai import UMALectureAIService
+        from app.services.umalecture_prompts import UMALecturePromptManager
+        
+        ai_service = UMALectureAIService()
+        prompt = UMALecturePromptManager.get_exploration_response_prompt(
+            exploration_term=exploration_term,
+            student_question=student_question,
+            lecture_context=lecture_context,
+            conversation_history=conversation_history,
+            difficulty_level=difficulty_level,
+            grade_level=grade_level
+        )
+        
+        return await ai_service._generate_content_async(prompt)
+    
+    async def generate_exploration_redirect(
+        self,
+        exploration_term: str,
+        student_question: str
+    ) -> str:
+        """Generate redirect message for off-topic questions"""
+        from app.services.umalecture_ai import UMALectureAIService
+        from app.services.umalecture_prompts import UMALecturePromptManager
+        
+        ai_service = UMALectureAIService()
+        prompt = UMALecturePromptManager.get_exploration_redirect_prompt(
+            exploration_term, student_question
+        )
+        
+        return await ai_service._generate_content_async(prompt)

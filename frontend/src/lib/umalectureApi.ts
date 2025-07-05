@@ -135,6 +135,7 @@ export interface LectureData {
 }
 
 export interface TopicContent {
+  id: string
   topic_id: string
   title: string
   difficulty_levels: Record<string, {
@@ -336,3 +337,29 @@ export const umalectureApi = {
       body: JSON.stringify(position),
     }),
 }
+
+export interface ExplorationRequest {
+  lecture_id: string
+  topic_id: string
+  exploration_term: string
+  question: string | null
+  difficulty_level: string
+  grade_level: string
+  lecture_context: string
+  conversation_history: Array<{
+    role: string
+    content: string
+  }>
+}
+
+export interface ExplorationResponse {
+  is_on_topic: boolean
+  response?: string
+  redirect_message?: string
+}
+
+export const exploreUMALectureTerm = (data: ExplorationRequest) =>
+  apiRequest<ExplorationResponse>('/v1/umalecture/lectures/explore', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })

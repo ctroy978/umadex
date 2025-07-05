@@ -607,4 +607,70 @@ async def update_current_position(
     if not success:
         raise HTTPException(status_code=404, detail="Progress record not found")
     
-    return {"message": "Position updated successfully"}
+    return {"success": True}
+
+
+@router.post("/lectures/explore")
+async def explore_term(
+    exploration_data: Dict[str, Any],
+    student: User = Depends(require_student),
+    db: AsyncSession = Depends(get_db)
+):
+    """Handle exploration point interactions - answer questions about specific terms"""
+    lecture_id = exploration_data.get("lecture_id")
+    topic_id = exploration_data.get("topic_id")
+    exploration_term = exploration_data.get("exploration_term")
+    question = exploration_data.get("question")
+    difficulty_level = exploration_data.get("difficulty_level")
+    grade_level = exploration_data.get("grade_level")
+    lecture_context = exploration_data.get("lecture_context")
+    conversation_history = exploration_data.get("conversation_history", [])
+    
+    if not all([lecture_id, topic_id, exploration_term, difficulty_level, grade_level]):
+        raise HTTPException(status_code=400, detail="Missing required fields")
+    
+    # If no question provided, generate initial explanation
+    if not question:
+        response = await lecture_service.generate_exploration_explanation(
+            exploration_term=exploration_term,
+            difficulty_level=difficulty_level,
+            grade_level=grade_level,
+            lecture_context=lecture_context,
+            conversation_history=conversation_history
+        )
+        return {
+            "is_on_topic": True,
+            "response": response
+        }
+    
+    # Validate question relevance
+    is_on_topic = await lecture_service.validate_exploration_question(
+        exploration_term=exploration_term,
+        student_question=question
+    )
+    
+    if not is_on_topic:
+        # Generate redirect message
+        redirect_message = await lecture_service.generate_exploration_redirect(
+            exploration_term=exploration_term,
+            student_question=question
+        )
+        return {
+            "is_on_topic": False,
+            "redirect_message": redirect_message
+        }
+    
+    # Generate response for on-topic question
+    response = await lecture_service.generate_exploration_response(
+        exploration_term=exploration_term,
+        student_question=question,
+        difficulty_level=difficulty_level,
+        grade_level=grade_level,
+        lecture_context=lecture_context,
+        conversation_history=conversation_history
+    )
+    
+    return {
+        "is_on_topic": True,
+        "response": response
+    }
