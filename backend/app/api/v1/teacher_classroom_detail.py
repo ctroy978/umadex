@@ -153,6 +153,35 @@ async def list_all_classroom_assignments(
             end_date=ca.end_date
         ))
     
+    # Get UMALecture assignments (handle both "UMALecture" and "lecture" types for backward compatibility)
+    lecture_result = await db.execute(
+        select(ReadingAssignmentModel, ClassroomAssignment)
+        .join(ClassroomAssignment,
+              and_(
+                  ClassroomAssignment.assignment_id == ReadingAssignmentModel.id,
+                  ClassroomAssignment.assignment_type.in_(["UMALecture", "lecture"])
+              ))
+        .where(
+            and_(
+                ClassroomAssignment.classroom_id == classroom_id,
+                ReadingAssignmentModel.assignment_type == "UMALecture"
+            )
+        )
+        .order_by(ClassroomAssignment.display_order.nullsfirst(), ClassroomAssignment.assigned_at)
+    )
+    
+    for lecture, ca in lecture_result:
+        assignment_list.append(AssignmentInClassroom(
+            id=ca.id,
+            assignment_id=lecture.id,
+            title=lecture.assignment_title,
+            assignment_type="UMALecture",
+            assigned_at=ca.assigned_at,
+            display_order=ca.display_order,
+            start_date=ca.start_date,
+            end_date=ca.end_date
+        ))
+    
     # Sort by display order, then assigned date
     assignment_list.sort(key=lambda x: (x.display_order or float('inf'), x.assigned_at))
     

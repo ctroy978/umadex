@@ -1048,7 +1048,7 @@ async def update_all_classroom_assignments(
             ca = ClassroomAssignment(
                 classroom_id=classroom_id,
                 assignment_id=assignment_id,
-                assignment_type="lecture",
+                assignment_type="UMALecture",
                 display_order=display_order,
                 start_date=schedule.start_date,
                 end_date=schedule.end_date

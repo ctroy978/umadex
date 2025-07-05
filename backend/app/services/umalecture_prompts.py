@@ -90,10 +90,17 @@ QUESTION TYPES: {question_types[difficulty]}
 CONTENT:
 {content}
 
+CRITICAL QUESTION FORMAT REQUIREMENTS:
+- These are SHORT ANSWER questions where students type their own responses
+- Do NOT use "which of the following" or "select the best answer"
+- Do NOT reference answer choices that don't exist
+- Ask direct questions expecting written responses
+- Use formats like "What is...", "Explain why...", "Describe how..."
+
 Requirements:
 1. Test understanding, not just memorization
 2. {"Include at least one visual question using the images" if with_images else "Focus on text comprehension"}
-3. Vary question formats (multiple choice, short answer)
+3. All questions must be SHORT ANSWER format
 4. Provide clear, unambiguous questions
 5. Include correct answers and brief explanations
 6. Make questions progressively challenging within the difficulty level
@@ -122,29 +129,6 @@ Provide:
 
 Make the description engaging and educational, helping students understand both what they see and why it matters."""
     
-    @staticmethod
-    def get_answer_evaluation_prompt(
-        question: str,
-        student_answer: str,
-        correct_answer: str,
-        difficulty: str
-    ) -> str:
-        """Get prompt for evaluating student answers"""
-        return f"""Evaluate this student answer:
-
-QUESTION: {question}
-STUDENT ANSWER: {student_answer}
-EXPECTED ANSWER: {correct_answer}
-DIFFICULTY LEVEL: {difficulty}
-
-Provide:
-1. Whether the answer is correct (considering partial credit)
-2. Constructive feedback focusing on understanding
-3. What the student did well
-4. Areas for improvement
-5. Encouragement to continue learning
-
-Be supportive and educational in your feedback."""
     
     @staticmethod
     def get_lecture_summary_prompt(lecture_structure: Dict[str, Any]) -> str:

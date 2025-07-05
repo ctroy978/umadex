@@ -668,7 +668,10 @@ class UMALectureService:
                 .where(
                     and_(
                         ClassroomAssignment.id == assignment_id,
-                        ClassroomAssignment.assignment_type == "UMALecture"
+                        or_(
+                            ClassroomAssignment.assignment_type == "UMALecture",
+                            ClassroomAssignment.assignment_type == "lecture"
+                        )
                     )
                 )
             )
@@ -1057,7 +1060,7 @@ class UMALectureService:
                 AND sa.student_id = :student_id
             WHERE ca.id = :assignment_id
             AND ra.id = :lecture_id
-            AND ca.assignment_type = 'UMALecture'
+            AND ca.assignment_type IN ('UMALecture', 'lecture')
         """)
         
         result = await db.execute(

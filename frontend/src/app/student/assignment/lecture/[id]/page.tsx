@@ -84,7 +84,12 @@ export default function StudentLecturePage() {
     }
   }
 
-  const handleTopicChange = (topicId: string) => {
+  const handleTopicChange = async (topicId: string) => {
+    // If changing topics, refresh the current topic data to ensure progress is saved
+    if (currentTopic && currentTopic !== topicId) {
+      await fetchTopicContent()
+    }
+    
     setCurrentTopic(topicId)
     // Reset to basic tab when changing topics
     setCurrentTab('basic')
@@ -117,8 +122,51 @@ export default function StudentLecturePage() {
       is_correct: isCorrect
     })
     
-    // Refresh topic content to get updated progress
-    await fetchTopicContent()
+    // Update local state instead of refetching to preserve feedback
+    if (topicContent) {
+      const updatedContent = { ...topicContent }
+      if (!updatedContent.questions_correct) {
+        updatedContent.questions_correct = {}
+      }
+      if (!updatedContent.questions_correct[currentTab]) {
+        updatedContent.questions_correct[currentTab] = []
+      }
+      updatedContent.questions_correct[currentTab][questionIndex] = isCorrect
+      setTopicContent(updatedContent)
+    }
+  }
+
+  const handleAllQuestionsComplete = async () => {
+    if (!topicContent || !currentTopic) return
+    
+    // Mark current tab as completed
+    const updatedContent = { ...topicContent }
+    if (!updatedContent.completed_tabs) {
+      updatedContent.completed_tabs = []
+    }
+    if (!updatedContent.completed_tabs.includes(currentTab)) {
+      updatedContent.completed_tabs.push(currentTab)
+    }
+    setTopicContent(updatedContent)
+    
+    // Find the next available tab
+    const tabs: Array<'basic' | 'intermediate' | 'advanced' | 'expert'> = ['basic', 'intermediate', 'advanced', 'expert']
+    const currentIndex = tabs.indexOf(currentTab)
+    
+    // Check if there's a next tab that's not completed
+    for (let i = currentIndex + 1; i < tabs.length; i++) {
+      const nextTab = tabs[i]
+      
+      // Check if this tab should be unlocked (previous tab is completed)
+      const previousTab = tabs[i - 1]
+      const isPreviousCompleted = updatedContent.completed_tabs.includes(previousTab)
+      
+      if (isPreviousCompleted && !updatedContent.completed_tabs.includes(nextTab)) {
+        // Automatically switch to the next tab
+        await handleTabChange(nextTab)
+        break
+      }
+    }
   }
 
   const handleExit = () => {
@@ -248,6 +296,7 @@ export default function StudentLecturePage() {
         <div className="w-[480px] bg-gray-850 border-l border-gray-700">
           {currentTopic && topicContent && (
             <QuestionPanel
+              key={`${currentTopic}-${currentTab}`}
               questions={topicContent.difficulty_levels[currentTab]?.questions || []}
               difficulty={currentTab}
               topicId={currentTopic}
@@ -256,6 +305,7 @@ export default function StudentLecturePage() {
               questionsCorrect={topicContent.questions_correct?.[currentTab] || []}
               images={topicContent.images}
               onQuestionComplete={handleQuestionComplete}
+              onAllQuestionsComplete={handleAllQuestionsComplete}
             />
           )}
         </div>

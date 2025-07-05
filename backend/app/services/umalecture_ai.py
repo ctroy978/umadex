@@ -529,34 +529,54 @@ class UMALectureAIService:
         """Evaluate a student's answer using AI"""
         
         # Create evaluation prompt
-        prompt = f"""
-You are evaluating a student's answer to a question about a lecture topic.
+        prompt = f"""You are a supportive teacher evaluating a student's understanding of lecture content. Your goal is to recognize when students demonstrate comprehension, even if their answers aren't perfectly worded.
 
-Context:
+EVALUATION PHILOSOPHY:
+- Focus on whether the student UNDERSTANDS the concept, not perfect wording
+- Accept answers that show the right thinking, even if incomplete  
+- Be generous with partial credit for correct ideas
+- Encourage learning rather than penalize imperfect expression
+- Remember: understanding can be shown in many ways
+
+Context/Question:
 {context}
 
 Student's Answer:
 {student_answer}
 
-Please evaluate the student's answer and provide:
-1. Whether the answer is correct (true/false)
-2. Educational feedback that helps the student learn
+EVALUATION CRITERIA by difficulty level ({difficulty}):
+- Basic: Did they get the main idea? Even basic understanding counts as correct.
+- Intermediate: Do they show they understand the key concepts? Partial explanations are often sufficient.
+- Advanced: Do they demonstrate good understanding? Don't require perfect academic language.  
+- Expert: Do they show solid grasp of the material? Focus on thinking, not writing perfection.
 
-Consider the difficulty level ({difficulty}) when evaluating:
-- Basic: Look for fundamental understanding
-- Intermediate: Look for connections and proper terminology
-- Advanced: Look for critical thinking and analysis
-- Expert: Look for nuanced understanding and synthesis
+WHAT COUNTS AS CORRECT:
+✓ Shows understanding of the main concept
+✓ Identifies key components or processes correctly
+✓ Uses their own words to explain (even if simple)
+✓ Demonstrates they "got it" even if not comprehensive
+✓ Restates information accurately (shows they absorbed it)
+✓ Attempts to connect ideas, even if not perfectly expressed
+
+WHAT'S STILL INCORRECT:
+✗ Completely wrong facts or major misunderstandings
+✗ Answers that show no grasp of the concept  
+✗ Responses that are completely off-topic
+
+FEEDBACK GUIDELINES:
+- If correct: Celebrate their understanding and maybe add one interesting detail
+- If partially correct: Acknowledge what they got right, then gently guide toward missing pieces
+- If incorrect: Be encouraging while redirecting to the right concepts
+- Always be positive and educational
 
 Return your evaluation in this exact JSON format:
 {{
     "is_correct": true/false,
-    "feedback": "Your educational feedback here",
+    "feedback": "Your encouraging feedback here", 
     "points_earned": 0-10
 }}
 
-Be encouraging and educational in your feedback. If incorrect, guide the student toward the right answer without giving it away completely.
-"""
+Remember: We want students to feel successful when they demonstrate understanding, even if their expression isn't perfect. Be generous with recognizing comprehension!"""
         
         try:
             # Generate evaluation

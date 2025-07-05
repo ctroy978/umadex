@@ -743,7 +743,7 @@ async def get_classroom_detail(
         .join(ClassroomAssignment,
               and_(
                   ClassroomAssignment.assignment_id == ReadingAssignment.id,
-                  ClassroomAssignment.assignment_type == "UMALecture"
+                  ClassroomAssignment.assignment_type.in_(["UMALecture", "lecture"])
               ))
         .outerjoin(StudentAssignment,
               and_(
@@ -753,9 +753,10 @@ async def get_classroom_detail(
         .where(
             and_(
                 ClassroomAssignment.classroom_id == classroom_id,
-                ClassroomAssignment.assignment_type == "UMALecture",
+                ClassroomAssignment.assignment_type.in_(["UMALecture", "lecture"]),
                 ClassroomAssignment.removed_from_classroom_at.is_(None),
-                ReadingAssignment.deleted_at.is_(None)
+                ReadingAssignment.deleted_at.is_(None),
+                ReadingAssignment.assignment_type == "UMALecture"
             )
         )
         .order_by(ClassroomAssignment.start_date, ClassroomAssignment.display_order, ClassroomAssignment.assigned_at)

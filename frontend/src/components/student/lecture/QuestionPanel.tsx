@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { CheckCircle, XCircle, AlertCircle, Send, Loader2 } from 'lucide-react'
+import { CheckCircle, XCircle, AlertCircle, Send, Loader2, RotateCcw } from 'lucide-react'
 import { umalectureApi } from '@/lib/umalectureApi'
 import type { LectureImage } from '@/lib/umalectureApi'
 
@@ -21,6 +21,7 @@ interface QuestionPanelProps {
   questionsCorrect: boolean[]
   images: LectureImage[]
   onQuestionComplete: (questionIndex: number, isCorrect: boolean) => void
+  onAllQuestionsComplete?: () => void
 }
 
 interface QuestionState {
@@ -29,6 +30,7 @@ interface QuestionState {
   isCorrect: boolean | null
   feedback: string | null
   isEvaluating: boolean
+  attemptCount: number
 }
 
 export function QuestionPanel({
@@ -40,6 +42,7 @@ export function QuestionPanel({
   questionsCorrect,
   images,
   onQuestionComplete,
+  onAllQuestionsComplete,
 }: QuestionPanelProps) {
   const [questionStates, setQuestionStates] = useState<QuestionState[]>([])
 
@@ -52,6 +55,7 @@ export function QuestionPanel({
         isCorrect: questionsCorrect[index] || null,
         feedback: questionsCorrect[index] ? 'You have already answered this question correctly!' : null,
         isEvaluating: false,
+        attemptCount: 0,
       }))
     )
   }, [questions, questionsCorrect])
@@ -111,6 +115,7 @@ export function QuestionPanel({
           isCorrect: result.is_correct,
           feedback: result.feedback,
           isEvaluating: false,
+          attemptCount: (newStates[questionIndex].attemptCount || 0) + 1,
         }
         return newStates
       })
@@ -134,7 +139,33 @@ export function QuestionPanel({
     }
   }
 
+  const handleRetryAnswer = (questionIndex: number) => {
+    setQuestionStates(prev => {
+      const newStates = [...prev]
+      newStates[questionIndex] = {
+        ...newStates[questionIndex],
+        answer: '',
+        submitted: false,
+        isCorrect: null,
+        feedback: null,
+        // Don't increment attempt count here - it's already incremented when submitting
+      }
+      return newStates
+    })
+  }
+
   const allQuestionsCorrect = questionStates.every(state => state.isCorrect === true)
+
+  // Trigger callback when all questions are completed
+  useEffect(() => {
+    if (allQuestionsCorrect && questions.length > 0 && onAllQuestionsComplete) {
+      // Add a small delay to ensure UI updates are visible
+      const timer = setTimeout(() => {
+        onAllQuestionsComplete()
+      }, 1500)
+      return () => clearTimeout(timer)
+    }
+  }, [allQuestionsCorrect, questions.length, onAllQuestionsComplete])
 
   return (
     <div className="h-full flex flex-col bg-gray-850">
@@ -155,6 +186,7 @@ export function QuestionPanel({
             isCorrect: null,
             feedback: null,
             isEvaluating: false,
+            attemptCount: 0,
           }
 
           return (
@@ -191,7 +223,7 @@ export function QuestionPanel({
                       key={optIndex}
                       className={`
                         flex items-center p-3 rounded-lg cursor-pointer transition-all
-                        ${state.submitted 
+                        ${state.submitted && state.isCorrect === true
                           ? 'cursor-not-allowed opacity-75' 
                           : 'hover:bg-gray-700'
                         }
@@ -207,7 +239,7 @@ export function QuestionPanel({
                         value={option}
                         checked={state.answer === option}
                         onChange={(e) => handleAnswerChange(index, e.target.value)}
-                        disabled={state.submitted}
+                        disabled={state.submitted && state.isCorrect === true}
                         className="mr-3"
                       />
                       <span className="text-gray-300">{option}</span>
@@ -226,7 +258,7 @@ export function QuestionPanel({
                   className={`
                     w-full px-3 py-2 rounded-lg bg-gray-750 border text-gray-300
                     placeholder-gray-500 resize-none h-24
-                    ${state.submitted 
+                    ${state.submitted && state.isCorrect === true
                       ? 'border-gray-600 cursor-not-allowed opacity-75' 
                       : 'border-gray-600 focus:border-blue-500 focus:outline-none'
                     }
@@ -234,31 +266,51 @@ export function QuestionPanel({
                 />
               )}
 
-              {/* Submit Button */}
-              {!state.submitted && (
-                <button
-                  onClick={() => handleSubmitAnswer(index)}
-                  disabled={!state.answer.trim() || state.isEvaluating}
-                  className={`
-                    mt-4 px-4 py-2 rounded-lg flex items-center space-x-2 transition-all
-                    ${!state.answer.trim() || state.isEvaluating
-                      ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
-                      : 'bg-blue-600 text-white hover:bg-blue-700'
-                    }
-                  `}
-                >
-                  {state.isEvaluating ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      <span>Evaluating...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Send className="h-4 w-4" />
-                      <span>Submit Answer</span>
-                    </>
+              {/* Submit Button or Retry Button */}
+              {(!state.submitted || (state.submitted && state.isCorrect === false)) && (
+                <div className="mt-4 flex items-center space-x-3">
+                  {!state.submitted && (
+                    <button
+                      onClick={() => handleSubmitAnswer(index)}
+                      disabled={!state.answer.trim() || state.isEvaluating}
+                      className={`
+                        px-4 py-2 rounded-lg flex items-center space-x-2 transition-all
+                        ${!state.answer.trim() || state.isEvaluating
+                          ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
+                          : 'bg-blue-600 text-white hover:bg-blue-700'
+                        }
+                      `}
+                    >
+                      {state.isEvaluating ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <span>Evaluating...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Send className="h-4 w-4" />
+                          <span>Submit Answer</span>
+                        </>
+                      )}
+                    </button>
                   )}
-                </button>
+                  
+                  {state.submitted && state.isCorrect === false && (
+                    <button
+                      onClick={() => handleRetryAnswer(index)}
+                      className="px-4 py-2 rounded-lg flex items-center space-x-2 bg-yellow-600 text-white hover:bg-yellow-700 transition-all"
+                    >
+                      <RotateCcw className="h-4 w-4" />
+                      <span>Try Again</span>
+                    </button>
+                  )}
+                  
+                  {state.attemptCount > 1 && (
+                    <span className="text-sm text-gray-400">
+                      Attempt {state.attemptCount}
+                    </span>
+                  )}
+                </div>
               )}
 
               {/* Feedback */}
