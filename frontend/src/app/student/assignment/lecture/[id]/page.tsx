@@ -149,24 +149,8 @@ export default function StudentLecturePage() {
     }
     setTopicContent(updatedContent)
     
-    // Find the next available tab
-    const tabs: Array<'basic' | 'intermediate' | 'advanced' | 'expert'> = ['basic', 'intermediate', 'advanced', 'expert']
-    const currentIndex = tabs.indexOf(currentTab)
-    
-    // Check if there's a next tab that's not completed
-    for (let i = currentIndex + 1; i < tabs.length; i++) {
-      const nextTab = tabs[i]
-      
-      // Check if this tab should be unlocked (previous tab is completed)
-      const previousTab = tabs[i - 1]
-      const isPreviousCompleted = updatedContent.completed_tabs.includes(previousTab)
-      
-      if (isPreviousCompleted && !updatedContent.completed_tabs.includes(nextTab)) {
-        // Automatically switch to the next tab
-        await handleTabChange(nextTab)
-        break
-      }
-    }
+    // The next tab will automatically be unlocked due to the completed_tabs update
+    // Students can manually navigate to it when they're ready
   }
 
   const handleExit = () => {
