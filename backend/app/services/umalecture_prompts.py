@@ -57,6 +57,18 @@ TOPIC: {topic_title}
 GRADE LEVEL: {grade_level}
 DIFFICULTY: {difficulty} - {difficulty_guidelines[difficulty]}
 
+READING LEVEL REQUIREMENTS:
+Write at the reading level appropriate for {grade_level} students. This means:
+- Use vocabulary that {grade_level} students can understand without assistance
+- Keep sentence structure simple and clear for this grade level
+- Avoid technical jargon unless it's the specific term being taught
+- When introducing new vocabulary, provide context clues within the sentence
+- Aim for sentence lengths typical of {grade_level} textbooks
+- Use active voice and direct language appropriate for this developmental stage
+- If you must use complex terms, immediately follow with simpler explanations
+
+Remember: The content should be intellectually challenging at the {difficulty} level while remaining linguistically accessible to {grade_level} readers.
+
 AVAILABLE IMAGES:
 {chr(10).join(image_descriptions) if image_descriptions else 'No images available'}
 
