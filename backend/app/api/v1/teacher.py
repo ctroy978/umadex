@@ -1170,9 +1170,12 @@ async def list_reading_assignments(
 ):
     """List teacher's reading assignments with search and filter options"""
     
-    # Build base query
+    # Build base query - filter to only show UMARead assignments
     query = select(ReadingAssignmentModel).where(
-        ReadingAssignmentModel.teacher_id == teacher.id
+        and_(
+            ReadingAssignmentModel.teacher_id == teacher.id,
+            ReadingAssignmentModel.assignment_type == "UMARead"
+        )
     )
     
     # Handle archived/deleted filter
