@@ -329,7 +329,8 @@ class UMALectureAIService:
                         difficulty,
                         grade_level,
                         subject,
-                        [desc["educational_description"] for desc in topic_images]
+                        [desc["educational_description"] for desc in topic_images],
+                        objectives  # Add this line - learning_objectives is already available in scope
                     )
                     
                     content_text = await self._generate_content_async(content_prompt)

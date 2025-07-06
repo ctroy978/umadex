@@ -33,7 +33,8 @@ Return a structured list of topics with their relationships."""
         difficulty: str,
         grade_level: str,
         subject: str,
-        image_descriptions: List[str]
+        image_descriptions: List[str],
+        learning_objectives: List[str] = None  # Add this parameter
     ) -> str:
         """Get prompt for generating content at a specific difficulty"""
         
@@ -56,6 +57,9 @@ Return a structured list of topics with their relationships."""
 TOPIC: {topic_title}
 GRADE LEVEL: {grade_level}
 DIFFICULTY: {difficulty} - {difficulty_guidelines[difficulty]}
+
+LEARNING OBJECTIVES:
+{chr(10).join(f"- {obj}" for obj in learning_objectives) if learning_objectives else "No specific learning objectives provided"}
 
 READING LEVEL REQUIREMENTS:
 Write at the reading level appropriate for {grade_level} students. This means:
@@ -85,9 +89,9 @@ IMPORTANT: Create strategic knowledge gaps - don't fully explain terms marked wi
 Instead, mention them in context but leave room for students to explore deeper.
 
 Requirements:
-1. Base content ONLY on the topic title, learning objectives from the outline, and uploaded images
-2. Do NOT incorporate subject area unless explicitly mentioned in the topic/outline
-3. Write engaging, age-appropriate content that stays true to the outlined material
+1. Base content ONLY on the topic title, the learning objectives listed above, and uploaded images
+2. Ensure content directly supports achievement of the stated learning objectives
+3. Do NOT incorporate general subject knowledge unless explicitly mentioned in the topic/objectives
 4. Include key concepts clearly explained EXCEPT for <explore> tagged terms
 5. Reference images naturally where relevant
 6. Build on previous difficulty levels
