@@ -5,21 +5,58 @@ import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
 import { 
   AcademicCapIcon,
-  ArrowPathIcon,
   CheckCircleIcon,
   ExclamationCircleIcon,
+  DocumentTextIcon,
+  PhotoIcon,
   SparklesIcon,
-  ClockIcon
+  QuestionMarkCircleIcon,
+  RocketLaunchIcon
 } from '@heroicons/react/24/outline'
 import { umalectureApi } from '@/lib/umalectureApi'
 import type { LectureProcessingStatus } from '@/lib/umalectureApi'
 
 const processingSteps = [
-  { id: 'parse', label: 'Parsing outline structure', icon: ClockIcon },
-  { id: 'analyze', label: 'Analyzing images with AI', icon: SparklesIcon },
-  { id: 'generate', label: 'Generating interactive content', icon: SparklesIcon },
-  { id: 'questions', label: 'Creating assessment questions', icon: ClockIcon },
-  { id: 'finalize', label: 'Finalizing lecture structure', icon: CheckCircleIcon }
+  { 
+    id: 'parse', 
+    label: 'Parsing outline structure', 
+    icon: DocumentTextIcon,
+    color: 'text-blue-600',
+    bgColor: 'bg-blue-100',
+    description: 'Analyzing your lecture outline'
+  },
+  { 
+    id: 'analyze', 
+    label: 'Analyzing images with AI', 
+    icon: PhotoIcon,
+    color: 'text-purple-600',
+    bgColor: 'bg-purple-100',
+    description: 'Processing visual content'
+  },
+  { 
+    id: 'generate', 
+    label: 'Generating interactive content', 
+    icon: SparklesIcon,
+    color: 'text-amber-600',
+    bgColor: 'bg-amber-100',
+    description: 'Creating engaging materials'
+  },
+  { 
+    id: 'questions', 
+    label: 'Creating assessment questions', 
+    icon: QuestionMarkCircleIcon,
+    color: 'text-indigo-600',
+    bgColor: 'bg-indigo-100',
+    description: 'Building comprehension checks'
+  },
+  { 
+    id: 'finalize', 
+    label: 'Finalizing lecture structure', 
+    icon: RocketLaunchIcon,
+    color: 'text-green-600',
+    bgColor: 'bg-green-100',
+    description: 'Preparing for launch'
+  }
 ]
 
 export default function LectureProcessingPage() {
@@ -28,12 +65,18 @@ export default function LectureProcessingPage() {
   const lectureId = params.id as string
   
   const [status, setStatus] = useState<LectureProcessingStatus | null>(null)
-  const [currentStep, setCurrentStep] = useState(0)
-  const [stepProgress, setStepProgress] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [elapsedTime, setElapsedTime] = useState(0)
   const [stepStatuses, setStepStatuses] = useState<{[key: string]: string}>({})
-  const [overallProgress, setOverallProgress] = useState(0)
+  const [currentMessage, setCurrentMessage] = useState(0)
+
+  // Rotating messages for engagement
+  const messages = [
+    "AI is analyzing your content and creating personalized learning paths...",
+    "Building interactive elements to engage your students...",
+    "Crafting questions that reinforce key concepts...",
+    "Almost there! Finalizing your interactive lecture..."
+  ]
 
   // Initialize step statuses
   useEffect(() => {
@@ -44,95 +87,49 @@ export default function LectureProcessingPage() {
     setStepStatuses(initialStatuses)
   }, [])
 
+  // Rotate messages
+  useEffect(() => {
+    const messageInterval = setInterval(() => {
+      setCurrentMessage((prev) => (prev + 1) % messages.length)
+    }, 4000)
+    return () => clearInterval(messageInterval)
+  }, [messages.length])
+
   useEffect(() => {
     const checkStatus = async () => {
       try {
         const processingStatus = await umalectureApi.getProcessingStatus(lectureId)
         setStatus(processingStatus)
-        console.log('Processing status:', processingStatus)
-        console.log('Processing steps:', processingStatus.processing_steps)
         
         if (processingStatus.status === 'published') {
-          // Processing complete, redirect to review
-          router.push(`/teacher/uma-lecture/${lectureId}/review`)
+          // Add a small delay before redirect for visual satisfaction
+          setTimeout(() => {
+            router.push(`/teacher/uma-lecture/${lectureId}/review`)
+          }, 1000)
         } else if (processingStatus.status === 'draft' && processingStatus.processing_error) {
           setError(processingStatus.processing_error)
         } else if (processingStatus.status === 'processing') {
           // Calculate elapsed time
-          let elapsed = 0
           if (processingStatus.processing_started_at) {
             const startTime = new Date(processingStatus.processing_started_at).getTime()
-            elapsed = Date.now() - startTime
+            const elapsed = Date.now() - startTime
             setElapsedTime(Math.floor(elapsed / 1000))
           }
           
-          // Use actual processing steps if available
+          // Update step statuses from actual processing data
           if (processingStatus.processing_steps) {
-            let activeStepIndex = -1
-            let activeStepProgress = 0
             const newStepStatuses: {[key: string]: string} = {}
             
-            // Build step statuses map
-            processingSteps.forEach((step, index) => {
+            processingSteps.forEach((step) => {
               const stepData = processingStatus.processing_steps?.[step.id]
               if (stepData) {
                 newStepStatuses[step.id] = stepData.status
-                if (stepData.status === 'in_progress') {
-                  activeStepIndex = index
-                  // Calculate progress based on time in current step
-                  if (stepData.started_at) {
-                    const stepElapsed = Date.now() - new Date(stepData.started_at).getTime()
-                    activeStepProgress = Math.min((stepElapsed / 15000) * 100, 90) // Cap at 90%
-                  }
-                }
               } else {
                 newStepStatuses[step.id] = 'pending'
               }
             })
             
-            // If no step is in progress, find the last completed step
-            if (activeStepIndex === -1) {
-              processingSteps.forEach((step, index) => {
-                if (newStepStatuses[step.id] === 'completed') {
-                  activeStepIndex = index
-                }
-              })
-              activeStepProgress = 100 // Last completed step is 100% done
-            }
-            
             setStepStatuses(newStepStatuses)
-            setCurrentStep(Math.max(0, activeStepIndex))
-            setStepProgress(activeStepProgress)
-            
-            // Calculate overall progress
-            const completedSteps = Object.values(newStepStatuses).filter(s => s === 'completed').length || 0
-            const inProgressBonus = activeStepIndex >= 0 && newStepStatuses[processingSteps[activeStepIndex]?.id] === 'in_progress' 
-              ? (activeStepProgress / 100) || 0
-              : 0
-            const totalSteps = processingSteps.length || 1 // Avoid division by zero
-            const calculatedProgress = Math.max(0, Math.min(100, 
-              ((completedSteps + inProgressBonus) / totalSteps) * 100
-            ))
-            setOverallProgress(Math.round(calculatedProgress) || 0)
-          } else {
-            // Fallback to estimation
-            const estimatedStep = Math.min(
-              Math.floor(elapsed / 20000),
-              processingSteps.length - 1
-            )
-            setCurrentStep(estimatedStep)
-            
-            const progressInStep = Math.min(
-              ((elapsed % 20000) / 20000) * 100,
-              100
-            )
-            setStepProgress(progressInStep)
-            
-            // Calculate overall progress for fallback
-            const estimatedOverallProgress = Math.max(0, Math.min(100,
-              ((estimatedStep + (progressInStep / 100)) / processingSteps.length) * 100
-            ))
-            setOverallProgress(Math.round(estimatedOverallProgress))
           }
         }
       } catch (err) {
@@ -144,8 +141,8 @@ export default function LectureProcessingPage() {
     // Check immediately
     checkStatus()
 
-    // Poll every 3 seconds
-    const interval = setInterval(checkStatus, 3000)
+    // Poll every 2 seconds for more responsive updates
+    const interval = setInterval(checkStatus, 2000)
 
     return () => clearInterval(interval)
   }, [lectureId, router])
@@ -182,47 +179,40 @@ export default function LectureProcessingPage() {
     )
   }
 
+  // Check if all steps are completed
+  const allCompleted = Object.values(stepStatuses).every(status => status === 'completed')
+
   return (
-    <div className="max-w-2xl mx-auto p-8">
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+    <div className="max-w-3xl mx-auto p-8">
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8">
         {/* Header */}
-        <div className="flex items-center justify-between mb-8">
-          <div className="flex items-center space-x-3">
-            <AcademicCapIcon className="h-8 w-8 text-red-500" />
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">Creating Your Interactive Lecture</h1>
-              <p className="text-gray-600 mt-1">AI is processing your content. This may take a few minutes.</p>
-            </div>
+        <div className="text-center mb-10">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-red-100 rounded-full mb-4">
+            <AcademicCapIcon className="h-10 w-10 text-red-600" />
           </div>
-          {elapsedTime > 0 && (
-            <div className="text-right">
-              <p className="text-sm text-gray-500">Elapsed time</p>
-              <p className="text-lg font-medium text-gray-900">
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">
+            {allCompleted ? 'Lecture Ready!' : 'Creating Your Interactive Lecture'}
+          </h1>
+          <p className="text-gray-600 text-lg">
+            {allCompleted ? 'Your lecture has been successfully created!' : messages[currentMessage]}
+          </p>
+        </div>
+
+        {/* Timer Display */}
+        {elapsedTime > 0 && !allCompleted && (
+          <div className="text-center mb-8">
+            <div className="inline-flex items-center px-4 py-2 bg-gray-100 rounded-full">
+              <span className="text-sm text-gray-500 mr-2">Time elapsed:</span>
+              <span className="text-sm font-medium text-gray-900">
                 {Math.floor(elapsedTime / 60)}:{(elapsedTime % 60).toString().padStart(2, '0')}
-              </p>
-            </div>
-          )}
-        </div>
-
-        {/* Overall Progress Bar */}
-        <div className="mb-8">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium text-gray-700">Overall Progress</span>
-            <span className="text-sm text-gray-500">{overallProgress}%</span>
-          </div>
-          <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
-            <div 
-              className="bg-gradient-to-r from-primary-500 to-primary-600 h-3 rounded-full transition-all duration-500 ease-out"
-              style={{ width: `${overallProgress}%` }}
-            >
-              <div className="h-full bg-white/20 animate-pulse"></div>
+              </span>
             </div>
           </div>
-        </div>
+        )}
 
-        {/* Processing Steps */}
-        <div className="space-y-4 mb-8">
-          {processingSteps.map((step, index) => {
+        {/* Processing Steps Grid */}
+        <div className="grid gap-4 mb-8">
+          {processingSteps.map((step) => {
             const StepIcon = step.icon
             const stepStatus = stepStatuses[step.id] || 'pending'
             const isActive = stepStatus === 'in_progress'
@@ -230,58 +220,119 @@ export default function LectureProcessingPage() {
             const isPending = stepStatus === 'pending'
             
             return (
-              <div key={step.id} className="flex items-center space-x-3">
-                <div className={`
-                  flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center
-                  ${isComplete ? 'bg-green-100' : isActive ? 'bg-primary-100' : 'bg-gray-100'}
-                `}>
-                  {isComplete ? (
-                    <CheckCircleIcon className="h-6 w-6 text-green-600" />
-                  ) : (
-                    <StepIcon className={`h-6 w-6 ${isActive ? 'text-primary-600 animate-pulse' : 'text-gray-400'}`} />
-                  )}
-                </div>
-                <div className="flex-1">
-                  <p className={`text-sm font-medium ${isActive ? 'text-gray-900' : isComplete ? 'text-gray-700' : 'text-gray-500'}`}>
-                    {step.label}
-                  </p>
-                  {isActive && (
-                    <div className="mt-1 w-full bg-gray-200 rounded-full h-2 overflow-hidden">
-                      <div 
-                        className="bg-primary-600 h-2 rounded-full transition-all duration-500 ease-out"
-                        style={{ width: `${index === currentStep ? stepProgress : 0}%` }}
-                      ></div>
+              <div 
+                key={step.id} 
+                className={`
+                  relative rounded-lg border-2 p-4 transition-all duration-500
+                  ${isComplete ? 'border-green-500 bg-green-50' : 
+                    isActive ? 'border-primary-500 bg-primary-50 shadow-lg' : 
+                    'border-gray-200 bg-white'}
+                `}
+              >
+                <div className="flex items-center">
+                  {/* Icon Container */}
+                  <div className="relative mr-4">
+                    <div className={`
+                      w-12 h-12 rounded-full flex items-center justify-center transition-all duration-500
+                      ${isComplete ? 'bg-green-100' : isActive ? step.bgColor : 'bg-gray-100'}
+                    `}>
+                      {isComplete ? (
+                        <CheckCircleIcon className="h-7 w-7 text-green-600" />
+                      ) : (
+                        <StepIcon 
+                          className={`
+                            h-7 w-7 transition-all duration-500
+                            ${isActive ? `${step.color} animate-pulse` : 'text-gray-400'}
+                          `} 
+                        />
+                      )}
                     </div>
-                  )}
+                    
+                    {/* Loading spinner for active step */}
+                    {isActive && (
+                      <div className="absolute inset-0 -m-1">
+                        <svg className="w-14 h-14 animate-spin" viewBox="0 0 24 24">
+                          <circle 
+                            className="opacity-25" 
+                            cx="12" 
+                            cy="12" 
+                            r="10" 
+                            stroke="currentColor" 
+                            strokeWidth="3"
+                            fill="none"
+                          />
+                          <path 
+                            className="opacity-75" 
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="3"
+                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                          />
+                        </svg>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Content */}
+                  <div className="flex-1">
+                    <h3 className={`
+                      font-semibold transition-all duration-500
+                      ${isComplete ? 'text-green-700' : isActive ? 'text-gray-900' : 'text-gray-500'}
+                    `}>
+                      {step.label}
+                    </h3>
+                    <p className={`
+                      text-sm mt-1 transition-all duration-500
+                      ${isComplete ? 'text-green-600' : isActive ? 'text-gray-600' : 'text-gray-400'}
+                    `}>
+                      {isComplete ? 'Completed' : isActive ? step.description : 'Waiting...'}
+                    </p>
+                  </div>
+
+                  {/* Status indicator */}
+                  <div className="ml-4">
+                    {isActive && (
+                      <div className="flex space-x-1">
+                        <div className="w-2 h-2 bg-primary-600 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                        <div className="w-2 h-2 bg-primary-600 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                        <div className="w-2 h-2 bg-primary-600 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             )
           })}
         </div>
 
-        {/* Loading Animation */}
-        <div className="flex justify-center mb-6">
-          <div className="relative">
-            <ArrowPathIcon className="h-12 w-12 text-primary-600 animate-spin" />
-            <SparklesIcon className="h-6 w-6 text-yellow-500 absolute top-0 right-0 animate-pulse" />
+        {/* Success State */}
+        {allCompleted && (
+          <div className="text-center">
+            <div className="inline-flex items-center px-6 py-3 bg-green-100 text-green-700 rounded-full mb-4">
+              <CheckCircleIcon className="h-5 w-5 mr-2" />
+              <span className="font-medium">All steps completed successfully!</span>
+            </div>
+            <p className="text-sm text-gray-500">Redirecting to your lecture...</p>
           </div>
-        </div>
+        )}
 
         {/* Info Box */}
-        <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
-          <p className="text-sm text-blue-800">
-            <strong>Did you know?</strong> The AI is creating multiple difficulty levels for each topic, 
-            generating questions that reference your images, and building an interactive learning path 
-            tailored to your students&apos; needs.
-          </p>
-        </div>
-
-        {/* Action */}
-        <div className="mt-6 text-center">
-          <p className="text-sm text-gray-500">
-            You&apos;ll be automatically redirected when processing is complete.
-          </p>
-        </div>
+        {!allCompleted && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <div className="flex">
+              <SparklesIcon className="h-5 w-5 text-blue-600 mt-0.5 mr-2 flex-shrink-0" />
+              <div>
+                <p className="text-sm text-blue-800">
+                  <strong>AI Magic in Progress</strong>
+                </p>
+                <p className="text-sm text-blue-700 mt-1">
+                  We're creating multiple difficulty levels, generating contextual questions, 
+                  and building an adaptive learning experience tailored to your content.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

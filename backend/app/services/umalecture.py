@@ -395,55 +395,50 @@ class UMALectureService:
         position: int
     ) -> Dict[str, Any]:
         """Add an image to a lecture"""
-        # Create upload directory
-        upload_dir = os.path.join(settings.UPLOAD_DIR, "lectures", str(lecture_id))
-        os.makedirs(upload_dir, exist_ok=True)
-        
-        # Generate unique filename
-        file_ext = os.path.splitext(file.filename)[1]
-        unique_filename = f"{uuid.uuid4()}{file_ext}"
-        
-        # Process image (create multiple sizes)
-        file_content = await file.read()
-        processed_images = await self.image_processor.process_image(
-            file_content,
-            upload_dir,
-            unique_filename
-        )
-        
-        # Insert into database
-        query = sql_text("""
-            INSERT INTO lecture_images (
-                lecture_id, filename, teacher_description, 
-                node_id, position, original_url, display_url, 
-                thumbnail_url, file_size, mime_type
-            ) VALUES (
-                :lecture_id, :filename, :teacher_description,
-                :node_id, :position, :original_url, :display_url,
-                :thumbnail_url, :file_size, :mime_type
-            ) RETURNING *
-        """)
-        
-        result = await db.execute(
-            query,
-            {
-                "lecture_id": lecture_id,
-                "filename": unique_filename,
-                "teacher_description": teacher_description,
-                "node_id": node_id,
-                "position": position,
-                "original_url": processed_images["original"],
-                "display_url": processed_images.get("display"),
-                "thumbnail_url": processed_images.get("thumbnail"),
-                "file_size": len(file_content),
-                "mime_type": file.content_type
-            }
-        )
-        
-        image = result.mappings().first()
-        await db.commit()
-        
-        return dict(image)
+        # Use the same validation and processing as reading assignments
+        try:
+            # Process image using the same method as reading assignments
+            processed_data = await self.image_processor.validate_and_process_image(
+                file=file,
+                assignment_id=str(lecture_id),
+                image_number=position
+            )
+            
+            # Insert into database
+            query = sql_text("""
+                INSERT INTO lecture_images (
+                    lecture_id, filename, teacher_description, 
+                    node_id, position, original_url, display_url, 
+                    thumbnail_url, file_size, mime_type
+                ) VALUES (
+                    :lecture_id, :filename, :teacher_description,
+                    :node_id, :position, :original_url, :display_url,
+                    :thumbnail_url, :file_size, :mime_type
+                ) RETURNING *
+            """)
+            
+            result = await db.execute(
+                query,
+                {
+                    "lecture_id": lecture_id,
+                    "filename": processed_data["image_key"],
+                    "teacher_description": teacher_description,
+                    "node_id": node_id,
+                    "position": position,
+                    "original_url": processed_data["original_url"],
+                    "display_url": processed_data["display_url"],
+                    "thumbnail_url": processed_data["thumbnail_url"],
+                    "file_size": processed_data["file_size"],
+                    "mime_type": processed_data["mime_type"]
+                }
+            )
+            
+            image = result.mappings().first()
+            await db.commit()
+            
+            return dict(image)
+        except Exception as e:
+            raise e
     
     async def list_images(
         self, 

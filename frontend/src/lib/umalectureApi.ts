@@ -1,7 +1,7 @@
 /**
  * UMALecture API client
  */
-import { apiRequest } from './api'
+import api, { apiRequest } from './api'
 
 export interface LectureAssignment {
   id: string
@@ -196,12 +196,18 @@ export const umalectureApi = {
     }),
 
   // Image management
-  uploadImage: (lectureId: string, formData: FormData) =>
-    apiRequest<LectureImage>(`/v1/umalecture/lectures/${lectureId}/images`, {
-      method: 'POST',
-      body: formData,
-      headers: {}, // Let browser set multipart headers
-    }),
+  uploadImage: async (lectureId: string, formData: FormData): Promise<LectureImage> => {
+    const response = await api.post(
+      `/v1/umalecture/lectures/${lectureId}/images`,
+      formData,
+      {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      }
+    );
+    return response.data;
+  },
 
   listImages: (lectureId: string) =>
     apiRequest<LectureImage[]>(`/v1/umalecture/lectures/${lectureId}/images`),

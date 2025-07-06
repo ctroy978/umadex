@@ -118,17 +118,39 @@ api.interceptors.response.use(
 )
 
 // Helper function for simpler API requests
-export async function apiRequest(url: string, options?: {
+export async function apiRequest<T = any>(url: string, options?: {
   method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
-  body?: string;
+  body?: string | FormData;
   headers?: Record<string, string>;
-}) {
+}): Promise<T> {
   const method = options?.method || 'GET';
-  const config = {
+  const config: any = {
     method: method.toLowerCase(),
-    data: options?.body ? JSON.parse(options.body) : undefined,
     headers: options?.headers || {},
   };
+
+  // Handle different body types
+  if (options?.body) {
+    if (options.body instanceof FormData) {
+      config.data = options.body;
+    } else {
+      config.data = JSON.parse(options.body);
+    }
+  }
+
+  // For FormData, we need to use a request without the default headers
+  if (options?.body instanceof FormData) {
+    const response = await api.request({
+      url,
+      method: config.method,
+      data: config.data,
+      headers: {
+        ...options?.headers || {},
+        // Let axios/browser set the Content-Type with boundary
+      }
+    });
+    return response.data;
+  }
 
   const response = await api({
     url,
