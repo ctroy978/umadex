@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { CheckCircle, Circle, Lock, X } from 'lucide-react'
 import { ExplorationContent } from './ExplorationContent'
+import ImageModal from '../umaread/ImageModal'
 import type { TopicContent } from '@/lib/umalectureApi'
 
 interface TopicContentPanelProps {
@@ -29,7 +30,7 @@ export function TopicContentPanel({
   lectureId,
   gradeLevel,
 }: TopicContentPanelProps) {
-  const [expandedImage, setExpandedImage] = useState<string | null>(null)
+  const [selectedImage, setSelectedImage] = useState<{ url: string; description: string } | null>(null)
 
   const getTabStatus = (tabId: string) => {
     if (completedTabs.includes(tabId)) return 'complete'
@@ -53,65 +54,57 @@ export function TopicContentPanel({
     const content = topic.difficulty_levels[currentTab]?.content
     if (!content) return <p className="text-gray-400">Content not available</p>
 
-    // Process content with exploration points
-    const processedContent = processContentWithImages(content)
-
     return (
-      <div className="prose prose-invert max-w-none">
-        <ExplorationContent
-          content={processedContent}
-          topicId={topic.id}
-          topicTitle={topic.title}
-          difficultyLevel={currentTab}
-          gradeLevel={gradeLevel}
-          lectureId={lectureId}
-        />
+      <>
+        <div className="prose prose-invert max-w-none">
+          <ExplorationContent
+            content={content}
+            topicId={topic.id}
+            topicTitle={topic.title}
+            difficultyLevel={currentTab}
+            gradeLevel={gradeLevel}
+            lectureId={lectureId}
+          />
+        </div>
 
-        {/* Show remaining images at the end if not already shown */}
-        {topic.images.length > 0 && (
-          <div className="mt-8 border-t border-gray-700 pt-6">
-            <h3 className="text-lg font-medium text-white mb-4">Related Images</h3>
-            <div className="grid grid-cols-2 gap-4">
+        {/* Display images at the bottom if available */}
+        {topic.images && topic.images.length > 0 && (
+          <div className="mt-8 pt-6 border-t border-gray-700">
+            <h3 className="text-lg font-medium text-white mb-4">Reference Images</h3>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
               {topic.images.map((image, index) => (
-                <div 
+                <button
                   key={image.id}
-                  className="cursor-pointer group"
-                  onClick={() => setExpandedImage(image.display_url || image.original_url)}
+                  onClick={() => setSelectedImage({
+                    url: image.display_url || image.original_url,
+                    description: image.ai_description || image.teacher_description || ''
+                  })}
+                  className="relative group cursor-pointer overflow-hidden rounded-lg shadow-md hover:shadow-xl transition-all duration-200 bg-gray-800"
                 >
                   <img
                     src={image.thumbnail_url || image.original_url}
                     alt={image.teacher_description}
-                    className="rounded-lg shadow-lg w-full h-32 object-cover group-hover:opacity-90 transition-opacity"
+                    className="w-full h-32 object-cover group-hover:opacity-90 transition-opacity"
                   />
-                  <p className="text-xs text-gray-400 mt-2 italic line-clamp-2">
-                    {image.ai_description || image.teacher_description}
-                  </p>
-                </div>
+                  <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-opacity flex items-center justify-center">
+                    <span className="text-white opacity-0 group-hover:opacity-100 transition-opacity bg-black bg-opacity-70 px-3 py-1 rounded text-sm">
+                      Click to view
+                    </span>
+                  </div>
+                  <div className="p-2">
+                    <p className="text-xs text-gray-400 line-clamp-2">
+                      {image.teacher_description}
+                    </p>
+                  </div>
+                </button>
               ))}
             </div>
           </div>
         )}
-      </div>
+      </>
     )
   }
 
-  const processContentWithImages = (content: string) => {
-    // Split content into paragraphs and process image placeholders
-    const paragraphs = content.split('\n\n')
-    const relevantImages = topic.images.filter(img => 
-      content.includes('[Image')
-    )
-
-    return paragraphs.map((paragraph, index) => {
-      // Check if paragraph references an image
-      const imageMatch = paragraph.match(/\[Image (\d+)\]/)
-      if (imageMatch && relevantImages[parseInt(imageMatch[1]) - 1]) {
-        const image = relevantImages[parseInt(imageMatch[1]) - 1]
-        return `\n\n![${image.ai_description || image.teacher_description}](${image.display_url || image.original_url})\n\n`
-      }
-      return paragraph
-    }).join('\n\n')
-  }
 
   return (
     <div className="h-full flex flex-col">
@@ -159,24 +152,12 @@ export function TopicContentPanel({
       </div>
 
       {/* Image Modal */}
-      {expandedImage && (
-        <div 
-          className="fixed inset-0 bg-black bg-opacity-90 z-50 flex items-center justify-center p-4"
-          onClick={() => setExpandedImage(null)}
-        >
-          <img
-            src={expandedImage}
-            alt="Expanded view"
-            className="max-w-full max-h-full rounded-lg"
-            onClick={(e) => e.stopPropagation()}
-          />
-          <button
-            onClick={() => setExpandedImage(null)}
-            className="absolute top-4 right-4 text-white bg-gray-800 rounded-full p-2 hover:bg-gray-700"
-          >
-            <X className="h-6 w-6" />
-          </button>
-        </div>
+      {selectedImage && (
+        <ImageModal
+          imageUrl={selectedImage.url}
+          altText={selectedImage.description}
+          onClose={() => setSelectedImage(null)}
+        />
       )}
     </div>
   )

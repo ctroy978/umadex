@@ -1188,16 +1188,31 @@ class UMALectureService:
             return None
         
         # Get all images for this topic
+        # We need to match the node_id which might have different formatting than topic_id
+        # Try to find images by matching the topic title from the structure
+        topic_title = topic_data.get("title", "")
+        
         image_query = sql_text("""
             SELECT * FROM lecture_images
             WHERE lecture_id = :lecture_id
-            AND node_id = :topic_id
+            AND (
+                node_id = :topic_id 
+                OR node_id = :topic_title
+                OR LOWER(REPLACE(node_id, ' ', '_')) = LOWER(:topic_id)
+                OR LOWER(node_id) = LOWER(:topic_title)
+                OR LOWER(REPLACE(REPLACE(node_id, ':', ''), ' ', '_')) = LOWER(:topic_id)
+                OR LOWER(REPLACE(node_id, ':', '')) = LOWER(REPLACE(:topic_title, ':', ''))
+            )
             ORDER BY position
         """)
         
         image_result = await db.execute(
             image_query,
-            {"lecture_id": lecture_id, "topic_id": topic_id}
+            {
+                "lecture_id": lecture_id, 
+                "topic_id": topic_id,
+                "topic_title": topic_title
+            }
         )
         
         images = [dict(img) for img in image_result.mappings().all()]

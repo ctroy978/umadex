@@ -73,8 +73,9 @@ Write at the reading level appropriate for {grade_level} students. This means:
 
 Remember: The content should be intellectually challenging at the {difficulty} level while remaining linguistically accessible to {grade_level} readers.
 
-AVAILABLE IMAGES:
-{chr(10).join(image_descriptions) if image_descriptions else 'No images available'}
+TEACHER-PROVIDED IMAGES:
+{chr(10).join(f"- {desc}" for desc in image_descriptions) if image_descriptions else 'No images provided'}
+Note: These images will be displayed to students alongside your content.
 
 CRITICAL INSTRUCTION - EXPLORATION POINTS:
 You MUST include 3-5 strategic exploration points in your content using <explore>term</explore> tags.
@@ -89,11 +90,11 @@ IMPORTANT: Create strategic knowledge gaps - don't fully explain terms marked wi
 Instead, mention them in context but leave room for students to explore deeper.
 
 Requirements:
-1. Base content ONLY on the topic title, the learning objectives listed above, and uploaded images
+1. Base content ONLY on the topic title, the learning objectives listed above, and teacher-provided context
 2. Ensure content directly supports achievement of the stated learning objectives
 3. Do NOT incorporate general subject knowledge unless explicitly mentioned in the topic/objectives
 4. Include key concepts clearly explained EXCEPT for <explore> tagged terms
-5. Reference images naturally where relevant
+5. You may reference the teacher's images conceptually (e.g., "as shown in the circuit diagram") but do not embed them
 6. Build on previous difficulty levels
 7. Aim for 200-400 words
 8. Use formatting for clarity (paragraphs, lists if needed)

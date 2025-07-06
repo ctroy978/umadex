@@ -77,43 +77,18 @@ export default function TeacherUmaLecturePreview() {
   const currentDifficultyLevel = currentTopic?.difficulty_levels?.[activeTab]
   const currentContent = currentDifficultyLevel?.content || ''
   const currentQuestions = currentDifficultyLevel?.questions || []
-  const currentImageIds = currentDifficultyLevel?.images || []
-
   const renderContent = (content: string) => {
-    const parts = content.split(/(\[Image \d+\])/g)
-    
-    return parts.map((part, index) => {
-      const imageMatch = part.match(/\[Image (\d+)\]/)
-      if (imageMatch) {
-        const imageIndex = parseInt(imageMatch[1]) - 1
-        const imageId = currentImageIds[imageIndex]
-        const image = images.find(img => img.id === imageId)
-        
-        if (image) {
-          return (
-            <div key={index} className="my-4">
-              <img
-                src={image.display_url || image.original_url}
-                alt={image.ai_description || image.teacher_description || `Image ${imageIndex + 1}`}
-                className="max-w-full h-auto rounded-lg shadow-md cursor-pointer"
-                onClick={() => setExpandedImage(image.display_url || image.original_url)}
-              />
-              <p className="text-sm text-gray-600 mt-2 text-center">
-                {image.ai_description || image.teacher_description || `Image ${imageIndex + 1}`}
-              </p>
-            </div>
-          )
-        }
-        return <span key={index} className="text-gray-500">[Image {imageIndex + 1} not found]</span>
-      }
-      
-      return (
-        <span key={index} className="whitespace-pre-wrap">
-          {part}
-        </span>
-      )
-    })
+    // Simply render the content without image processing
+    return <div className="whitespace-pre-wrap">{content}</div>
   }
+
+  // Get images for current topic
+  const topicImages = images.filter(img => 
+    img.node_id && currentTopic && 
+    (img.node_id.toLowerCase() === currentTopicId.toLowerCase() ||
+     img.node_id.toLowerCase().includes(currentTopic.title.toLowerCase()) ||
+     currentTopic.title.toLowerCase().includes(img.node_id.toLowerCase()))
+  )
 
   const navigateToTopic = (direction: 'prev' | 'next') => {
     const newIndex = direction === 'prev' 
@@ -179,9 +154,43 @@ export default function TeacherUmaLecturePreview() {
               {/* Content */}
               <div className="p-6">
                 {currentContent ? (
-                  <div className="prose max-w-none">
-                    {renderContent(currentContent)}
-                  </div>
+                  <>
+                    <div className="prose max-w-none">
+                      {renderContent(currentContent)}
+                    </div>
+                    
+                    {/* Display images at the bottom if available */}
+                    {topicImages.length > 0 && (
+                      <div className="mt-8 pt-6 border-t">
+                        <h3 className="text-lg font-medium text-gray-900 mb-4">Reference Images</h3>
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                          {topicImages.map((image, index) => (
+                            <div
+                              key={image.id}
+                              className="relative group cursor-pointer rounded-lg overflow-hidden shadow-md hover:shadow-xl transition-all"
+                              onClick={() => setExpandedImage(image.display_url || image.original_url)}
+                            >
+                              <img
+                                src={image.thumbnail_url || image.original_url}
+                                alt={image.teacher_description}
+                                className="w-full h-32 object-cover group-hover:opacity-90 transition-opacity"
+                              />
+                              <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-opacity flex items-center justify-center">
+                                <span className="text-white opacity-0 group-hover:opacity-100 bg-black bg-opacity-70 px-3 py-1 rounded text-sm">
+                                  Click to expand
+                                </span>
+                              </div>
+                              <div className="p-2 bg-white">
+                                <p className="text-xs text-gray-600 line-clamp-2">
+                                  {image.teacher_description}
+                                </p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
                 ) : (
                   <p className="text-gray-500">No content available for this difficulty level.</p>
                 )}

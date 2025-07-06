@@ -23,8 +23,8 @@ export function ExplorationContent({
   const [modalOpen, setModalOpen] = useState(false)
 
   const processContent = (text: string) => {
-    // Split content while preserving explore tags and image markdown
-    const parts = text.split(/(<explore>.*?<\/explore>|!\[.*?\]\(.*?\))/g)
+    // Split content while preserving explore tags
+    const parts = text.split(/(<explore>.*?<\/explore>)/g)
     
     return parts.map((part, index) => {
       // Check if this part is an explore tag
@@ -47,25 +47,6 @@ export function ExplorationContent({
         )
       }
       
-      // Check if this part contains an image markdown
-      const imageMatch = part.match(/!\[(.*?)\]\((.*?)\)/)
-      if (imageMatch) {
-        const [, alt, src] = imageMatch
-        return (
-          <div key={index} className="my-6">
-            <img
-              src={src}
-              alt={alt}
-              className="rounded-lg shadow-lg max-w-full mx-auto"
-            />
-            {alt && (
-              <p className="text-sm text-gray-400 mt-2 text-center italic">
-                {alt}
-              </p>
-            )}
-          </div>
-        )
-      }
       
       // Regular text - split by newlines to handle paragraphs
       const lines = part.split('\n')
