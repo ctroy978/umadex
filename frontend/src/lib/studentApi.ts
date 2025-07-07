@@ -268,8 +268,10 @@ export const studentApi = {
     return response.data
   },
 
-  async startVocabularyTest(assignmentId: string): Promise<VocabularyTestStartResponse> {
-    const response = await api.post(`/v1/student/vocabulary/${assignmentId}/test/start`)
+  async startVocabularyTest(assignmentId: string, overrideCode?: string): Promise<VocabularyTestStartResponse> {
+    const response = await api.post(`/v1/student/vocabulary/${assignmentId}/test/start`, null, {
+      params: overrideCode ? { override_code: overrideCode } : {}
+    })
     return response.data
   },
 

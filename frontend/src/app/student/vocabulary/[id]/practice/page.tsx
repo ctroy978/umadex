@@ -32,6 +32,10 @@ interface PracticeStatus {
   required_count: number
   test_unlocked: boolean
   test_unlock_date?: string
+  test_completed?: boolean
+  best_test_score?: number
+  test_attempts_count?: number
+  max_test_attempts?: number
 }
 
 export default function VocabularyPracticePage() {
@@ -54,7 +58,31 @@ export default function VocabularyPracticePage() {
       setLoading(true)
       setError(null)
       const status = await studentApi.getVocabularyPracticeStatus(vocabularyId)
-      setPracticeStatus(status)
+      
+      // Transform the API response to match PracticeStatus interface
+      const transformedStatus: PracticeStatus = {
+        assignments: status.assignments.map(assignment => ({
+          type: assignment.type,
+          display_name: assignment.name,
+          status: assignment.is_completed ? 'completed' : 
+                  assignment.has_active_session ? 'in_progress' : 'not_started',
+          attempts: 0, // Not provided by API
+          best_score: 0, // Not provided by API
+          available: true,
+          can_start: !assignment.is_completed,
+          is_completed: assignment.is_completed
+        })),
+        completed_count: status.completed_count,
+        required_count: status.required_count,
+        test_unlocked: status.test_unlocked,
+        test_unlock_date: status.test_unlock_date,
+        test_completed: false, // Default value
+        best_test_score: 0, // Default value
+        test_attempts_count: 0, // Default value
+        max_test_attempts: 3 // Default value
+      }
+      
+      setPracticeStatus(transformedStatus)
     } catch (err: any) {
       console.error('Failed to fetch practice status:', err)
       setError('Failed to load practice activities. Please try again.')
@@ -352,10 +380,10 @@ export default function VocabularyPracticePage() {
                     {!practiceStatus.test_unlocked
                       ? `Complete ${practiceStatus.required_count - practiceStatus.completed_count} more activities to unlock`
                       : practiceStatus.test_completed
-                        ? `Test completed! Score: ${practiceStatus.best_test_score?.toFixed(1)}% (${practiceStatus.test_attempts_count}/${practiceStatus.max_test_attempts} attempts used)`
-                        : practiceStatus.test_attempts_count > 0
-                          ? `Ready to test your vocabulary mastery! (${practiceStatus.max_test_attempts - practiceStatus.test_attempts_count} attempt${practiceStatus.max_test_attempts - practiceStatus.test_attempts_count !== 1 ? 's' : ''} remaining)`
-                          : `Ready to test your vocabulary mastery! (${practiceStatus.max_test_attempts} attempt${practiceStatus.max_test_attempts !== 1 ? 's' : ''} available)`
+                        ? `Test completed! Score: ${practiceStatus.best_test_score?.toFixed(1)}% (${practiceStatus.test_attempts_count || 0}/${practiceStatus.max_test_attempts || 3} attempts used)`
+                        : (practiceStatus.test_attempts_count || 0) > 0
+                          ? `Ready to test your vocabulary mastery! (${(practiceStatus.max_test_attempts || 3) - (practiceStatus.test_attempts_count || 0)} attempt${(practiceStatus.max_test_attempts || 3) - (practiceStatus.test_attempts_count || 0) !== 1 ? 's' : ''} remaining)`
+                          : `Ready to test your vocabulary mastery! (${practiceStatus.max_test_attempts || 3} attempt${(practiceStatus.max_test_attempts || 3) !== 1 ? 's' : ''} available)`
                     }
                   </p>
                 </div>
@@ -380,8 +408,8 @@ export default function VocabularyPracticePage() {
                   ? 'Locked'
                   : practiceStatus.test_completed
                     ? 'Test Completed'
-                    : practiceStatus.test_attempts_count > 0
-                      ? `Retake Test (${practiceStatus.max_test_attempts - practiceStatus.test_attempts_count} left)`
+                    : (practiceStatus.test_attempts_count || 0) > 0
+                      ? `Retake Test (${(practiceStatus.max_test_attempts || 3) - (practiceStatus.test_attempts_count || 0)} left)`
                       : 'Take Test'
                 }
               </button>

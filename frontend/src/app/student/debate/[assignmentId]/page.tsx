@@ -146,7 +146,7 @@ export default function DebateAssignmentPage() {
                 <ChatBubbleLeftRightIcon className="h-5 w-5 text-gray-400 mr-2" />
                 <div>
                   <p className="text-sm text-gray-500">Debates</p>
-                  <p className="font-medium">{assignment.debateCount} debates</p>
+                  <p className="font-medium">{assignment.debateFormat.debateCount} debates</p>
                 </div>
               </div>
               
@@ -154,7 +154,7 @@ export default function DebateAssignmentPage() {
                 <ClockIcon className="h-5 w-5 text-gray-400 mr-2" />
                 <div>
                   <p className="text-sm text-gray-500">Time Limit</p>
-                  <p className="font-medium">{assignment.timeLimitHours} hours per debate</p>
+                  <p className="font-medium">{assignment.debateFormat.timeLimitHours} hours per debate</p>
                 </div>
               </div>
               
@@ -162,7 +162,7 @@ export default function DebateAssignmentPage() {
                 <UserGroupIcon className="h-5 w-5 text-gray-400 mr-2" />
                 <div>
                   <p className="text-sm text-gray-500">Rounds</p>
-                  <p className="font-medium">{assignment.roundsPerDebate} rounds per debate</p>
+                  <p className="font-medium">{assignment.debateFormat.roundsPerDebate} rounds per debate</p>
                 </div>
               </div>
             </div>
@@ -186,7 +186,7 @@ export default function DebateAssignmentPage() {
                     <p className="font-medium">
                       {assignment.status === 'completed' 
                         ? 'All debates completed' 
-                        : `Debate ${progress?.studentDebate?.currentDebate || 1} of ${assignment.debateCount}`}
+                        : `Debate ${progress?.studentDebate?.currentDebate || 1} of ${assignment.debateFormat.debateCount}`}
                     </p>
                   </div>
                   {assignment.status !== 'completed' && (
@@ -219,9 +219,9 @@ export default function DebateAssignmentPage() {
                     <div key={debateNum}>
                       <div className="flex justify-between text-sm mb-1">
                         <span className="text-gray-600">Debate {debateNum}</span>
-                        {progress?.studentDebate?.[`debate_${debateNum}Percentage`] !== null && (
+                        {progress?.studentDebate?.[`debate_${debateNum}Percentage` as keyof typeof progress.studentDebate] !== null && (
                           <span className="text-gray-900 font-medium">
-                            {progress?.studentDebate?.[`debate_${debateNum}Percentage`]}%
+                            {progress?.studentDebate?.[`debate_${debateNum}Percentage` as keyof typeof progress.studentDebate]}%
                           </span>
                         )}
                       </div>

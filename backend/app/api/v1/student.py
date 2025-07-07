@@ -22,10 +22,12 @@ from app.utils.deps import get_current_user
 from app.schemas.classroom import ClassroomResponse
 from app.services.vocabulary_practice import VocabularyPracticeService
 from app.services.vocabulary_test import VocabularyTestService
+from app.services.test_schedule import TestScheduleService
 from app.schemas.vocabulary import (
     VocabularyTestEligibilityResponse, VocabularyTestAttemptRequest,
     VocabularyTestAttemptResponse, VocabularyProgressUpdate
 )
+from app.schemas.test_schedule import ValidateOverrideRequest
 
 router = APIRouter()
 
@@ -2125,6 +2127,7 @@ async def update_vocabulary_assignment_progress(
 @router.post("/vocabulary/{assignment_id}/test/start", response_model=VocabularyTestStartResponse)
 async def start_vocabulary_test(
     assignment_id: UUID,
+    override_code: Optional[str] = None,
     current_user: User = Depends(require_student_or_teacher),
     db: AsyncSession = Depends(get_db)
 ):
@@ -2156,16 +2159,82 @@ async def start_vocabulary_test(
             detail="Vocabulary assignment not found"
         )
     
-    # Check if test time is allowed
-    time_allowed, time_message = await VocabularyTestService.check_test_time_allowed(
-        db, classroom_assignment.id
-    )
+    # Check classroom test schedule using TestScheduleService
+    classroom_id = classroom_assignment.classroom_id
     
-    if not time_allowed:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Test not available: {time_message}"
-        )
+    # Use async TestScheduleService methods with error handling
+    try:
+        availability = await TestScheduleService.check_test_availability(db, classroom_id)
+    except Exception as e:
+        print(f"Error checking test availability: {e}")
+        # If schedule check fails, allow testing (fallback)
+        availability = type('obj', (object,), {
+            'allowed': True,
+            'schedule_active': False,
+            'message': 'Testing is available (schedule check bypassed due to error)',
+            'next_window': None,
+            'current_window_end': None
+        })()
+    
+    # Initialize variables for tracking
+    override_id = None
+    grace_period_end = None
+    started_within_schedule = True
+    
+    if not availability.allowed:
+        # Check if there's an override code
+        if override_code:
+            try:
+                validation = await TestScheduleService.validate_and_use_override(
+                    db,
+                    ValidateOverrideRequest(
+                        override_code=override_code,
+                        student_id=current_user.id
+                    )
+                )
+                
+                if not validation["valid"]:
+                    # IMPORTANT: Don't create test attempt if validation fails
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=f"Testing not available: {availability.message}. Override code invalid: {validation['message']}",
+                        headers={
+                            "X-Next-Window": str(availability.next_window) if availability.next_window else "",
+                            "X-Schedule-Active": str(availability.schedule_active)
+                        }
+                    )
+                else:
+                    # Override was valid
+                    override_id = validation.get("override_id")
+                    started_within_schedule = False
+                    
+            except HTTPException:
+                # Re-raise HTTP exceptions as-is
+                raise
+            except Exception as validation_error:
+                print(f"Error validating override code: {validation_error}")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Error validating override code: {str(validation_error)}"
+                )
+        else:
+            # No override code provided - don't create test attempt
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=availability.message,
+                headers={
+                    "X-Next-Window": str(availability.next_window) if availability.next_window else "",
+                    "X-Schedule-Active": str(availability.schedule_active),
+                    "X-Override-Required": "true"
+                }
+            )
+    
+    # Calculate grace period if test is allowed during schedule
+    if availability.allowed and availability.current_window_end:
+        schedule = await TestScheduleService.get_schedule(db, classroom_id)
+        if schedule and schedule.grace_period_minutes:
+            from datetime import timedelta
+            grace_period_end = availability.current_window_end + timedelta(minutes=schedule.grace_period_minutes)
     
     # Check test eligibility
     eligibility = await VocabularyTestService.check_test_eligibility(

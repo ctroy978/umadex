@@ -18,7 +18,7 @@ import {
   ArrowLeft 
 } from 'lucide-react'
 
-type PageState = 'loading' | 'eligibility' | 'instructions' | 'test' | 'results' | 'error'
+type PageState = 'loading' | 'eligibility' | 'instructions' | 'test' | 'results' | 'error' | 'override_required'
 
 interface TestResults {
   score_percentage: number
@@ -56,6 +56,7 @@ export default function VocabularyTestPage() {
   const [testData, setTestData] = useState<VocabularyTestStartResponse | null>(null)
   const [results, setResults] = useState<TestResults | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [overrideCode, setOverrideCode] = useState<string>('')
 
   useEffect(() => {
     checkEligibility()
@@ -78,15 +79,27 @@ export default function VocabularyTestPage() {
     }
   }
 
-  const startTest = async () => {
+  const startTest = async (overrideCode?: string) => {
     try {
       setPageState('loading')
-      const testResponse = await studentApi.startVocabularyTest(assignmentId)
+      const testResponse = await studentApi.startVocabularyTest(assignmentId, overrideCode)
       setTestData(testResponse)
       setPageState('test')
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error starting test:', error)
-      setError('Failed to start test. Please try again.')
+      
+      // Check if it's a test schedule restriction error
+      if (error.response?.status === 403 && error.response?.headers?.['x-override-required']) {
+        const message = error.response?.data?.detail || 'Test not available at this time'
+        const nextWindow = error.response?.headers?.['x-next-window']
+        
+        setError(message)
+        // Show override code dialog
+        setPageState('override_required')
+        return
+      }
+      
+      setError(error.response?.data?.detail || 'Failed to start test. Please try again.')
       setPageState('error')
     }
   }
@@ -144,6 +157,68 @@ export default function VocabularyTestPage() {
               Go Back
             </Button>
           </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Override code required state
+  if (pageState === 'override_required') {
+    return (
+      <div className="min-h-screen bg-gray-50 p-4">
+        <div className="max-w-2xl mx-auto pt-8">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Clock className="w-6 h-6 text-orange-500" />
+                Test Schedule Restriction
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Alert>
+                <AlertTriangle className="h-4 w-4" />
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+              
+              <div className="space-y-4">
+                <p className="text-sm text-gray-600">
+                  Your teacher has set specific times when tests can be taken. 
+                  If you have a bypass code from your teacher, you can enter it below to access the test.
+                </p>
+                
+                <div className="space-y-2">
+                  <label htmlFor="override-code" className="text-sm font-medium">
+                    Bypass Code
+                  </label>
+                  <input
+                    id="override-code"
+                    type="text"
+                    value={overrideCode}
+                    onChange={(e) => setOverrideCode(e.target.value)}
+                    placeholder="Enter bypass code"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+              
+              <div className="flex gap-2 justify-end">
+                <Button onClick={() => {
+                  const query = classroomId ? `?classroomId=${classroomId}` : ''
+                  router.push(`/student/vocabulary/${assignmentId}/practice${query}`)
+                }} variant="outline">
+                  <ArrowLeft className="w-4 h-4 mr-2" />
+                  Go Back
+                </Button>
+                <Button 
+                  onClick={() => startTest(overrideCode)}
+                  disabled={!overrideCode.trim()}
+                  className="bg-blue-600 hover:bg-blue-700"
+                >
+                  Submit Code
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
         </div>
       </div>
     )
@@ -303,7 +378,7 @@ export default function VocabularyTestPage() {
                   <ArrowLeft className="w-4 h-4 mr-2" />
                   Cancel
                 </Button>
-                <Button onClick={startTest} className="bg-green-600 hover:bg-green-700">
+                <Button onClick={() => startTest()} className="bg-green-600 hover:bg-green-700">
                   Start Test
                 </Button>
               </div>
