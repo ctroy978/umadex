@@ -36,7 +36,8 @@ const ASSIGNMENT_TYPES = [
   { value: 'UMAVocab', label: 'UMA Vocabulary' },
   { value: 'UMADebate', label: 'UMA Debate' },
   { value: 'UMAWrite', label: 'UMA Write' },
-  { value: 'UMALecture', label: 'UMA Lecture' }
+  { value: 'UMALecture', label: 'UMA Lecture' },
+  { value: 'UMATest', label: 'UMA Test' }
 ]
 
 const GRADE_LEVELS = [

@@ -29,8 +29,8 @@ export default function AssignmentCard({ assignment, classroomId }: AssignmentCa
   const statusColors = getStatusColor(assignment.status)
   const timeRemaining = assignment.status === 'active' ? getTimeRemaining(assignment.end_date) : null
   
-  // Check test availability if this is a completed assignment with a test
-  const shouldCheckAvailability = assignment.is_completed && assignment.has_test
+  // Check test availability if this is a completed assignment with a test or a UMATest assignment
+  const shouldCheckAvailability = (assignment.is_completed && assignment.has_test) || assignment.type === 'UMATest'
   const { availability } = useTestAvailability(shouldCheckAvailability ? classroomId : null)
 
   const handleAssignmentClick = () => {
@@ -49,6 +49,15 @@ export default function AssignmentCard({ assignment, classroomId }: AssignmentCa
       } else if (assignment.type === 'UMALecture') {
         // Navigate to lecture assignment page
         router.push(`/student/assignment/lecture/${assignment.id}?classroomId=${classroomId}`)
+      } else if (assignment.type === 'UMATest') {
+        // Navigate to test page for UMATest assignments
+        if (assignment.test_completed && assignment.test_attempt_id) {
+          // Navigate to test results for completed tests
+          router.push(`/student/test/results/${assignment.test_attempt_id}`)
+        } else {
+          // Navigate to test page
+          router.push(`/student/test/${assignment.id}`)
+        }
       } else if (assignment.is_completed && assignment.has_test) {
         if (assignment.test_completed && assignment.test_attempt_id) {
           // Navigate to test results for completed tests
@@ -87,6 +96,8 @@ export default function AssignmentCard({ assignment, classroomId }: AssignmentCa
         return <DocumentCheckIcon className="h-5 w-5 text-amber-600" />
       case 'lecture':
         return <AcademicCapIcon className="h-5 w-5 text-indigo-600" />
+      case 'test':
+        return <DocumentCheckIcon className="h-5 w-5 text-red-600" />
       default:
         return <BookOpenIcon className="h-5 w-5 text-gray-600" />
     }
@@ -146,6 +157,16 @@ export default function AssignmentCard({ assignment, classroomId }: AssignmentCa
           }
           return 'Start Assignment'
         }
+        if (assignment.type === 'UMATest') {
+          if (assignment.test_completed) {
+            return 'View Results'
+          }
+          // Check test availability
+          if (availability && !availability.allowed) {
+            return 'Test Locked'
+          }
+          return 'Start Test'
+        }
         if (assignment.is_completed) {
           if (assignment.has_test) {
             if (assignment.test_completed) {
@@ -166,6 +187,12 @@ export default function AssignmentCard({ assignment, classroomId }: AssignmentCa
   }
   
   const canStartTest = () => {
+    // For UMATest, check availability directly
+    if (assignment.type === 'UMATest') {
+      if (assignment.test_completed) return true // Always allow viewing results
+      if (!availability) return true // Default to allowing if no schedule info
+      return availability.allowed
+    }
     if (!assignment.is_completed) return false
     // For UMAWrite, always allow viewing results when completed
     if (assignment.type === 'UMAWrite') return true
@@ -189,6 +216,7 @@ export default function AssignmentCard({ assignment, classroomId }: AssignmentCa
               assignment.item_type === 'debate' ? 'bg-green-100' :
               assignment.item_type === 'writing' ? 'bg-amber-100' :
               assignment.item_type === 'lecture' ? 'bg-indigo-100' :
+              assignment.item_type === 'test' ? 'bg-red-100' :
               'bg-gray-100'
             }`}>
               {getTypeIcon()}
@@ -254,7 +282,7 @@ export default function AssignmentCard({ assignment, classroomId }: AssignmentCa
         </div>
 
         {/* Test Availability Notice */}
-        {assignment.is_completed && assignment.has_test && availability && !availability.allowed && (
+        {((assignment.is_completed && assignment.has_test) || assignment.type === 'UMATest') && availability && !availability.allowed && (
           <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
             <div className="flex items-start space-x-2">
               <ExclamationTriangleIcon className="h-5 w-5 text-amber-600 mt-0.5 flex-shrink-0" />
@@ -279,6 +307,7 @@ export default function AssignmentCard({ assignment, classroomId }: AssignmentCa
             assignment.type === 'UMADebate' ? 'bg-green-100 text-green-800' :
             assignment.type === 'UMAWrite' ? 'bg-amber-100 text-amber-800' :
             assignment.type === 'UMALecture' ? 'bg-indigo-100 text-indigo-800' :
+            assignment.type === 'UMATest' ? 'bg-red-100 text-red-800' :
             'bg-gray-100 text-gray-800'
           }`}>
             {assignment.type}
@@ -286,20 +315,26 @@ export default function AssignmentCard({ assignment, classroomId }: AssignmentCa
 
           <button
             onClick={handleAssignmentClick}
-            disabled={assignment.status !== 'active' || (assignment.is_completed && !canStartTest())}
+            disabled={assignment.status !== 'active' || ((assignment.is_completed || assignment.type === 'UMATest') && !canStartTest())}
             className={`flex items-center px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
               assignment.status === 'active'
-                ? assignment.is_completed
-                  ? assignment.type === 'UMAWrite'
-                    ? 'bg-blue-600 text-white hover:bg-blue-700'  // Blue for View Results (UMAWrite)
-                    : assignment.has_test
-                      ? assignment.test_completed
-                        ? 'bg-blue-600 text-white hover:bg-blue-700'  // Blue for View Results
-                        : canStartTest()
-                          ? 'bg-green-600 text-white hover:bg-green-700'  // Green for Start Test
-                          : 'bg-red-100 text-red-800 cursor-not-allowed'
-                      : 'bg-green-100 text-green-800 cursor-not-allowed'
-                  : 'bg-primary-600 text-white hover:bg-primary-700'
+                ? assignment.type === 'UMATest'
+                  ? assignment.test_completed
+                    ? 'bg-blue-600 text-white hover:bg-blue-700'  // Blue for View Results
+                    : canStartTest()
+                      ? 'bg-red-600 text-white hover:bg-red-700'  // Red for Start Test (UMATest)
+                      : 'bg-red-100 text-red-800 cursor-not-allowed'
+                  : assignment.is_completed
+                    ? assignment.type === 'UMAWrite'
+                      ? 'bg-blue-600 text-white hover:bg-blue-700'  // Blue for View Results (UMAWrite)
+                      : assignment.has_test
+                        ? assignment.test_completed
+                          ? 'bg-blue-600 text-white hover:bg-blue-700'  // Blue for View Results
+                          : canStartTest()
+                            ? 'bg-green-600 text-white hover:bg-green-700'  // Green for Start Test
+                            : 'bg-red-100 text-red-800 cursor-not-allowed'
+                        : 'bg-green-100 text-green-800 cursor-not-allowed'
+                    : 'bg-primary-600 text-white hover:bg-primary-700'
                 : 'bg-gray-100 text-gray-400 cursor-not-allowed'
             }`}
           >

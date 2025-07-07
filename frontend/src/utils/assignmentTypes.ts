@@ -6,13 +6,13 @@
  */
 
 // Frontend display types (what users see)
-export type FrontendAssignmentType = 'UMARead' | 'UMAVocab' | 'UMADebate' | 'UMAWrite' | 'UMALecture';
+export type FrontendAssignmentType = 'UMARead' | 'UMAVocab' | 'UMADebate' | 'UMAWrite' | 'UMALecture' | 'UMATest';
 
 // Backend/database types (what the API expects)
-export type BackendAssignmentType = 'reading' | 'vocabulary' | 'debate' | 'writing' | 'lecture';
+export type BackendAssignmentType = 'reading' | 'vocabulary' | 'debate' | 'writing' | 'lecture' | 'test';
 
 // Item types used in some contexts
-export type ItemType = 'reading' | 'vocabulary' | 'debate' | 'writing' | 'lecture';
+export type ItemType = 'reading' | 'vocabulary' | 'debate' | 'writing' | 'lecture' | 'test';
 
 // Mapping from frontend to backend types
 const FRONTEND_TO_BACKEND_MAP: Record<FrontendAssignmentType, BackendAssignmentType> = {
@@ -20,7 +20,8 @@ const FRONTEND_TO_BACKEND_MAP: Record<FrontendAssignmentType, BackendAssignmentT
   'UMAVocab': 'vocabulary',
   'UMADebate': 'debate',
   'UMAWrite': 'writing',
-  'UMALecture': 'lecture'
+  'UMALecture': 'lecture',
+  'UMATest': 'test'
 };
 
 // Mapping from backend to frontend types
@@ -29,7 +30,8 @@ const BACKEND_TO_FRONTEND_MAP: Record<BackendAssignmentType, FrontendAssignmentT
   'vocabulary': 'UMAVocab',
   'debate': 'UMADebate',
   'writing': 'UMAWrite',
-  'lecture': 'UMALecture'
+  'lecture': 'UMALecture',
+  'test': 'UMATest'
 };
 
 // Mapping from item type to backend type
@@ -38,7 +40,8 @@ const ITEM_TYPE_TO_BACKEND_MAP: Record<ItemType, BackendAssignmentType> = {
   'vocabulary': 'vocabulary',
   'debate': 'debate',
   'writing': 'writing',
-  'lecture': 'lecture'
+  'lecture': 'lecture',
+  'test': 'test'
 };
 
 /**
@@ -114,14 +117,14 @@ export function getBackendType(assignment: {
  * Check if a string is a valid backend type
  */
 export function isBackendType(type: string): type is BackendAssignmentType {
-  return ['reading', 'vocabulary', 'debate', 'writing', 'lecture'].includes(type);
+  return ['reading', 'vocabulary', 'debate', 'writing', 'lecture', 'test'].includes(type);
 }
 
 /**
  * Check if a string is a valid frontend type
  */
 export function isFrontendType(type: string): type is FrontendAssignmentType {
-  return ['UMARead', 'UMAVocab', 'UMADebate', 'UMAWrite', 'UMALecture'].includes(type);
+  return ['UMARead', 'UMAVocab', 'UMADebate', 'UMAWrite', 'UMALecture', 'UMATest'].includes(type);
 }
 
 /**

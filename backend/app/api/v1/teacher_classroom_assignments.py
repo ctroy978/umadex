@@ -20,6 +20,7 @@ from app.models.vocabulary import VocabularyList
 from app.models.debate import DebateAssignment
 from app.models.writing import WritingAssignment
 from app.models.reading import ReadingAssignment as UMALectureAssignment
+from app.models.umatest import TestAssignment
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -36,7 +37,9 @@ ASSIGNMENT_TYPE_MAP = {
     "writing": "writing",
     "UMAWrite": "writing",
     "lecture": "lecture",
-    "UMALecture": "lecture"
+    "UMALecture": "lecture",
+    "test": "test",
+    "UMATest": "test"
 }
 
 def normalize_assignment_type(assignment_type: str) -> str:
@@ -55,7 +58,7 @@ def require_teacher(current_user: User = Depends(get_current_user)) -> User:
 
 class AssignmentSchedule(BaseModel):
     assignment_id: UUID
-    assignment_type: str = "reading"  # "reading", "vocabulary", "debate", "writing", or "UMALecture"
+    assignment_type: str = "reading"  # "reading", "vocabulary", "debate", "writing", "lecture", or "test"
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
 
@@ -121,6 +124,7 @@ async def check_assignment_removal(
     current_debate = {}
     current_writing = {}
     current_lecture = {}
+    current_test = {}
     for ca in current_assignments:
         if ca.assignment_type == "reading" and ca.assignment_id:
             current_reading[ca.assignment_id] = ca
@@ -132,19 +136,25 @@ async def check_assignment_removal(
             current_writing[ca.assignment_id] = ca
         elif ca.assignment_type in ["UMALecture", "lecture"] and ca.assignment_id:
             current_lecture[ca.assignment_id] = ca
+        elif ca.assignment_type == "test" and ca.assignment_id:
+            current_test[ca.assignment_id] = ca
     
     # Process requested assignments
     requested_reading = set()
     requested_vocabulary = set()
     requested_debate = set()
     requested_writing = set()
+    requested_test = set()
     for sched in request.assignments:
-        if sched.assignment_type == "vocabulary":
+        normalized_type = normalize_assignment_type(sched.assignment_type)
+        if normalized_type == "vocabulary":
             requested_vocabulary.add(sched.assignment_id)
-        elif sched.assignment_type == "debate":
+        elif normalized_type == "debate":
             requested_debate.add(sched.assignment_id)
-        elif sched.assignment_type == "writing":
+        elif normalized_type == "writing":
             requested_writing.add(sched.assignment_id)
+        elif normalized_type == "test":
+            requested_test.add(sched.assignment_id)
         else:
             requested_reading.add(sched.assignment_id)
     
@@ -153,6 +163,7 @@ async def check_assignment_removal(
     vocabulary_to_remove = set(current_vocabulary.keys()) - requested_vocabulary
     debate_to_remove = set(current_debate.keys()) - requested_debate
     writing_to_remove = set(current_writing.keys()) - requested_writing
+    test_to_remove = set(current_test.keys()) - requested_test
     
     assignments_with_students = []
     total_students = 0
@@ -265,6 +276,33 @@ async def check_assignment_removal(
             })
             total_students += student_count
     
+    # Check test assignments
+    for assignment_id in test_to_remove:
+        ca = current_test[assignment_id]
+        
+        # Get assignment details
+        assignment_result = await db.execute(
+            select(TestAssignment).where(TestAssignment.id == assignment_id)
+        )
+        assignment = assignment_result.scalar_one_or_none()
+        
+        # Count students
+        count_result = await db.execute(
+            select(func.count(StudentAssignment.id)).where(
+                StudentAssignment.classroom_assignment_id == ca.id
+            )
+        )
+        student_count = count_result.scalar() or 0
+        
+        if student_count > 0:
+            assignments_with_students.append({
+                "assignment_id": str(assignment_id),
+                "assignment_type": "test",
+                "assignment_title": assignment.test_title if assignment else "Unknown",
+                "student_count": student_count
+            })
+            total_students += student_count
+    
     return CheckAssignmentRemovalResponse(
         assignments_with_students=assignments_with_students,
         total_students_affected=total_students
@@ -317,6 +355,7 @@ async def get_all_available_assignments(
     assigned_debate = {}
     assigned_writing = {}
     assigned_lecture = {}
+    assigned_test = {}
     for ca in assigned_items:
         if ca.assignment_type == "reading" and ca.assignment_id:
             assigned_reading[ca.assignment_id] = ca
@@ -328,6 +367,8 @@ async def get_all_available_assignments(
             assigned_writing[ca.assignment_id] = ca
         elif ca.assignment_type in ["UMALecture", "lecture"] and ca.assignment_id:
             assigned_lecture[ca.assignment_id] = ca
+        elif ca.assignment_type == "test" and ca.assignment_id:
+            assigned_test[ca.assignment_id] = ca
     
     all_assignments = []
     
@@ -605,6 +646,69 @@ async def get_all_available_assignments(
             
             all_assignments.append(writing_dict)
     
+    # Handle test assignments
+    if not assignment_type or assignment_type in ["all", "UMATest"]:
+        # Build query for test assignments
+        test_query = select(TestAssignment).where(
+            and_(
+                TestAssignment.teacher_id == teacher.id,
+                TestAssignment.status == "published",
+                TestAssignment.deleted_at.is_(None)  # Filter out archived assignments
+            )
+        )
+        
+        # Apply filters
+        if search:
+            test_query = test_query.where(
+                or_(
+                    TestAssignment.test_title.ilike(f"%{search}%"),
+                    TestAssignment.test_description.ilike(f"%{search}%")
+                )
+            )
+        
+        if status:
+            if status == "assigned":
+                test_query = test_query.where(TestAssignment.id.in_(assigned_test.keys()))
+            elif status == "unassigned":
+                test_query = test_query.where(TestAssignment.id.notin_(assigned_test.keys()))
+        
+        # Execute query
+        test_result = await db.execute(test_query)
+        test_assignments = test_result.scalars().all()
+        
+        # Format test assignments
+        for assignment in test_assignments:
+            test_dict = {
+                "id": str(assignment.id),
+                "assignment_title": assignment.test_title,
+                "work_title": assignment.test_description or "Comprehensive Test",
+                "author": "",  # No author for tests
+                "assignment_type": "UMATest",
+                "grade_level": "Multiple",  # Tests can span multiple grade levels
+                "work_type": "Test",
+                "status": assignment.status,
+                "created_at": assignment.created_at,
+                "is_assigned": assignment.id in assigned_test,
+                "is_archived": assignment.deleted_at is not None,
+                "test_config": {
+                    "time_limit_minutes": assignment.time_limit_minutes,
+                    "attempt_limit": assignment.attempt_limit,
+                    "randomize_questions": assignment.randomize_questions,
+                    "total_questions": assignment.test_structure.get("total_questions", 0) if assignment.test_structure else 0
+                },
+                "item_type": "test"
+            }
+            
+            # Add schedule info if assigned
+            if assignment.id in assigned_test:
+                ca = assigned_test[assignment.id]
+                test_dict["current_schedule"] = {
+                    "start_date": ca.start_date,
+                    "end_date": ca.end_date
+                }
+            
+            all_assignments.append(test_dict)
+    
     # Sort all assignments by created_at desc
     # Handle both offset-naive and offset-aware datetimes
     all_assignments.sort(key=lambda x: x["created_at"].replace(tzinfo=None) if x["created_at"] else datetime.min, reverse=True)
@@ -670,6 +774,7 @@ async def update_all_classroom_assignments(
     current_debate = {}
     current_writing = {}
     current_lecture = {}
+    current_test = {}
     for ca in current_assignments:
         if ca.assignment_type == "reading" and ca.assignment_id:
             current_reading[ca.assignment_id] = ca
@@ -681,6 +786,8 @@ async def update_all_classroom_assignments(
             current_writing[ca.assignment_id] = ca
         elif ca.assignment_type in ["UMALecture", "lecture"] and ca.assignment_id:
             current_lecture[ca.assignment_id] = ca
+        elif ca.assignment_type == "test" and ca.assignment_id:
+            current_test[ca.assignment_id] = ca
     
     # Process requested assignments
     requested_reading = {}
@@ -688,6 +795,7 @@ async def update_all_classroom_assignments(
     requested_debate = {}
     requested_writing = {}
     requested_lecture = {}
+    requested_test = {}
     for sched in request.assignments:
         try:
             # Ensure assignment_id is a valid UUID
@@ -703,6 +811,8 @@ async def update_all_classroom_assignments(
                 requested_writing[assignment_id] = sched
             elif normalized_type == "lecture":
                 requested_lecture[assignment_id] = sched
+            elif normalized_type == "test":
+                requested_test[assignment_id] = sched
             else:  # Default to reading
                 requested_reading[assignment_id] = sched
         except Exception as e:
@@ -733,6 +843,10 @@ async def update_all_classroom_assignments(
     lecture_to_remove = set(current_lecture.keys()) - set(requested_lecture.keys())
     lecture_to_update = set(requested_lecture.keys()) & set(current_lecture.keys())
     
+    test_to_add = set(requested_test.keys()) - set(current_test.keys())
+    test_to_remove = set(current_test.keys()) - set(requested_test.keys())
+    test_to_update = set(requested_test.keys()) & set(current_test.keys())
+    
     # Count students affected by removals
     students_affected = 0
     
@@ -742,7 +856,8 @@ async def update_all_classroom_assignments(
         [(id, "vocabulary") for id in vocabulary_to_remove] +
         [(id, "debate") for id in debate_to_remove] +
         [(id, "writing") for id in writing_to_remove] +
-        [(id, "lecture") for id in lecture_to_remove]
+        [(id, "lecture") for id in lecture_to_remove] +
+        [(id, "test") for id in test_to_remove]
     )
     
     if assignments_to_remove:
@@ -1056,6 +1171,47 @@ async def update_all_classroom_assignments(
             db.add(ca)
             display_order += 1
     
+    # Add new test assignments
+    for assignment_id in test_to_add:
+        # Verify test assignment exists and belongs to teacher
+        test_result = await db.execute(
+            select(TestAssignment).where(
+                and_(
+                    TestAssignment.id == assignment_id,
+                    TestAssignment.teacher_id == teacher.id,
+                    TestAssignment.status == "published",
+                    TestAssignment.deleted_at.is_(None)
+                )
+            )
+        )
+        test_assignment = test_result.scalar_one_or_none()
+        if not test_assignment:
+            logger.warning(f"Test assignment {assignment_id} not found or archived, skipping")
+            continue
+        
+        # Check if test assignment already exists for this classroom
+        existing_result = await db.execute(
+            select(ClassroomAssignment).where(
+                and_(
+                    ClassroomAssignment.classroom_id == classroom_id,
+                    ClassroomAssignment.assignment_id == assignment_id,
+                    ClassroomAssignment.assignment_type == "test"
+                )
+            )
+        )
+        if not existing_result.scalar_one_or_none():
+            schedule = requested_test[assignment_id]
+            ca = ClassroomAssignment(
+                classroom_id=classroom_id,
+                assignment_id=assignment_id,
+                assignment_type="test",
+                display_order=display_order,
+                start_date=schedule.start_date,
+                end_date=schedule.end_date
+            )
+            db.add(ca)
+            display_order += 1
+    
     try:
         await db.commit()
     except IntegrityError as e:
@@ -1086,12 +1242,12 @@ async def update_all_classroom_assignments(
             detail=f"Failed to update assignments: {str(e)}"
         )
     
-    total_added = len(reading_to_add) + len(vocabulary_to_add) + len(debate_to_add) + len(writing_to_add) + len(lecture_to_add)
-    total_removed = len(reading_to_remove) + len(vocabulary_to_remove) + len(debate_to_remove) + len(writing_to_remove) + len(lecture_to_remove)
+    total_added = len(reading_to_add) + len(vocabulary_to_add) + len(debate_to_add) + len(writing_to_add) + len(lecture_to_add) + len(test_to_add)
+    total_removed = len(reading_to_remove) + len(vocabulary_to_remove) + len(debate_to_remove) + len(writing_to_remove) + len(lecture_to_remove) + len(test_to_remove)
     
     return UpdateClassroomAssignmentsResponse(
-        added=[str(id) for id in list(reading_to_add) + list(vocabulary_to_add) + list(debate_to_add) + list(writing_to_add) + list(lecture_to_add)],
-        removed=[str(id) for id in list(reading_to_remove) + list(vocabulary_to_remove) + list(debate_to_remove) + list(writing_to_remove) + list(lecture_to_remove)],
-        total=len(requested_reading) + len(requested_vocabulary) + len(requested_debate) + len(requested_writing) + len(requested_lecture),
+        added=[str(id) for id in list(reading_to_add) + list(vocabulary_to_add) + list(debate_to_add) + list(writing_to_add) + list(lecture_to_add) + list(test_to_add)],
+        removed=[str(id) for id in list(reading_to_remove) + list(vocabulary_to_remove) + list(debate_to_remove) + list(writing_to_remove) + list(lecture_to_remove) + list(test_to_remove)],
+        total=len(requested_reading) + len(requested_vocabulary) + len(requested_debate) + len(requested_writing) + len(requested_lecture) + len(requested_test),
         students_affected=students_affected
     )
