@@ -11,6 +11,7 @@ import {
   LanguageIcon,
   PencilSquareIcon,
   AcademicCapIcon,
+  DocumentCheckIcon,
   UserGroupIcon,
   UsersIcon,
   ChartBarIcon,
@@ -26,6 +27,7 @@ const navigation = [
   { name: 'uMaVocab', href: '/teacher/uma-vocab', icon: LanguageIcon },
   { name: 'uMaWrite', href: '/teacher/uma-write', icon: PencilSquareIcon },
   { name: 'uMaLecture', href: '/teacher/uma-lecture', icon: AcademicCapIcon },
+  { name: 'uMaTest', href: '/teacher/uma-test', icon: DocumentCheckIcon },
 ]
 
 const utilities = [

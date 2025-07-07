@@ -8,6 +8,7 @@ import {
   LanguageIcon,
   PencilSquareIcon,
   AcademicCapIcon,
+  DocumentCheckIcon,
   UserGroupIcon,
   UsersIcon,
   ChartBarIcon,
@@ -49,6 +50,13 @@ const modules = [
     icon: AcademicCapIcon,
     href: '/teacher/uma-lecture',
     color: 'bg-red-500',
+  },
+  {
+    name: 'uMaTest',
+    description: 'Create comprehensive tests from lectures',
+    icon: DocumentCheckIcon,
+    href: '/teacher/uma-test',
+    color: 'bg-yellow-500',
   },
 ]
 
