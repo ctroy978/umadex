@@ -64,8 +64,14 @@ class StudentTestAttempt(Base):
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     student_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
-    assignment_test_id = Column(UUID(as_uuid=True), ForeignKey("assignment_tests.id"), nullable=False)
-    assignment_id = Column(UUID(as_uuid=True), ForeignKey("reading_assignments.id"), nullable=False)
+    
+    # For UMARead tests
+    assignment_test_id = Column(UUID(as_uuid=True), ForeignKey("assignment_tests.id"), nullable=True)
+    assignment_id = Column(UUID(as_uuid=True), ForeignKey("reading_assignments.id"), nullable=True)
+    
+    # For UMATest tests
+    test_id = Column(UUID(as_uuid=True), ForeignKey("test_assignments.id"), nullable=True)
+    classroom_assignment_id = Column(Integer, ForeignKey("classroom_assignments.id"), nullable=True)
     
     # Progress tracking
     current_question = Column(Integer, default=1)

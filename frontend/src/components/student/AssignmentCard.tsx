@@ -50,13 +50,13 @@ export default function AssignmentCard({ assignment, classroomId }: AssignmentCa
         // Navigate to lecture assignment page
         router.push(`/student/assignment/lecture/${assignment.id}?classroomId=${classroomId}`)
       } else if (assignment.type === 'UMATest') {
-        // Navigate to test page for UMATest assignments
+        // Navigate to UMATest page for UMATest assignments
         if (assignment.test_completed && assignment.test_attempt_id) {
-          // Navigate to test results for completed tests
-          router.push(`/student/test/results/${assignment.test_attempt_id}`)
+          // Navigate to UMATest results for completed tests
+          router.push(`/student/umatest/results/${assignment.test_attempt_id}`)
         } else {
-          // Navigate to test page
-          router.push(`/student/test/${assignment.id}`)
+          // Navigate to UMATest page
+          router.push(`/student/umatest/${assignment.id}`)
         }
       } else if (assignment.is_completed && assignment.has_test) {
         if (assignment.test_completed && assignment.test_attempt_id) {

@@ -18,6 +18,7 @@ from app.models.writing import WritingAssignment
 from app.models.vocabulary_practice import VocabularyPuzzleAttempt, VocabularyFillInBlankAttempt, VocabularyPracticeProgress
 from app.models.umaread import UmareadAssignmentProgress
 from app.models.tests import AssignmentTest, StudentTestAttempt
+from app.models.umatest import TestAssignment
 from app.utils.deps import get_current_user
 from app.schemas.classroom import ClassroomResponse
 from app.services.vocabulary_practice import VocabularyPracticeService
@@ -789,6 +790,63 @@ async def get_classroom_detail(
             has_test=False,
             test_completed=False,
             test_attempt_id=None
+        ))
+    
+    # Get UMATest assignments with test attempt status
+    test_query = await db.execute(
+        select(
+            TestAssignment,
+            ClassroomAssignment,
+            StudentTestAttempt.id.label("test_attempt_id"),
+            StudentTestAttempt.status.label("attempt_status"),
+            StudentTestAttempt.score
+        )
+        .join(ClassroomAssignment,
+              and_(
+                  ClassroomAssignment.assignment_id == TestAssignment.id,
+                  ClassroomAssignment.assignment_type == "test"
+              ))
+        .outerjoin(StudentTestAttempt,
+                   and_(
+                       StudentTestAttempt.classroom_assignment_id == ClassroomAssignment.id,
+                       StudentTestAttempt.student_id == current_user.id,
+                       StudentTestAttempt.status.in_(["submitted", "graded"])
+                   ))
+        .where(
+            and_(
+                ClassroomAssignment.classroom_id == classroom_id,
+                ClassroomAssignment.removed_from_classroom_at.is_(None),
+                TestAssignment.deleted_at.is_(None),
+                TestAssignment.status == "published"
+            )
+        )
+        .order_by(ClassroomAssignment.start_date, ClassroomAssignment.display_order, ClassroomAssignment.assigned_at)
+    )
+    
+    for test_assignment, ca, test_attempt_id, attempt_status, score in test_query:
+        status = calculate_assignment_status(ca.start_date, ca.end_date)
+        
+        # Test is completed if there's a submitted or graded attempt
+        test_completed = test_attempt_id is not None and attempt_status in ["submitted", "graded"]
+        
+        assignments.append(StudentAssignmentResponse(
+            id=str(ca.id),
+            title=test_assignment.test_title,
+            work_title=test_assignment.test_description,
+            author=None,
+            grade_level=None,
+            type="UMATest",
+            item_type="test",
+            assigned_at=ca.assigned_at,
+            start_date=ca.start_date,
+            end_date=ca.end_date,
+            display_order=ca.display_order,
+            status=status,
+            is_completed=test_completed,
+            has_started=test_attempt_id is not None,
+            has_test=True,  # UMATest is a test itself
+            test_completed=test_completed,
+            test_attempt_id=str(test_attempt_id) if test_attempt_id else None
         ))
     
     # Sort assignments by start date (earliest first), then display order
