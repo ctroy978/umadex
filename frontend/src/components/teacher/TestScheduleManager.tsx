@@ -64,12 +64,11 @@ export default function TestScheduleManager({ classroomId }: Props) {
         testScheduleApi.getClassroomSchedule(classroomId).catch(() => null),
         testScheduleApi.getScheduleTemplates(),
         testScheduleApi.checkAvailability(classroomId),
-        testScheduleApi.getActiveOverrides(classroomId)
+        testScheduleApi.getActiveOverrides(classroomId).catch(() => [])
       ])
 
-      if (scheduleData) {
-        setSchedule(scheduleData)
-      }
+      // Clear schedule if it doesn't exist
+      setSchedule(scheduleData)
       setTemplates(templatesData)
       setCurrentStatus(statusData)
       setOverrideCodes(overridesData)
@@ -94,6 +93,25 @@ export default function TestScheduleManager({ classroomId }: Props) {
     } catch (error) {
       console.error('Failed to toggle schedule:', error)
       alert('Failed to toggle schedule. Please try again.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleDeleteSchedule = async () => {
+    if (!schedule || !confirm('Are you sure you want to delete this schedule? This will remove all testing restrictions and allow 24/7 testing.')) return
+    
+    try {
+      setSaving(true)
+      await testScheduleApi.deleteSchedule(classroomId)
+      setSchedule(null)
+      
+      // Refresh status - should now show 24/7 availability
+      const newStatus = await testScheduleApi.checkAvailability(classroomId)
+      setCurrentStatus(newStatus)
+    } catch (error) {
+      console.error('Failed to delete schedule:', error)
+      alert('Failed to delete schedule. Please try again.')
     } finally {
       setSaving(false)
     }
@@ -223,17 +241,28 @@ export default function TestScheduleManager({ classroomId }: Props) {
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold text-gray-900">Test Schedule Status</h3>
           {schedule && (
-            <button
-              onClick={handleToggleSchedule}
-              disabled={saving}
-              className={`inline-flex items-center px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                schedule.is_active
-                  ? 'bg-red-100 text-red-700 hover:bg-red-200'
-                  : 'bg-green-100 text-green-700 hover:bg-green-200'
-              }`}
-            >
-              {schedule.is_active ? 'Disable Schedule' : 'Enable Schedule'}
-            </button>
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={handleToggleSchedule}
+                disabled={saving}
+                className={`inline-flex items-center px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  schedule.is_active
+                    ? 'bg-red-100 text-red-700 hover:bg-red-200'
+                    : 'bg-green-100 text-green-700 hover:bg-green-200'
+                }`}
+              >
+                {schedule.is_active ? 'Disable Schedule' : 'Enable Schedule'}
+              </button>
+              <button
+                onClick={handleDeleteSchedule}
+                disabled={saving}
+                className="inline-flex items-center px-4 py-2 rounded-md text-sm font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors"
+                title="Remove all testing restrictions"
+              >
+                <TrashIcon className="h-4 w-4 mr-1" />
+                Delete Schedule
+              </button>
+            </div>
           )}
         </div>
 

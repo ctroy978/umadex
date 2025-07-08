@@ -8,12 +8,12 @@ import logging
 from sqlalchemy import select, and_, or_, func, exists
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from fastapi import APIRouter, Depends, HTTPException, status, Header
+from fastapi import APIRouter, Depends, HTTPException, status, Header, Query
 from pydantic import BaseModel, Field
 
 from app.core.database import get_db
 from app.models.user import User, UserRole
-from app.models.classroom import ClassroomAssignment, StudentAssignment
+from app.models.classroom import Classroom, ClassroomAssignment, StudentAssignment, ClassroomStudent
 from app.models.umatest import TestAssignment
 from app.models.tests import StudentTestAttempt
 from app.utils.deps import get_current_user
@@ -27,7 +27,7 @@ class UMATestStartResponse(BaseModel):
     """Response when starting a UMATest"""
     test_attempt_id: UUID
     test_id: UUID
-    assignment_id: UUID
+    assignment_id: int  # ClassroomAssignment.id is an integer
     assignment_title: str
     test_title: str
     test_description: Optional[str]
@@ -63,39 +63,38 @@ class UMATestResultsResponse(BaseModel):
 
 @router.post("/test/{assignment_id}/start", response_model=UMATestStartResponse)
 async def start_umatest(
-    assignment_id: UUID,
-    override_code: Optional[str] = None,
+    assignment_id: int,
+    override_code: Optional[str] = Query(None),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """Start or resume a UMATest"""
-    # Verify student has access to this assignment
-    student_assignment = await db.execute(
-        select(StudentAssignment)
+    logger.info(f"Starting UMATest for assignment {assignment_id}, user {current_user.id}, override_code: {override_code}")
+    
+    # Get classroom assignment and verify student has access
+    # For UMATest, assignment_id is the ClassroomAssignment.id
+    classroom_assignment = await db.execute(
+        select(ClassroomAssignment)
+        .join(Classroom, Classroom.id == ClassroomAssignment.classroom_id)
+        .join(ClassroomStudent, ClassroomStudent.classroom_id == Classroom.id)
         .where(
             and_(
-                StudentAssignment.assignment_id == assignment_id,
-                StudentAssignment.student_id == current_user.id
+                ClassroomAssignment.id == assignment_id,
+                ClassroomStudent.student_id == current_user.id,
+                ClassroomStudent.removed_at.is_(None),
+                ClassroomAssignment.removed_from_classroom_at.is_(None)
             )
         )
     )
-    student_assignment = student_assignment.scalar_one_or_none()
-    
-    if not student_assignment:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Assignment not found"
-        )
-    
-    # Get classroom assignment details
-    classroom_assignment = await db.execute(
-        select(ClassroomAssignment)
-        .where(ClassroomAssignment.id == assignment_id)
-        .options(selectinload(ClassroomAssignment.assignment))
-    )
     classroom_assignment = classroom_assignment.scalar_one_or_none()
     
-    if not classroom_assignment or classroom_assignment.assignment_type != 'test':
+    if not classroom_assignment:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Assignment not found or you don't have access"
+        )
+    
+    if classroom_assignment.assignment_type != 'test':
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Not a test assignment"
@@ -103,30 +102,30 @@ async def start_umatest(
     
     # Check if assignment is active
     now = datetime.now(timezone.utc)
-    if now < classroom_assignment.start_date:
+    if classroom_assignment.start_date and now < classroom_assignment.start_date:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Test has not started yet"
         )
     
-    if now > classroom_assignment.end_date:
+    if classroom_assignment.end_date and now > classroom_assignment.end_date:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Test has ended"
         )
     
     # Check test availability schedule
-    schedule_service = TestScheduleService(db)
     if classroom_assignment.classroom_id:
-        availability = await schedule_service.check_test_availability(
+        availability = await TestScheduleService.check_test_availability(
+            db,
             classroom_assignment.classroom_id,
             override_code
         )
         
-        if not availability['allowed']:
+        if not availability.allowed:
             response = HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=availability['message']
+                detail=availability.message
             )
             response.headers["X-Override-Required"] = "true"
             raise response
@@ -212,7 +211,7 @@ async def start_umatest(
         test_attempt_id=current_attempt.id,
         test_id=test_assignment.id,
         assignment_id=assignment_id,
-        assignment_title=classroom_assignment.title,
+        assignment_title=test_assignment.test_title,  # For UMATest, use the test title
         test_title=test_assignment.test_title,
         test_description=test_assignment.test_description,
         status=current_attempt.status,
@@ -319,28 +318,14 @@ async def submit_umatest(
     
     await db.commit()
     
-    # Trigger evaluation (this will be handled by the evaluation service)
-    # For now, we'll import and call the evaluation service directly
-    from app.services.umatest_evaluation import UMATestEvaluationService
-    
-    evaluation_service = UMATestEvaluationService(db)
-    try:
-        result = await evaluation_service.evaluate_test_submission(test_attempt_id)
-        return {
-            "success": True,
-            "message": "Test submitted successfully",
-            "test_attempt_id": str(test_attempt_id),
-            "evaluation_status": "completed" if result['success'] else "pending"
-        }
-    except Exception as e:
-        logger.error(f"Error evaluating test {test_attempt_id}: {str(e)}")
-        # Don't fail the submission if evaluation fails
-        return {
-            "success": True,
-            "message": "Test submitted. Evaluation will be processed.",
-            "test_attempt_id": str(test_attempt_id),
-            "evaluation_status": "pending"
-        }
+    # TODO: Trigger evaluation service when it's properly implemented for UMATest
+    # For now, just return success
+    return {
+        "success": True,
+        "message": "Test submitted successfully",
+        "test_attempt_id": str(test_attempt_id),
+        "evaluation_status": "pending"
+    }
 
 
 @router.get("/test/results/{test_attempt_id}", response_model=UMATestResultsResponse)
@@ -359,7 +344,7 @@ async def get_umatest_results(
                 StudentTestAttempt.student_id == current_user.id
             )
         )
-        .options(selectinload(StudentTestAttempt.question_evaluations))
+        # UMATest doesn't use question_evaluations relationship
     )
     test_attempt = test_attempt.scalar_one_or_none()
     
@@ -375,26 +360,27 @@ async def get_umatest_results(
             detail="Test has not been submitted yet"
         )
     
-    # Format question evaluations
+    # Format question evaluations from feedback JSON
     question_evaluations = []
-    for eval in test_attempt.question_evaluations:
-        question_evaluations.append({
-            'question_index': eval.question_index,
-            'rubric_score': eval.rubric_score,
-            'points_earned': eval.points_earned,
-            'max_points': eval.max_points,
-            'scoring_rationale': eval.scoring_rationale,
-            'feedback': eval.feedback,
-            'key_concepts_identified': eval.key_concepts_identified,
-            'misconceptions_detected': eval.misconceptions_detected
-        })
+    if test_attempt.feedback and 'question_evaluations' in test_attempt.feedback:
+        for eval in test_attempt.feedback['question_evaluations']:
+            question_evaluations.append({
+                'question_index': eval.get('question_index', 0),
+                'rubric_score': eval.get('rubric_score', 0),
+                'points_earned': eval.get('points_earned', 0),
+                'max_points': eval.get('max_points', 0),
+                'scoring_rationale': eval.get('scoring_rationale', ''),
+                'feedback': eval.get('feedback', ''),
+                'key_concepts_identified': eval.get('key_concepts_identified', []),
+                'misconceptions_detected': eval.get('misconceptions_detected', [])
+            })
     
     return UMATestResultsResponse(
         test_attempt_id=test_attempt.id,
         score=float(test_attempt.score) if test_attempt.score else 0.0,
         status=test_attempt.status,
         submitted_at=test_attempt.submitted_at,
-        evaluated_at=test_attempt.evaluated_at,
+        evaluated_at=None,  # UMATest doesn't track evaluation time separately
         question_evaluations=question_evaluations,
-        feedback=test_attempt.feedback
+        feedback=test_attempt.feedback.get('overall_feedback', '') if test_attempt.feedback else None
     )

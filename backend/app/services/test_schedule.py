@@ -75,12 +75,13 @@ class TestScheduleService:
     
     @staticmethod
     async def get_schedule(db: AsyncSession, classroom_id: UUID) -> Optional[ClassroomTestSchedule]:
+        from sqlalchemy.orm import joinedload
         result = await db.execute(
-            select(ClassroomTestSchedule).where(
-                ClassroomTestSchedule.classroom_id == classroom_id
-            )
+            select(ClassroomTestSchedule)
+            .options(joinedload(ClassroomTestSchedule.classroom))
+            .where(ClassroomTestSchedule.classroom_id == classroom_id)
         )
-        return result.scalar_one_or_none()
+        return result.unique().scalar_one_or_none()
     
     @staticmethod
     async def check_test_availability(

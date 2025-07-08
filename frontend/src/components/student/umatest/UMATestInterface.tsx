@@ -9,7 +9,6 @@ import TestNavigation from '../test/TestNavigation'
 import SubmissionModal from '../test/SubmissionModal'
 import SecurityWarningModal from '../test/SecurityWarningModal'
 import TestLockoutModal from '../test/TestLockoutModal'
-import { useTestSecurity } from '@/hooks/useTestSecurity'
 import { useRouter } from 'next/navigation'
 
 interface UMATestInterfaceProps {
@@ -30,17 +29,12 @@ export default function UMATestInterface({ testData, onComplete }: UMATestInterf
   const [questionStartTime, setQuestionStartTime] = useState(Date.now())
   const [isTestActive, setIsTestActive] = useState(true)
   
-  // Use the security hook
-  const { violationCount, isLocked, showWarning, acknowledgeWarning } = useTestSecurity({
-    testId: testData.test_id,
-    isActive: isTestActive && testData.status === 'in_progress',
-    onWarning: () => {
-      setIsTestActive(false)
-    },
-    onLock: () => {
-      setIsTestActive(false)
-    }
-  })
+  // Security features are disabled for UMATest
+  // TODO: Implement UMATest-specific security if needed
+  const violationCount = 0
+  const isLocked = false
+  const showWarning = false
+  const acknowledgeWarning = () => {}
 
   // Disable copy/paste and right-click
   useEffect(() => {

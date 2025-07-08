@@ -60,6 +60,7 @@ class AssignmentStatus(BaseModel):
     
 class StudentAssignmentResponse(BaseModel):
     id: str
+    classroom_assignment_id: Optional[str] = None  # Added for UMATest navigation
     title: str
     work_title: Optional[str] = None
     author: Optional[str] = None

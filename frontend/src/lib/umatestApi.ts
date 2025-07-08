@@ -3,7 +3,7 @@ import api from './api'
 export interface UMATestStartResponse {
   test_attempt_id: string
   test_id: string
-  assignment_id: string
+  assignment_id: number  // ClassroomAssignment.id is an integer
   assignment_title: string
   test_title: string
   test_description?: string
@@ -55,13 +55,13 @@ export interface QuestionEvaluation {
 export const umatestApi = {
   // Start or resume a UMATest
   startTest: async (assignmentId: string): Promise<UMATestStartResponse> => {
-    const response = await api.post(`/v1/student/umatest/test/${assignmentId}/start`)
+    const response = await api.post(`/v1/student/umatest/test/${assignmentId}/start`, {})
     return response.data
   },
 
   // Start test with override code
   startTestWithOverride: async (assignmentId: string, overrideCode: string): Promise<UMATestStartResponse> => {
-    const response = await api.post(`/v1/student/umatest/test/${assignmentId}/start`, null, {
+    const response = await api.post(`/v1/student/umatest/test/${assignmentId}/start`, {}, {
       params: { override_code: overrideCode }
     })
     return response.data

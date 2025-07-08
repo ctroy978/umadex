@@ -146,3 +146,7 @@ class ScheduleStatusDashboard(BaseModel):
     next_window: Optional[Dict[str, Any]]
     schedule_overview: List[ScheduleWindow]
     recent_overrides: List[OverrideCodeResponse]
+
+
+class ToggleScheduleRequest(BaseModel):
+    is_active: bool

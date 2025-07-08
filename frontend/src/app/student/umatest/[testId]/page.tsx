@@ -32,11 +32,19 @@ export default function UMATestPage({ params }: { params: { testId: string } }) 
         ? await umatestApi.startTestWithOverride(assignmentId, retryWithOverride)
         : await umatestApi.startTest(assignmentId)
       
+      // Check if test is already completed
+      if (test.status === 'submitted' || test.status === 'graded') {
+        console.log('Test already completed, redirecting to results')
+        router.push(`/student/umatest/results/${test.test_attempt_id}`)
+        return
+      }
+      
       setTestData(test)
       setShowOverrideDialog(false)
       setRetryAttempt(0) // Reset retry count on success
     } catch (err: any) {
       console.error('Failed to load test:', err)
+      console.error('Error response:', err.response?.data)
       
       // Check if it's a schedule restriction error
       if (err.response?.status === 403) {
@@ -58,7 +66,19 @@ export default function UMATestPage({ params }: { params: { testId: string } }) 
         return
       }
       
-      setError(err.response?.data?.detail || 'Failed to load test')
+      // Handle different error response formats
+      let errorMessage = 'Failed to load test'
+      if (err.response?.data?.detail) {
+        // FastAPI validation errors come as an array of objects
+        if (Array.isArray(err.response.data.detail)) {
+          errorMessage = err.response.data.detail.map((e: any) => e.msg || e.message).join(', ')
+        } else if (typeof err.response.data.detail === 'string') {
+          errorMessage = err.response.data.detail
+        } else if (typeof err.response.data.detail === 'object') {
+          errorMessage = err.response.data.detail.msg || err.response.data.detail.message || 'Failed to load test'
+        }
+      }
+      setError(errorMessage)
     } finally {
       setLoading(false)
     }
@@ -75,7 +95,7 @@ export default function UMATestPage({ params }: { params: { testId: string } }) 
     
     if (testData) {
       // Redirect to test results page
-      router.push(`/student/test/results/${testData.test_attempt_id}`)
+      router.push(`/student/umatest/results/${testData.test_attempt_id}`)
     } else {
       // Fallback to dashboard
       router.push('/student/dashboard?refresh=true')

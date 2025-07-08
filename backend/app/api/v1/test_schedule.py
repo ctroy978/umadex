@@ -21,7 +21,8 @@ from app.schemas.test_schedule import (
     TestAvailabilityStatus,
     StudentScheduleView,
     ScheduleStatusDashboard,
-    ScheduleTemplate
+    ScheduleTemplate,
+    ToggleScheduleRequest
 )
 from app.services.test_schedule import TestScheduleService
 
@@ -122,7 +123,7 @@ async def create_or_update_schedule(
 @router.put("/classrooms/{classroom_id}/toggle")
 async def toggle_schedule(
     classroom_id: UUID,
-    is_active: bool,
+    request: ToggleScheduleRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -147,10 +148,10 @@ async def toggle_schedule(
             detail="Access denied"
         )
     
-    schedule.is_active = is_active
+    schedule.is_active = request.is_active
     await db.commit()
     
-    return {"message": f"Schedule {'enabled' if is_active else 'disabled'} successfully"}
+    return {"message": f"Schedule {'enabled' if request.is_active else 'disabled'} successfully"}
 
 
 @router.delete("/classrooms/{classroom_id}")
@@ -291,12 +292,24 @@ async def get_schedule_status(
             detail="Only teachers can view schedule status"
         )
     
-    schedule = await TestScheduleService.get_schedule(db, classroom_id)
-    if not schedule or schedule.classroom.teacher_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Schedule not found or access denied"
+    # First verify teacher owns the classroom
+    result = await db.execute(
+        select(Classroom).where(
+            and_(
+                Classroom.id == classroom_id,
+                Classroom.teacher_id == current_user.id,
+                Classroom.deleted_at.is_(None)
+            )
         )
+    )
+    classroom = result.scalar_one_or_none()
+    if not classroom:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied to this classroom"
+        )
+    
+    schedule = await TestScheduleService.get_schedule(db, classroom_id)
     
     # Get current availability
     availability = await TestScheduleService.check_test_availability(db, classroom_id)
@@ -308,13 +321,24 @@ async def get_schedule_status(
     # Get recent overrides
     recent_overrides = await TestScheduleService.get_active_overrides(db, current_user.id, classroom_id)
     
-    return ScheduleStatusDashboard(
-        testing_currently_allowed=availability.allowed,
-        active_test_sessions=active_sessions,
-        next_window={"start": availability.next_window} if availability.next_window else None,
-        schedule_overview=schedule.schedule_data.get("windows", []),
-        recent_overrides=recent_overrides
-    )
+    # Return appropriate response based on whether schedule exists
+    if schedule:
+        return ScheduleStatusDashboard(
+            testing_currently_allowed=availability.allowed,
+            active_test_sessions=active_sessions,
+            next_window={"start": availability.next_window} if availability.next_window else None,
+            schedule_overview=schedule.schedule_data.get("windows", []),
+            recent_overrides=recent_overrides
+        )
+    else:
+        # No schedule exists - testing is available 24/7
+        return ScheduleStatusDashboard(
+            testing_currently_allowed=True,
+            active_test_sessions=active_sessions,
+            next_window=None,
+            schedule_overview=[],
+            recent_overrides=recent_overrides
+        )
 
 
 @router.post("/overrides/generate", response_model=OverrideCodeResponse)

@@ -230,7 +230,7 @@ export default function StudentClassroomPage() {
               <div className="grid gap-4 sm:grid-cols-1 lg:grid-cols-2">
                 {groupedAssignments.active.map((assignment) => (
                   <AssignmentCard
-                    key={assignment.id}
+                    key={`${assignment.item_type}-${assignment.id}`}
                     assignment={assignment}
                     classroomId={classroomId}
                   />
@@ -246,7 +246,7 @@ export default function StudentClassroomPage() {
               <div className="grid gap-4 sm:grid-cols-1 lg:grid-cols-2">
                 {groupedAssignments.upcoming.map((assignment) => (
                   <AssignmentCard
-                    key={assignment.id}
+                    key={`${assignment.item_type}-${assignment.id}`}
                     assignment={assignment}
                     classroomId={classroomId}
                   />
@@ -296,7 +296,7 @@ export default function StudentClassroomPage() {
                 </summary>
                 <div className="mt-4 grid gap-4 sm:grid-cols-1 lg:grid-cols-2">
                   {groupedAssignments.expired.map((assignment) => (
-                    <div key={assignment.id} className="opacity-60">
+                    <div key={`${assignment.item_type}-${assignment.id}`} className="opacity-60">
                       <AssignmentCard
                         assignment={assignment}
                         classroomId={classroomId}
