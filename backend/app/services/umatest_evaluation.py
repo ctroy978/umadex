@@ -20,6 +20,7 @@ from app.models.tests import StudentTestAttempt, TestQuestionEvaluation
 from app.models.umatest import TestAssignment
 from app.models.user import User
 from app.config.ai_models import ANSWER_EVALUATION_MODEL
+from app.config.ai_config import get_gemini_config
 from app.config.rubric_config import (
     UMAREAD_SCORING_RUBRIC,
     get_rubric_score_points,
@@ -28,6 +29,10 @@ from app.config.rubric_config import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Configure Gemini AI
+gemini_config = get_gemini_config()
+genai.configure(api_key=gemini_config.api_key)
 
 
 # Pydantic models for structured AI responses

@@ -15,9 +15,10 @@ from app.core.database import get_db
 from app.models.user import User, UserRole
 from app.models.classroom import Classroom, ClassroomAssignment, StudentAssignment, ClassroomStudent
 from app.models.umatest import TestAssignment
-from app.models.tests import StudentTestAttempt
+from app.models.tests import StudentTestAttempt, TestQuestionEvaluation
 from app.utils.deps import get_current_user
 from app.services.test_schedule import TestScheduleService
+from app.services.umatest_evaluation import UMATestEvaluationService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -318,14 +319,30 @@ async def submit_umatest(
     
     await db.commit()
     
-    # TODO: Trigger evaluation service when it's properly implemented for UMATest
-    # For now, just return success
-    return {
-        "success": True,
-        "message": "Test submitted successfully",
-        "test_attempt_id": str(test_attempt_id),
-        "evaluation_status": "pending"
-    }
+    # Trigger AI evaluation service
+    try:
+        evaluation_service = UMATestEvaluationService(db)
+        evaluation_result = await evaluation_service.evaluate_test_submission(
+            test_attempt_id=test_attempt_id,
+            trigger_source="student_submission"
+        )
+        
+        return {
+            "success": True,
+            "message": "Test submitted and evaluated successfully",
+            "test_attempt_id": str(test_attempt_id),
+            "evaluation_status": "completed",
+            "score": evaluation_result.get("score", 0)
+        }
+    except Exception as e:
+        logger.error(f"Error evaluating test {test_attempt_id}: {str(e)}")
+        # Even if evaluation fails, the submission was successful
+        return {
+            "success": True,
+            "message": "Test submitted successfully. Evaluation pending.",
+            "test_attempt_id": str(test_attempt_id),
+            "evaluation_status": "pending"
+        }
 
 
 @router.get("/test/results/{test_attempt_id}", response_model=UMATestResultsResponse)
@@ -360,27 +377,37 @@ async def get_umatest_results(
             detail="Test has not been submitted yet"
         )
     
-    # Format question evaluations from feedback JSON
+    # Fetch question evaluations from TestQuestionEvaluation table
+    evaluations_result = await db.execute(
+        select(TestQuestionEvaluation)
+        .where(TestQuestionEvaluation.test_attempt_id == test_attempt_id)
+        .order_by(TestQuestionEvaluation.question_index)
+    )
+    evaluations = evaluations_result.scalars().all()
+    
+    # Format question evaluations
     question_evaluations = []
-    if test_attempt.feedback and 'question_evaluations' in test_attempt.feedback:
-        for eval in test_attempt.feedback['question_evaluations']:
-            question_evaluations.append({
-                'question_index': eval.get('question_index', 0),
-                'rubric_score': eval.get('rubric_score', 0),
-                'points_earned': eval.get('points_earned', 0),
-                'max_points': eval.get('max_points', 0),
-                'scoring_rationale': eval.get('scoring_rationale', ''),
-                'feedback': eval.get('feedback', ''),
-                'key_concepts_identified': eval.get('key_concepts_identified', []),
-                'misconceptions_detected': eval.get('misconceptions_detected', [])
-            })
+    for eval in evaluations:
+        question_evaluations.append({
+            'question_index': eval.question_index,
+            'rubric_score': eval.rubric_score,
+            'points_earned': float(eval.points_earned),
+            'max_points': float(eval.max_points),
+            'scoring_rationale': eval.scoring_rationale,
+            'feedback': eval.feedback or '',
+            'key_concepts_identified': eval.key_concepts_identified or [],
+            'misconceptions_detected': eval.misconceptions_detected or []
+        })
+    
+    # Get overall feedback from test_attempt.feedback if it's a string
+    overall_feedback = test_attempt.feedback if isinstance(test_attempt.feedback, str) else None
     
     return UMATestResultsResponse(
         test_attempt_id=test_attempt.id,
         score=float(test_attempt.score) if test_attempt.score else 0.0,
         status=test_attempt.status,
         submitted_at=test_attempt.submitted_at,
-        evaluated_at=None,  # UMATest doesn't track evaluation time separately
+        evaluated_at=test_attempt.evaluated_at,
         question_evaluations=question_evaluations,
-        feedback=test_attempt.feedback.get('overall_feedback', '') if test_attempt.feedback else None
+        feedback=overall_feedback
     )

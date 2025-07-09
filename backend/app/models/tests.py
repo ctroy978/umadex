@@ -98,9 +98,10 @@ class StudentTestAttempt(Base):
     locked_at = Column(DateTime(timezone=True))
     locked_reason = Column(String(255))
     
-    # Schedule and override tracking (added in migration 033)
-    started_within_schedule = Column(Boolean, default=True)
-    override_code_used = Column(UUID(as_uuid=True), ForeignKey("classroom_test_overrides.id"))
+    # Add evaluation relationship
+    evaluated_at = Column(DateTime(timezone=True))
+    
+    # Schedule and override tracking
     grace_period_end = Column(DateTime(timezone=True))
     schedule_violation_reason = Column(Text)
     
@@ -117,6 +118,40 @@ class StudentTestAttempt(Base):
     __table_args__ = (
         CheckConstraint("status IN ('in_progress', 'completed', 'submitted', 'graded')", 
                        name='check_test_attempt_status'),
+    )
+
+
+class TestQuestionEvaluation(Base):
+    """Individual question evaluation results for UMATest"""
+    __tablename__ = "test_question_evaluations"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    test_attempt_id = Column(UUID(as_uuid=True), ForeignKey("student_test_attempts.id", ondelete="CASCADE"), nullable=False)
+    
+    # Question identification
+    question_index = Column(Integer, nullable=False)
+    
+    # Evaluation scores
+    rubric_score = Column(Integer, nullable=False)  # 0-4 scale
+    points_earned = Column(DECIMAL(5, 2), nullable=False)
+    max_points = Column(DECIMAL(5, 2), nullable=False)
+    
+    # AI evaluation details
+    scoring_rationale = Column(Text, nullable=False)
+    feedback = Column(Text)
+    key_concepts_identified = Column(JSONB, default=list)
+    misconceptions_detected = Column(JSONB, default=list)
+    evaluation_confidence = Column(DECIMAL(3, 2), nullable=False)  # 0.00-1.00
+    
+    # Timestamps
+    evaluated_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    
+    # Constraints
+    __table_args__ = (
+        CheckConstraint('rubric_score >= 0 AND rubric_score <= 4', name='check_rubric_score_range'),
+        CheckConstraint('evaluation_confidence >= 0 AND evaluation_confidence <= 1', name='check_confidence_range'),
+        CheckConstraint('points_earned >= 0', name='check_points_earned_positive'),
+        CheckConstraint('max_points > 0', name='check_max_points_positive'),
     )
 
 
