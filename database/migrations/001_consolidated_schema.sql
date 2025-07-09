@@ -122,7 +122,7 @@ CREATE TABLE classroom_students (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     classroom_id UUID NOT NULL REFERENCES classrooms(id) ON DELETE CASCADE,
     student_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    enrolled_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    joined_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     status VARCHAR(50) DEFAULT 'active',
     removed_at TIMESTAMPTZ,
     removed_by UUID REFERENCES users(id),
@@ -293,6 +293,22 @@ CREATE TABLE test_question_cache (
     questions JSONB NOT NULL,
     ai_model VARCHAR(100),
     generation_timestamp TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Test generation log (for tracking AI processing)
+CREATE TABLE test_generation_log (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    test_assignment_id UUID REFERENCES test_assignments(id) ON DELETE CASCADE,
+    started_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    completed_at TIMESTAMPTZ,
+    status VARCHAR(50) CHECK (status IN ('processing', 'completed', 'failed')),
+    error_message TEXT,
+    total_topics_processed INTEGER DEFAULT 0,
+    total_questions_generated INTEGER DEFAULT 0,
+    cache_hits INTEGER DEFAULT 0,
+    cache_misses INTEGER DEFAULT 0,
+    ai_tokens_used INTEGER DEFAULT 0,
+    ai_model VARCHAR(100)
 );
 
 -- ============================================================================
@@ -699,6 +715,7 @@ CREATE INDEX idx_test_assignments_status ON test_assignments(status);
 CREATE INDEX idx_test_question_cache_lecture_id ON test_question_cache(lecture_id);
 CREATE INDEX idx_test_question_cache_topic_id ON test_question_cache(topic_id);
 CREATE INDEX idx_test_question_evaluations_attempt_id ON test_question_evaluations(test_attempt_id);
+CREATE INDEX idx_test_generation_log_assignment ON test_generation_log(test_assignment_id);
 
 -- Scheduling indexes
 CREATE INDEX idx_classroom_test_schedules_classroom_id ON classroom_test_schedules(classroom_id);
@@ -1235,6 +1252,7 @@ COMMENT ON TABLE student_assignments IS 'Individual student progress tracking';
 COMMENT ON TABLE student_test_attempts IS 'Unified test attempts for all modules';
 COMMENT ON TABLE vocabulary_lists IS 'UMAVocab vocabulary learning lists';
 COMMENT ON TABLE test_assignments IS 'UMATest structured assessments';
+COMMENT ON TABLE test_generation_log IS 'UMATest AI generation tracking';
 COMMENT ON TABLE debate_assignments IS 'UMADebate discussion assignments';
 COMMENT ON TABLE writing_assignments IS 'UMAWrite composition assignments';
 COMMENT ON TABLE lecture_assignments IS 'UMALecture educational content';
