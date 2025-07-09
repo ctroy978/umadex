@@ -2,7 +2,7 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- Classrooms table
-CREATE TABLE classrooms (
+CREATE TABLE IF NOT EXISTS classrooms (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name VARCHAR(255) NOT NULL,
     teacher_id UUID NOT NULL REFERENCES users(id),
@@ -12,7 +12,7 @@ CREATE TABLE classrooms (
 );
 
 -- Students in classrooms
-CREATE TABLE classroom_students (
+CREATE TABLE IF NOT EXISTS classroom_students (
     classroom_id UUID REFERENCES classrooms(id),
     student_id UUID REFERENCES users(id),
     joined_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -22,7 +22,7 @@ CREATE TABLE classroom_students (
 );
 
 -- Assignments in classrooms  
-CREATE TABLE classroom_assignments (
+CREATE TABLE IF NOT EXISTS classroom_assignments (
     classroom_id UUID REFERENCES classrooms(id),
     assignment_id UUID REFERENCES reading_assignments(id),
     assigned_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
