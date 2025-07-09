@@ -48,7 +48,7 @@ ALTER TABLE student_assignments ENABLE ROW LEVEL SECURITY;
 -- Students can view and update their own assignments
 CREATE POLICY "Students can manage their own assignments"
     ON student_assignments FOR ALL
-    USING (student_id = auth.uid());
+    USING (student_id = current_setting('app.current_user_id', true)::uuid);
 
 -- Teachers can view assignments for their students in their classrooms
 CREATE POLICY "Teachers can view classroom assignments"
@@ -58,6 +58,6 @@ CREATE POLICY "Teachers can view classroom assignments"
             SELECT ca.id 
             FROM classroom_assignments ca
             JOIN classrooms c ON c.id = ca.classroom_id
-            WHERE c.teacher_id = auth.uid()
+            WHERE c.teacher_id = current_setting('app.current_user_id', true)::uuid
         )
     );

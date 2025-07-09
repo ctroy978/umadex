@@ -10,7 +10,9 @@ UPDATE classroom_assignments SET assignment_type = 'reading';
 -- Now we need to modify the foreign key constraint to be conditional
 -- Drop the existing foreign key constraint
 ALTER TABLE classroom_assignments 
-DROP CONSTRAINT classroom_assignments_assignment_id_fkey;
+DROP CONSTRAINT IF EXISTS classroom_assignments_assignment_id_fkey;
+
+-- No need to drop primary key since it's now on the id column
 
 -- Add a nullable vocabulary_list_id column
 ALTER TABLE classroom_assignments 
@@ -19,6 +21,8 @@ ADD COLUMN vocabulary_list_id UUID REFERENCES vocabulary_lists(id);
 -- Make assignment_id nullable since we'll use either assignment_id or vocabulary_list_id
 ALTER TABLE classroom_assignments 
 ALTER COLUMN assignment_id DROP NOT NULL;
+
+-- We'll add a proper unique constraint later after setting up the check constraint
 
 -- Add check constraint to ensure exactly one assignment reference is set
 ALTER TABLE classroom_assignments
@@ -29,8 +33,9 @@ ADD CONSTRAINT check_assignment_reference CHECK (
 
 -- Update the unique constraint to include assignment_type
 ALTER TABLE classroom_assignments
-DROP CONSTRAINT _classroom_assignment_uc;
+DROP CONSTRAINT IF EXISTS _classroom_assignment_uc;
 
+-- Add a new unique constraint
 ALTER TABLE classroom_assignments
 ADD CONSTRAINT _classroom_assignment_uc UNIQUE (classroom_id, assignment_id, vocabulary_list_id);
 
@@ -38,14 +43,20 @@ ADD CONSTRAINT _classroom_assignment_uc UNIQUE (classroom_id, assignment_id, voc
 CREATE INDEX idx_classroom_assignments_vocabulary ON classroom_assignments(vocabulary_list_id) 
 WHERE vocabulary_list_id IS NOT NULL;
 
--- Add foreign key constraints
-ALTER TABLE classroom_assignments
-ADD CONSTRAINT classroom_assignments_assignment_id_fkey 
-FOREIGN KEY (assignment_id) REFERENCES reading_assignments(id) ON DELETE CASCADE;
+-- Add foreign key constraints only if they don't exist
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint 
+        WHERE conname = 'classroom_assignments_assignment_id_fkey'
+    ) THEN
+        ALTER TABLE classroom_assignments
+        ADD CONSTRAINT classroom_assignments_assignment_id_fkey 
+        FOREIGN KEY (assignment_id) REFERENCES reading_assignments(id) ON DELETE CASCADE;
+    END IF;
 
-ALTER TABLE classroom_assignments
-ADD CONSTRAINT classroom_assignments_vocabulary_list_id_fkey 
-FOREIGN KEY (vocabulary_list_id) REFERENCES vocabulary_lists(id) ON DELETE CASCADE;
+    -- vocabulary_list_id constraint is already created with the column definition
+END $$;
 
 -- Update RLS policies for vocabulary_lists to use the new structure
 DROP POLICY IF EXISTS vocabulary_lists_select ON vocabulary_lists;

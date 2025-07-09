@@ -42,37 +42,37 @@ ALTER TABLE student_test_attempts ENABLE ROW LEVEL SECURITY;
 -- Students can only see their own test attempts
 CREATE POLICY student_test_attempts_student_select ON student_test_attempts
     FOR SELECT
-    TO authenticated
-    USING (student_id = auth.uid()::uuid);
+    -- TO authenticated (removed - not using role-based access)
+    USING (student_id = current_setting('app.current_user_id', true)::uuid::uuid);
 
 -- Students can insert their own test attempts
 CREATE POLICY student_test_attempts_student_insert ON student_test_attempts
     FOR INSERT
-    TO authenticated
-    WITH CHECK (student_id = auth.uid()::uuid);
+    -- TO authenticated (removed - not using role-based access)
+    WITH CHECK (student_id = current_setting('app.current_user_id', true)::uuid::uuid);
 
 -- Students can update their own in-progress tests
 CREATE POLICY student_test_attempts_student_update ON student_test_attempts
     FOR UPDATE
-    TO authenticated
-    USING (student_id = auth.uid()::uuid AND status = 'in_progress')
-    WITH CHECK (student_id = auth.uid()::uuid);
+    -- TO authenticated (removed - not using role-based access)
+    USING (student_id = current_setting('app.current_user_id', true)::uuid::uuid AND status = 'in_progress')
+    WITH CHECK (student_id = current_setting('app.current_user_id', true)::uuid::uuid);
 
 -- Teachers can view test attempts for their students
 CREATE POLICY student_test_attempts_teacher_select ON student_test_attempts
     FOR SELECT
-    TO authenticated
+    -- TO authenticated (removed - not using role-based access)
     USING (
         EXISTS (
             SELECT 1 FROM users u
-            WHERE u.id = auth.uid()::uuid
+            WHERE u.id = current_setting('app.current_user_id', true)::uuid::uuid
             AND u.role = 'teacher'
         )
         AND EXISTS (
             SELECT 1 FROM reading_assignments ra
             JOIN assignment_tests at ON at.assignment_id = ra.id
             WHERE ra.id = student_test_attempts.assignment_id
-            AND ra.teacher_id = auth.uid()::uuid
+            AND ra.teacher_id = current_setting('app.current_user_id', true)::uuid::uuid
         )
     );
 

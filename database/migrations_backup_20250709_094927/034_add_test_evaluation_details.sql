@@ -111,30 +111,30 @@ ALTER TABLE test_question_evaluations ENABLE ROW LEVEL SECURITY;
 -- Students can view their own question evaluations
 CREATE POLICY question_evaluations_student_select ON test_question_evaluations
     FOR SELECT
-    TO authenticated
+    -- TO authenticated (removed - not using role-based access)
     USING (
         EXISTS (
             SELECT 1 FROM student_test_attempts sta
             WHERE sta.id = test_question_evaluations.test_attempt_id
-            AND sta.student_id = auth.uid()::uuid
+            AND sta.student_id = current_setting('app.current_user_id', true)::uuid
         )
     );
 
 -- Teachers can view evaluations for their students
 CREATE POLICY question_evaluations_teacher_select ON test_question_evaluations
     FOR SELECT
-    TO authenticated
+    -- TO authenticated (removed - not using role-based access)
     USING (
         EXISTS (
             SELECT 1 FROM users u
-            WHERE u.id = auth.uid()::uuid
+            WHERE u.id = current_setting('app.current_user_id', true)::uuid
             AND u.role = 'teacher'
         )
         AND EXISTS (
             SELECT 1 FROM student_test_attempts sta
             JOIN reading_assignments ra ON ra.id = sta.assignment_id
             WHERE sta.id = test_question_evaluations.test_attempt_id
-            AND ra.teacher_id = auth.uid()::uuid
+            AND ra.teacher_id = current_setting('app.current_user_id', true)::uuid
         )
     );
 
@@ -144,18 +144,18 @@ ALTER TABLE test_evaluation_audits ENABLE ROW LEVEL SECURITY;
 -- Only teachers can view evaluation audits
 CREATE POLICY evaluation_audits_teacher_select ON test_evaluation_audits
     FOR SELECT
-    TO authenticated
+    -- TO authenticated (removed - not using role-based access)
     USING (
         EXISTS (
             SELECT 1 FROM users u
-            WHERE u.id = auth.uid()::uuid
+            WHERE u.id = current_setting('app.current_user_id', true)::uuid
             AND u.role = 'teacher'
         )
         AND EXISTS (
             SELECT 1 FROM student_test_attempts sta
             JOIN reading_assignments ra ON ra.id = sta.assignment_id
             WHERE sta.id = test_evaluation_audits.test_attempt_id
-            AND ra.teacher_id = auth.uid()::uuid
+            AND ra.teacher_id = current_setting('app.current_user_id', true)::uuid
         )
     );
 
@@ -165,19 +165,19 @@ ALTER TABLE teacher_evaluation_overrides ENABLE ROW LEVEL SECURITY;
 -- Teachers can manage their own overrides
 CREATE POLICY teacher_overrides_teacher_all ON teacher_evaluation_overrides
     FOR ALL
-    TO authenticated
-    USING (teacher_id = auth.uid()::uuid)
-    WITH CHECK (teacher_id = auth.uid()::uuid);
+    -- TO authenticated (removed - not using role-based access)
+    USING (teacher_id = current_setting('app.current_user_id', true)::uuid)
+    WITH CHECK (teacher_id = current_setting('app.current_user_id', true)::uuid);
 
 -- Students can view overrides for their tests
 CREATE POLICY teacher_overrides_student_select ON teacher_evaluation_overrides
     FOR SELECT
-    TO authenticated
+    -- TO authenticated (removed - not using role-based access)
     USING (
         EXISTS (
             SELECT 1 FROM student_test_attempts sta
             WHERE sta.id = teacher_evaluation_overrides.test_attempt_id
-            AND sta.student_id = auth.uid()::uuid
+            AND sta.student_id = current_setting('app.current_user_id', true)::uuid
         )
     );
 

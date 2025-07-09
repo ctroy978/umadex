@@ -190,7 +190,7 @@ CREATE POLICY "System can manage question cache" ON test_question_cache
 CREATE POLICY "Teachers can view their test generation logs" ON test_generation_log
     FOR SELECT USING (
         test_assignment_id IN (
-            SELECT id FROM test_assignments WHERE teacher_id = auth.uid()
+            SELECT id FROM test_assignments WHERE teacher_id = current_setting('app.current_user_id', true)::uuid
         )
     );
 

@@ -49,8 +49,8 @@ ALTER TABLE debate_assignments ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY debate_assignments_teacher_access ON debate_assignments
     FOR ALL USING (
-        teacher_id = auth.uid() OR 
-        EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND role = 'admin')
+        teacher_id = current_setting('app.current_user_id', true)::uuid OR 
+        EXISTS (SELECT 1 FROM users WHERE id = current_setting('app.current_user_id', true)::uuid AND role = 'admin')
     );
 
 -- Content Moderation Support Table
@@ -82,8 +82,8 @@ ALTER TABLE content_flags ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY content_flags_teacher_access ON content_flags
     FOR ALL USING (
-        teacher_id = auth.uid() OR 
-        EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND role = 'admin')
+        teacher_id = current_setting('app.current_user_id', true)::uuid OR 
+        EXISTS (SELECT 1 FROM users WHERE id = current_setting('app.current_user_id', true)::uuid AND role = 'admin')
     );
 
 -- Update trigger for updated_at

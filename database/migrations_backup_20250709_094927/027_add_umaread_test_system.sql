@@ -21,7 +21,7 @@ CREATE TABLE test_results (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     test_id UUID NOT NULL REFERENCES assignment_tests(id) ON DELETE CASCADE,
     student_id UUID NOT NULL REFERENCES users(id),
-    classroom_assignment_id UUID NOT NULL REFERENCES classroom_assignments(id),
+    classroom_assignment_id INTEGER NOT NULL REFERENCES classroom_assignments(id),
     
     -- Student responses and AI grading
     responses JSONB NOT NULL, -- student answers + AI scores + AI justifications

@@ -157,11 +157,13 @@ CREATE TABLE reading_test_attempts (
     */
     
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    
-    -- Only one active attempt per student per test
-    UNIQUE(student_id, test_id, status) WHERE status = 'in_progress'
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-- Only one active attempt per student per test
+CREATE UNIQUE INDEX idx_reading_test_attempts_active 
+ON reading_test_attempts(student_id, test_id) 
+WHERE status = 'in_progress';
 
 -- =====================================================
 -- 4. INDEXES FOR PERFORMANCE
@@ -203,7 +205,7 @@ CREATE POLICY "Teachers can view question cache for their assignments"
     USING (
         assignment_id IN (
             SELECT id FROM reading_assignments 
-            WHERE teacher_id = auth.uid()
+            WHERE teacher_id = current_setting('app.current_user_id', true)::uuid
         )
     );
 
@@ -212,46 +214,47 @@ CREATE POLICY "Teachers can manage question cache for their assignments"
     USING (
         assignment_id IN (
             SELECT id FROM reading_assignments 
-            WHERE teacher_id = auth.uid()
+            WHERE teacher_id = current_setting('app.current_user_id', true)::uuid
         )
     );
 
 -- Students can view questions when attempting assignments
-CREATE POLICY "Students can view questions for active assignments"
-    ON reading_question_cache FOR SELECT
-    USING (
-        assignment_id IN (
-            SELECT sa.assignment_id 
-            FROM student_assignments sa
-            WHERE sa.student_id = auth.uid()
-            AND sa.status IN ('in_progress', 'test_available')
-        )
-    );
+-- NOTE: This policy depends on student_assignments table created in migration 020
+-- CREATE POLICY "Students can view questions for active assignments"
+--     ON reading_question_cache FOR SELECT
+--     USING (
+--         assignment_id IN (
+--             SELECT sa.assignment_id 
+--             FROM student_assignments sa
+--             WHERE sa.student_id = current_setting('app.current_user_id', true)::uuid
+--             AND sa.status IN ('in_progress', 'test_available')
+--         )
+--     );
 
 -- Cache flush log policies
 CREATE POLICY "Teachers can view their cache flush logs"
     ON reading_cache_flush_log FOR SELECT
-    USING (teacher_id = auth.uid());
+    USING (teacher_id = current_setting('app.current_user_id', true)::uuid);
 
 CREATE POLICY "Teachers can create cache flush logs"
     ON reading_cache_flush_log FOR INSERT
-    WITH CHECK (teacher_id = auth.uid());
+    WITH CHECK (teacher_id = current_setting('app.current_user_id', true)::uuid);
 
 -- Student response policies
 CREATE POLICY "Students can view their own responses"
     ON reading_student_responses FOR SELECT
-    USING (student_id = auth.uid());
+    USING (student_id = current_setting('app.current_user_id', true)::uuid);
 
 CREATE POLICY "Students can create their own responses"
     ON reading_student_responses FOR INSERT
-    WITH CHECK (student_id = auth.uid());
+    WITH CHECK (student_id = current_setting('app.current_user_id', true)::uuid);
 
 CREATE POLICY "Teachers can view responses for their assignments"
     ON reading_student_responses FOR SELECT
     USING (
         assignment_id IN (
             SELECT id FROM reading_assignments 
-            WHERE teacher_id = auth.uid()
+            WHERE teacher_id = current_setting('app.current_user_id', true)::uuid
         )
     );
 
@@ -261,32 +264,33 @@ CREATE POLICY "Teachers can manage tests for their assignments"
     USING (
         assignment_id IN (
             SELECT id FROM reading_assignments 
-            WHERE teacher_id = auth.uid()
+            WHERE teacher_id = current_setting('app.current_user_id', true)::uuid
         )
     );
 
-CREATE POLICY "Students can view tests for completed assignments"
-    ON reading_comprehensive_tests FOR SELECT
-    USING (
-        assignment_id IN (
-            SELECT sa.assignment_id 
-            FROM student_assignments sa
-            WHERE sa.student_id = auth.uid()
-            AND sa.status IN ('test_available', 'test_completed')
-        )
-    );
+-- NOTE: This policy depends on student_assignments table created in migration 020
+-- CREATE POLICY "Students can view tests for completed assignments"
+--     ON reading_comprehensive_tests FOR SELECT
+--     USING (
+--         assignment_id IN (
+--             SELECT sa.assignment_id 
+--             FROM student_assignments sa
+--             WHERE sa.student_id = current_setting('app.current_user_id', true)::uuid
+--             AND sa.status IN ('test_available', 'test_completed')
+--         )
+--     );
 
 -- Test attempt policies
 CREATE POLICY "Students can manage their own test attempts"
     ON reading_test_attempts FOR ALL
-    USING (student_id = auth.uid());
+    USING (student_id = current_setting('app.current_user_id', true)::uuid);
 
 CREATE POLICY "Teachers can view test attempts for their assignments"
     ON reading_test_attempts FOR SELECT
     USING (
         assignment_id IN (
             SELECT id FROM reading_assignments 
-            WHERE teacher_id = auth.uid()
+            WHERE teacher_id = current_setting('app.current_user_id', true)::uuid
         )
     );
 

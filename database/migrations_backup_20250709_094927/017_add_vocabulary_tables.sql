@@ -56,18 +56,12 @@ ALTER TABLE vocabulary_words ENABLE ROW LEVEL SECURITY;
 ALTER TABLE vocabulary_word_reviews ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies for vocabulary_lists
+-- Initial policy - will be updated in migration 018 when assignment_type is added
 CREATE POLICY vocabulary_lists_select ON vocabulary_lists
     FOR SELECT
     USING (
         teacher_id = current_setting('app.current_user_id')::UUID
         OR current_setting('app.current_user_role') = 'admin'
-        OR EXISTS (
-            SELECT 1 FROM classroom_assignments ca
-            JOIN classroom_students cs ON cs.classroom_id = ca.classroom_id
-            WHERE ca.assignment_id = vocabulary_lists.id
-            AND ca.assignment_type = 'vocabulary'
-            AND cs.student_id = current_setting('app.current_user_id')::UUID
-        )
     );
 
 CREATE POLICY vocabulary_lists_insert ON vocabulary_lists
@@ -92,6 +86,7 @@ CREATE POLICY vocabulary_lists_delete ON vocabulary_lists
     );
 
 -- RLS Policies for vocabulary_words (inherit from list permissions)
+-- Initial policy - will be updated in migration 018 when assignment_type is added
 CREATE POLICY vocabulary_words_all ON vocabulary_words
     FOR ALL
     USING (
@@ -101,13 +96,6 @@ CREATE POLICY vocabulary_words_all ON vocabulary_words
             AND (
                 vl.teacher_id = current_setting('app.current_user_id')::UUID
                 OR current_setting('app.current_user_role') = 'admin'
-                OR EXISTS (
-                    SELECT 1 FROM classroom_assignments ca
-                    JOIN classroom_students cs ON cs.classroom_id = ca.classroom_id
-                    WHERE ca.assignment_id = vl.id
-                    AND ca.assignment_type = 'vocabulary'
-                    AND cs.student_id = current_setting('app.current_user_id')::UUID
-                )
             )
         )
     );

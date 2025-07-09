@@ -69,54 +69,54 @@ ALTER TABLE test_override_usage ENABLE ROW LEVEL SECURITY;
 
 -- Teachers can manage schedules for their classrooms
 CREATE POLICY "Teachers manage classroom schedules" ON classroom_test_schedules
-    FOR ALL TO authenticated
+    FOR ALL -- TO authenticated (removed - not using role-based access)
     USING (
         classroom_id IN (
-            SELECT id FROM classrooms WHERE teacher_id = auth.uid()
+            SELECT id FROM classrooms WHERE teacher_id = current_setting('app.current_user_id', true)::uuid
         )
     );
 
 -- Teachers can manage override codes for their classrooms
 CREATE POLICY "Teachers manage override codes" ON classroom_test_overrides
-    FOR ALL TO authenticated
+    FOR ALL -- TO authenticated (removed - not using role-based access)
     USING (
-        teacher_id = auth.uid() AND
+        teacher_id = current_setting('app.current_user_id', true)::uuid AND
         classroom_id IN (
-            SELECT id FROM classrooms WHERE teacher_id = auth.uid()
+            SELECT id FROM classrooms WHERE teacher_id = current_setting('app.current_user_id', true)::uuid
         )
     );
 
 -- Students can view schedules for their enrolled classrooms
 CREATE POLICY "Students view classroom schedules" ON classroom_test_schedules
-    FOR SELECT TO authenticated
+    FOR SELECT -- TO authenticated (removed - not using role-based access)
     USING (
         classroom_id IN (
             SELECT classroom_id FROM classroom_students 
-            WHERE student_id = auth.uid() AND is_active = true
+            WHERE student_id = current_setting('app.current_user_id', true)::uuid AND is_active = true
         )
     );
 
 -- Students can use override codes
 CREATE POLICY "Students use override codes" ON classroom_test_overrides
-    FOR SELECT TO authenticated
+    FOR SELECT -- TO authenticated (removed - not using role-based access)
     USING (
         classroom_id IN (
             SELECT classroom_id FROM classroom_students 
-            WHERE student_id = auth.uid() AND is_active = true
+            WHERE student_id = current_setting('app.current_user_id', true)::uuid AND status = 'active'
         )
     );
 
 -- Track override usage
 CREATE POLICY "Track override usage" ON test_override_usage
-    FOR INSERT TO authenticated
-    WITH CHECK (student_id = auth.uid());
+    FOR INSERT -- TO authenticated (removed - not using role-based access)
+    WITH CHECK (student_id = current_setting('app.current_user_id', true)::uuid);
 
 CREATE POLICY "View override usage" ON test_override_usage
-    FOR SELECT TO authenticated
+    FOR SELECT -- TO authenticated (removed - not using role-based access)
     USING (
-        student_id = auth.uid() OR
+        student_id = current_setting('app.current_user_id', true)::uuid OR
         override_id IN (
-            SELECT id FROM classroom_test_overrides WHERE teacher_id = auth.uid()
+            SELECT id FROM classroom_test_overrides WHERE teacher_id = current_setting('app.current_user_id', true)::uuid
         )
     );
 
@@ -177,7 +177,7 @@ BEGIN
     FOR v_window IN SELECT * FROM jsonb_array_elements(v_schedule.schedule_data->'windows')
     LOOP
         -- Check if current day is in window days
-        IF v_window->'days' ? CASE v_local_dow
+        IF v_window->'days' ? (CASE v_local_dow
             WHEN 0 THEN 'sunday'
             WHEN 1 THEN 'monday'
             WHEN 2 THEN 'tuesday'
@@ -185,7 +185,7 @@ BEGIN
             WHEN 4 THEN 'thursday'
             WHEN 5 THEN 'friday'
             WHEN 6 THEN 'saturday'
-        END THEN
+        END) THEN
             v_window_start := (v_window->>'start_time')::TIME;
             v_window_end := (v_window->>'end_time')::TIME;
             
