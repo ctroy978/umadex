@@ -36,8 +36,8 @@ ASSIGNMENT_TYPE_MAP = {
     "UMADebate": "debate",
     "writing": "writing",
     "UMAWrite": "writing",
-    "lecture": "lecture",
-    "UMALecture": "lecture",
+    "lecture": "UMALecture",
+    "UMALecture": "UMALecture",
     "test": "test",
     "UMATest": "test"
 }
@@ -809,7 +809,7 @@ async def update_all_classroom_assignments(
                 requested_debate[assignment_id] = sched
             elif normalized_type == "writing":
                 requested_writing[assignment_id] = sched
-            elif normalized_type == "lecture":
+            elif normalized_type == "UMALecture":
                 requested_lecture[assignment_id] = sched
             elif normalized_type == "test":
                 requested_test[assignment_id] = sched

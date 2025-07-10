@@ -9,6 +9,11 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 CREATE TYPE user_role AS ENUM ('student', 'teacher');
 CREATE TYPE uma_type AS ENUM ('read', 'debate', 'vocab', 'write', 'lecture');
 
+-- Vocabulary-related enum types
+CREATE TYPE vocabularystatus AS ENUM ('draft', 'processing', 'reviewing', 'published');
+CREATE TYPE definitionsource AS ENUM ('pending', 'ai', 'teacher');
+CREATE TYPE reviewstatus AS ENUM ('pending', 'accepted', 'rejected_once', 'rejected_twice');
+
 -- Core utility function for updating timestamps
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
@@ -135,7 +140,7 @@ CREATE TABLE classroom_assignments (
     classroom_id UUID NOT NULL REFERENCES classrooms(id) ON DELETE CASCADE,
     assignment_id UUID NOT NULL,
     vocabulary_list_id UUID,
-    assignment_type VARCHAR(50) NOT NULL CHECK (assignment_type IN ('reading', 'vocabulary', 'debate', 'writing', 'lecture', 'test')),
+    assignment_type VARCHAR(50) NOT NULL CHECK (assignment_type IN ('reading', 'vocabulary', 'debate', 'writing', 'UMALecture', 'test')),
     assigned_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     display_order INTEGER,
     start_date TIMESTAMPTZ,
@@ -327,7 +332,7 @@ CREATE TABLE vocabulary_lists (
     context_description TEXT NOT NULL,
     grade_level VARCHAR(50) NOT NULL,
     subject_area VARCHAR(100) NOT NULL,
-    status VARCHAR(20) DEFAULT 'draft' CHECK (status IN ('draft', 'processing', 'reviewing', 'published', 'archived')),
+    status vocabularystatus DEFAULT 'draft',
     chain_previous_tests BOOLEAN DEFAULT FALSE,
     chain_weeks_back INTEGER DEFAULT 0,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
@@ -346,11 +351,24 @@ CREATE TABLE vocabulary_words (
     ai_definition TEXT,
     ai_example_1 TEXT,
     ai_example_2 TEXT,
-    definition_source VARCHAR(20) DEFAULT 'pending' CHECK (definition_source IN ('pending', 'ai', 'teacher')),
-    examples_source VARCHAR(20) DEFAULT 'pending' CHECK (examples_source IN ('pending', 'ai', 'teacher')),
+    definition_source definitionsource DEFAULT 'pending',
+    examples_source definitionsource DEFAULT 'pending',
     position INTEGER NOT NULL,
+    audio_url VARCHAR(500),
+    phonetic_text VARCHAR(200),
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Vocabulary word reviews
+CREATE TABLE vocabulary_word_reviews (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    word_id UUID NOT NULL REFERENCES vocabulary_words(id) ON DELETE CASCADE,
+    review_status reviewstatus DEFAULT 'pending',
+    rejection_feedback TEXT,
+    reviewed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT unique_word_review UNIQUE (word_id)
 );
 
 -- Generated vocabulary tests
@@ -381,6 +399,29 @@ CREATE TABLE vocabulary_test_attempts (
     time_spent_seconds INTEGER,
     status VARCHAR(20) DEFAULT 'in_progress' CHECK (status IN ('in_progress', 'completed', 'abandoned')),
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Vocabulary chains for test chaining
+CREATE TABLE vocabulary_chains (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    teacher_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    total_review_words INTEGER DEFAULT 3,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT _teacher_chain_name_uc UNIQUE (teacher_id, name)
+);
+
+-- Vocabulary chain members
+CREATE TABLE vocabulary_chain_members (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    chain_id UUID NOT NULL REFERENCES vocabulary_chains(id) ON DELETE CASCADE,
+    vocabulary_list_id UUID NOT NULL REFERENCES vocabulary_lists(id) ON DELETE CASCADE,
+    position INTEGER NOT NULL DEFAULT 0,
+    added_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT _chain_list_uc UNIQUE (chain_id, vocabulary_list_id)
 );
 
 -- ============================================================================
@@ -1164,9 +1205,13 @@ CREATE INDEX idx_vocabulary_lists_teacher_id ON vocabulary_lists(teacher_id);
 CREATE INDEX idx_vocabulary_lists_status ON vocabulary_lists(status);
 CREATE INDEX idx_vocabulary_words_list_id ON vocabulary_words(list_id);
 CREATE INDEX idx_vocabulary_words_position ON vocabulary_words(list_id, position);
+CREATE INDEX idx_vocabulary_word_reviews_word_id ON vocabulary_word_reviews(word_id);
 CREATE INDEX idx_vocabulary_tests_list_id ON vocabulary_tests(vocabulary_list_id);
 CREATE INDEX idx_vocabulary_test_attempts_test_id ON vocabulary_test_attempts(test_id);
 CREATE INDEX idx_vocabulary_test_attempts_student_id ON vocabulary_test_attempts(student_id);
+CREATE INDEX idx_vocabulary_chains_teacher_id ON vocabulary_chains(teacher_id);
+CREATE INDEX idx_vocabulary_chain_members_chain_id ON vocabulary_chain_members(chain_id);
+CREATE INDEX idx_vocabulary_chain_members_list_id ON vocabulary_chain_members(vocabulary_list_id);
 
 -- Test system indexes
 CREATE INDEX idx_test_assignments_teacher_id ON test_assignments(teacher_id);
@@ -1439,6 +1484,11 @@ CREATE TRIGGER update_vocabulary_words_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
+CREATE TRIGGER update_vocabulary_chains_updated_at
+    BEFORE UPDATE ON vocabulary_chains
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
 CREATE TRIGGER update_test_assignments_updated_at
     BEFORE UPDATE ON test_assignments
     FOR EACH ROW
@@ -1546,8 +1596,11 @@ ALTER TABLE student_test_attempts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE test_question_evaluations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE vocabulary_lists ENABLE ROW LEVEL SECURITY;
 ALTER TABLE vocabulary_words ENABLE ROW LEVEL SECURITY;
+ALTER TABLE vocabulary_word_reviews ENABLE ROW LEVEL SECURITY;
 ALTER TABLE vocabulary_tests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE vocabulary_test_attempts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE vocabulary_chains ENABLE ROW LEVEL SECURITY;
+ALTER TABLE vocabulary_chain_members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE test_assignments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE test_question_cache ENABLE ROW LEVEL SECURITY;
 ALTER TABLE debate_assignments ENABLE ROW LEVEL SECURITY;
@@ -1785,3 +1838,22 @@ COMMENT ON FUNCTION can_proceed_to_next_chunk(UUID, UUID, INTEGER) IS 'Validates
 COMMENT ON FUNCTION is_testing_allowed(UUID, TIMESTAMPTZ) IS 'Checks if testing is permitted based on schedule';
 COMMENT ON FUNCTION generate_override_code() IS 'Creates unique emergency access codes';
 COMMENT ON FUNCTION calculate_test_final_score(UUID) IS 'Computes final test scores from evaluations';
+
+-- ============================================================================
+-- FIX: Handle UMALecture assignment type compatibility
+-- Added 'UMALecture' to the classroom_assignments CHECK constraint to support
+-- both 'lecture' and 'UMALecture' assignment types for backward compatibility
+-- ============================================================================
+
+-- Update any existing 'lecture' assignments to use 'UMALecture' for consistency
+-- This ensures the frontend and backend use the same assignment type
+UPDATE classroom_assignments 
+SET assignment_type = 'UMALecture' 
+WHERE assignment_type = 'lecture';
+
+-- Update any existing lecture assignments in reading_assignments table to ensure they're marked as UMALecture
+UPDATE reading_assignments 
+SET assignment_type = 'UMALecture' 
+WHERE assignment_type = 'UMALecture' OR (assignment_type = 'UMARead' AND id IN (
+    SELECT assignment_id FROM classroom_assignments WHERE assignment_type IN ('lecture', 'UMALecture')
+));
