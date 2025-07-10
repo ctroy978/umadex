@@ -138,7 +138,7 @@ CREATE TABLE classroom_students (
 CREATE TABLE classroom_assignments (
     id SERIAL PRIMARY KEY,
     classroom_id UUID NOT NULL REFERENCES classrooms(id) ON DELETE CASCADE,
-    assignment_id UUID NOT NULL,
+    assignment_id UUID,
     vocabulary_list_id UUID,
     assignment_type VARCHAR(50) NOT NULL CHECK (assignment_type IN ('reading', 'vocabulary', 'debate', 'writing', 'UMALecture', 'test')),
     assigned_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
