@@ -270,6 +270,19 @@ CREATE TABLE reading_cache_flush_log (
     flushed_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Question cache table for AI-generated questions
+-- This table caches AI-generated questions to improve performance and reduce API calls
+CREATE TABLE question_cache (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    assignment_id UUID NOT NULL REFERENCES reading_assignments(id) ON DELETE CASCADE,
+    chunk_id INTEGER NOT NULL,
+    difficulty_level INTEGER NOT NULL CHECK (difficulty_level BETWEEN 1 AND 8),
+    content_hash VARCHAR(64) NOT NULL,
+    question_data JSONB NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(assignment_id, chunk_id, difficulty_level, content_hash)
+);
+
 -- ============================================================================
 -- UMATEST MODULE
 -- ============================================================================
@@ -732,6 +745,12 @@ CREATE TABLE student_test_attempts (
     evaluation_version VARCHAR(50),
     raw_ai_response JSONB,
     evaluation_metadata JSONB DEFAULT '{}',
+    security_violations JSONB DEFAULT '[]',
+    is_locked BOOLEAN DEFAULT FALSE,
+    locked_at TIMESTAMPTZ,
+    locked_reason VARCHAR(255),
+    grace_period_end TIMESTAMPTZ,
+    schedule_violation_reason TEXT,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
@@ -1190,11 +1209,18 @@ CREATE INDEX idx_reading_question_cache_timestamp ON reading_question_cache(gene
 CREATE INDEX idx_reading_responses_student ON reading_student_responses(student_id, assignment_id);
 CREATE INDEX idx_reading_responses_occurred ON reading_student_responses(occurred_at);
 
+-- Indexes for question_cache table
+CREATE INDEX idx_question_cache_lookup ON question_cache(assignment_id, chunk_id, difficulty_level, content_hash);
+CREATE INDEX idx_question_cache_created ON question_cache(created_at);
+
 -- Student progress indexes
 CREATE INDEX idx_student_assignments_student_id ON student_assignments(student_id);
 CREATE INDEX idx_student_assignments_assignment_id ON student_assignments(assignment_id);
 CREATE INDEX idx_student_assignments_status ON student_assignments(status);
 CREATE INDEX idx_student_assignments_classroom ON student_assignments(classroom_assignment_id);
+
+-- Unique constraint to prevent duplicate assignments
+ALTER TABLE student_assignments ADD CONSTRAINT unique_student_assignment UNIQUE (student_id, assignment_id, classroom_assignment_id);
 CREATE INDEX idx_student_test_attempts_student_id ON student_test_attempts(student_id);
 CREATE INDEX idx_student_test_attempts_assignment_test_id ON student_test_attempts(assignment_test_id);
 CREATE INDEX idx_student_test_attempts_test_id ON student_test_attempts(test_id);

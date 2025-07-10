@@ -128,15 +128,25 @@ export default function TestDetailPage() {
       const response = await api.get<GenerationStatus>(`/v1/teacher/umatest/tests/${testId}/generation-status`)
       setGenerationStatus(response.data)
       
+      // Update regenerating state based on actual status
+      if (response.data.status === 'processing') {
+        setRegenerating(true)
+      } else {
+        setRegenerating(false)
+      }
+      
       if (response.data.status === 'completed') {
         // Refresh test data to get generated questions
         fetchTestDetail()
+      } else if (response.data.status === 'failed') {
+        toast.error('Question generation failed. Please try again.')
       }
     } catch (error) {
       // Ignore 404 errors (no generation log yet)
       if ((error as any)?.response?.status !== 404) {
         console.error('Error checking generation status:', error)
       }
+      setRegenerating(false)
     }
   }
 
@@ -148,12 +158,20 @@ export default function TestDetailPage() {
       await api.post(`/v1/teacher/umatest/tests/${testId}/generate-questions?regenerate=true`)
       toast.success('Question regeneration started!')
       
-      // Start checking generation status
+      // Start checking generation status immediately and set up polling
       checkGenerationStatus()
+      const interval = setInterval(checkGenerationStatus, 3000)
+      
+      // Store interval ID to clear it when generation completes
+      const checkInterval = setInterval(() => {
+        if (generationStatus?.status === 'completed' || generationStatus?.status === 'failed') {
+          clearInterval(interval)
+          clearInterval(checkInterval)
+        }
+      }, 1000)
     } catch (error) {
       console.error('Error regenerating questions:', error)
       toast.error('Failed to regenerate questions')
-    } finally {
       setRegenerating(false)
     }
   }

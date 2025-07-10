@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 import logging
 
-from app.core.database import get_db
+from app.core.database import get_db, AsyncSessionLocal
 from app.utils.deps import get_current_user
 from app.models.user import User
 from app.models.umatest import TestAssignment, TestGenerationLog
@@ -31,6 +31,33 @@ from app.services.umatest_ai import umatest_ai_service
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/teacher/umatest", tags=["teacher-umatest"])
+
+
+async def generate_test_questions_task(test_id: str, regenerate: bool = False):
+    """Background task to generate test questions with its own database session"""
+    async with AsyncSessionLocal() as db:
+        try:
+            await umatest_ai_service.generate_test_questions(db, test_id, regenerate)
+        except Exception as e:
+            logger.error(f"Error generating test questions for test {test_id}: {str(e)}")
+            # Update the generation log to failed status
+            try:
+                result = await db.execute(
+                    select(TestGenerationLog).where(
+                        and_(
+                            TestGenerationLog.test_assignment_id == test_id,
+                            TestGenerationLog.status == 'processing'
+                        )
+                    )
+                )
+                log_entry = result.scalar_one_or_none()
+                
+                if log_entry:
+                    log_entry.status = 'failed'
+                    log_entry.error_message = str(e)
+                    await db.commit()
+            except Exception as log_error:
+                logger.error(f"Error updating generation log: {str(log_error)}")
 
 
 @router.post("/tests", response_model=TestAssignmentResponse)
@@ -242,9 +269,8 @@ async def generate_test_questions(
     
     # Start generation in background
     background_tasks.add_task(
-        umatest_ai_service.generate_test_questions,
-        db,
-        test_id,
+        generate_test_questions_task,
+        str(test_id),
         regenerate
     )
     
