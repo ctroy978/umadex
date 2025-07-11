@@ -367,7 +367,16 @@ class VocabularyService:
         await db.commit()
         await db.refresh(word)
         
-        return word
+        # Reload with all relationships
+        result = await db.execute(
+            select(VocabularyWord)
+            .where(VocabularyWord.id == word_id)
+            .options(
+                selectinload(VocabularyWord.review),
+                selectinload(VocabularyWord.vocabulary_list)
+            )
+        )
+        return result.scalar_one()
     
     @staticmethod
     async def regenerate_word_definition(

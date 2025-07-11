@@ -27,8 +27,7 @@ import type {
 interface WordReviewCardProps {
   word: VocabularyWord
   onAccept: () => void
-  onReject: (feedback: string) => void
-  onManualUpdate: (data: VocabularyWordManualUpdate) => void
+  onEdit: (data: VocabularyWordManualUpdate) => void
   onRegenerate: () => void
   isProcessing: boolean
 }
@@ -36,15 +35,12 @@ interface WordReviewCardProps {
 function WordReviewCard({
   word,
   onAccept,
-  onReject,
-  onManualUpdate,
+  onEdit,
   onRegenerate,
   isProcessing
 }: WordReviewCardProps) {
-  const [showRejectDialog, setShowRejectDialog] = useState(false)
-  const [showManualForm, setShowManualForm] = useState(false)
-  const [rejectionFeedback, setRejectionFeedback] = useState('')
-  const [manualData, setManualData] = useState<VocabularyWordManualUpdate>({
+  const [showEditDialog, setShowEditDialog] = useState(false)
+  const [editData, setEditData] = useState<VocabularyWordManualUpdate>({
     definition: word.teacher_definition || word.ai_definition || '',
     example_1: word.teacher_example_1 || word.ai_example_1 || '',
     example_2: word.teacher_example_2 || word.ai_example_2 || ''
@@ -52,29 +48,21 @@ function WordReviewCard({
 
   const reviewStatus = word.review?.review_status || 'pending'
   const isAccepted = reviewStatus === 'accepted'
-  const isRejectedOnce = reviewStatus === 'rejected_once'
-  const isRejectedTwice = reviewStatus === 'rejected_twice'
 
-  const handleReject = () => {
-    if (isRejectedOnce) {
-      // Second rejection - show manual form
-      setShowManualForm(true)
-    } else {
-      // First rejection - show feedback dialog
-      setShowRejectDialog(true)
-    }
+  const handleEdit = () => {
+    setEditData({
+      definition: word.teacher_definition || word.ai_definition || '',
+      example_1: word.teacher_example_1 || word.ai_example_1 || '',
+      example_2: word.teacher_example_2 || word.ai_example_2 || ''
+    })
+    setShowEditDialog(true)
   }
 
-  const submitRejection = () => {
-    onReject(rejectionFeedback)
-    setShowRejectDialog(false)
-    setRejectionFeedback('')
+  const submitEdit = () => {
+    onEdit(editData)
+    setShowEditDialog(false)
   }
 
-  const submitManualUpdate = () => {
-    onManualUpdate(manualData)
-    setShowManualForm(false)
-  }
 
   const currentDefinition = word.definition_source === 'teacher' 
     ? word.teacher_definition 
@@ -100,18 +88,6 @@ function WordReviewCard({
               <span className="inline-flex items-center text-sm text-green-600">
                 <CheckCircleIcon className="h-4 w-4 mr-1" />
                 Accepted
-              </span>
-            )}
-            {isRejectedOnce && (
-              <span className="inline-flex items-center text-sm text-yellow-600">
-                <ExclamationTriangleIcon className="h-4 w-4 mr-1" />
-                Rejected - Awaiting Regeneration
-              </span>
-            )}
-            {isRejectedTwice && (
-              <span className="inline-flex items-center text-sm text-red-600">
-                <XCircleIcon className="h-4 w-4 mr-1" />
-                Rejected - Manual Input Required
               </span>
             )}
             {word.definition_source === 'teacher' && (
@@ -142,106 +118,48 @@ function WordReviewCard({
           </ol>
         </div>
 
-        {word.review?.rejection_feedback && (
-          <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3">
-            <h4 className="text-sm font-medium text-yellow-800 mb-1">Previous Feedback</h4>
-            <p className="text-sm text-yellow-700">{word.review.rejection_feedback}</p>
-          </div>
-        )}
       </div>
 
       {/* Action Buttons */}
       {!isAccepted && (
         <div className="mt-6 flex gap-3">
-          {isRejectedOnce ? (
-            <>
-              <button
-                onClick={onRegenerate}
-                disabled={isProcessing}
-                className="flex-1 inline-flex justify-center items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
-              >
-                <ArrowPathIcon className="h-4 w-4 mr-2" />
-                Regenerate
-              </button>
-              <button
-                onClick={() => setShowManualForm(true)}
-                disabled={isProcessing}
-                className="flex-1 inline-flex justify-center items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 disabled:opacity-50"
-              >
-                Provide Manual Content
-              </button>
-            </>
-          ) : (
-            <>
-              <button
-                onClick={onAccept}
-                disabled={isProcessing}
-                className="flex-1 inline-flex justify-center items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:opacity-50"
-              >
-                <CheckIcon className="h-4 w-4 mr-2" />
-                Accept
-              </button>
-              <button
-                onClick={handleReject}
-                disabled={isProcessing}
-                className="flex-1 inline-flex justify-center items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-red-600 hover:bg-red-700 disabled:opacity-50"
-              >
-                <XMarkIcon className="h-4 w-4 mr-2" />
-                Reject
-              </button>
-            </>
-          )}
+          <button
+            onClick={onAccept}
+            disabled={isProcessing}
+            className="flex-1 inline-flex justify-center items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:opacity-50"
+          >
+            <CheckIcon className="h-4 w-4 mr-2" />
+            Accept
+          </button>
+          <button
+            onClick={handleEdit}
+            disabled={isProcessing}
+            className="flex-1 inline-flex justify-center items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
+          >
+            <PencilIcon className="h-4 w-4 mr-2" />
+            Edit
+          </button>
         </div>
       )}
 
-      {/* Rejection Feedback Dialog */}
-      {showRejectDialog && (
-        <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full">
-            <h3 className="text-lg font-medium text-gray-900 mb-4">
-              Provide Feedback for Regeneration
-            </h3>
-            <textarea
-              value={rejectionFeedback}
-              onChange={(e) => setRejectionFeedback(e.target.value)}
-              rows={4}
-              className="w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
-              placeholder="What should be improved? (e.g., 'Definition is too complex for grade level', 'Examples need more context')"
-            />
-            <div className="mt-4 flex gap-3">
-              <button
-                onClick={() => setShowRejectDialog(false)}
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={submitRejection}
-                disabled={rejectionFeedback.length < 10}
-                className="flex-1 px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-red-600 hover:bg-red-700 disabled:opacity-50"
-              >
-                Submit & Regenerate
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Manual Input Form */}
-      {showManualForm && (
+      {/* Edit Dialog */}
+      {showEditDialog && (
         <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             <h3 className="text-lg font-medium text-gray-900 mb-4">
-              Provide Manual Content for "{word.word}"
+              Edit Vocabulary Word
             </h3>
             <div className="space-y-4">
+              <div className="mb-4">
+                <h4 className="text-lg font-semibold text-gray-900">{word.word}</h4>
+              </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Definition
                 </label>
                 <textarea
-                  value={manualData.definition}
-                  onChange={(e) => setManualData({ ...manualData, definition: e.target.value })}
+                  value={editData.definition}
+                  onChange={(e) => setEditData({ ...editData, definition: e.target.value })}
                   rows={3}
                   className="w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
                 />
@@ -252,8 +170,8 @@ function WordReviewCard({
                 </label>
                 <input
                   type="text"
-                  value={manualData.example_1}
-                  onChange={(e) => setManualData({ ...manualData, example_1: e.target.value })}
+                  value={editData.example_1}
+                  onChange={(e) => setEditData({ ...editData, example_1: e.target.value })}
                   className="w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
                 />
               </div>
@@ -263,34 +181,35 @@ function WordReviewCard({
                 </label>
                 <input
                   type="text"
-                  value={manualData.example_2}
-                  onChange={(e) => setManualData({ ...manualData, example_2: e.target.value })}
+                  value={editData.example_2}
+                  onChange={(e) => setEditData({ ...editData, example_2: e.target.value })}
                   className="w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
                 />
               </div>
             </div>
             <div className="mt-6 flex gap-3">
               <button
-                onClick={() => setShowManualForm(false)}
+                onClick={() => setShowEditDialog(false)}
                 className="flex-1 px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
               >
                 Cancel
               </button>
               <button
-                onClick={submitManualUpdate}
+                onClick={submitEdit}
                 disabled={
-                  manualData.definition.length < 10 ||
-                  manualData.example_1.length < 10 ||
-                  manualData.example_2.length < 10
+                  editData.definition.length < 10 ||
+                  editData.example_1.length < 10 ||
+                  editData.example_2.length < 10
                 }
                 className="flex-1 px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 disabled:opacity-50"
               >
-                Save Content
+                Save Changes
               </button>
             </div>
           </div>
         </div>
       )}
+
     </div>
   )
 }
@@ -346,37 +265,19 @@ export default function VocabularyReviewPage({ params }: { params: { id: string 
     }
   }
 
-  const handleReject = async (wordId: string, feedback: string) => {
+  const handleWordEdit = async (wordId: string, data: VocabularyWordManualUpdate) => {
     try {
       setIsProcessing(true)
-      await vocabularyApi.reviewWord(wordId, { 
-        action: 'reject', 
-        rejection_feedback: feedback 
-      })
-      // Trigger regeneration
-      await vocabularyApi.regenerateWordDefinition(wordId)
+      await vocabularyApi.updateWordManually(wordId, data)
       await loadVocabularyList()
     } catch (error) {
-      console.error('Failed to reject word:', error)
-      alert('Failed to reject word')
+      console.error('Failed to edit word:', error)
+      alert('Failed to edit word')
     } finally {
       setIsProcessing(false)
     }
   }
 
-  const handleManualUpdate = async (wordId: string, data: VocabularyWordManualUpdate) => {
-    try {
-      setIsProcessing(true)
-      await vocabularyApi.updateWordManually(wordId, data)
-      await loadVocabularyList()
-      moveToNextPending()
-    } catch (error) {
-      console.error('Failed to update word:', error)
-      alert('Failed to update word')
-    } finally {
-      setIsProcessing(false)
-    }
-  }
 
   const handleRegenerate = async (wordId: string) => {
     try {
@@ -481,7 +382,7 @@ export default function VocabularyReviewPage({ params }: { params: { id: string 
     }
   }
 
-  const handleEdit = () => {
+  const handleListEdit = () => {
     // For now, redirect to create page with the list data
     // TODO: Implement proper edit page
     router.push(`/teacher/vocabulary/${params.id}/edit`)
@@ -549,7 +450,7 @@ export default function VocabularyReviewPage({ params }: { params: { id: string 
           </div>
           <div className="flex items-center gap-4">
             <button
-              onClick={handleEdit}
+              onClick={handleListEdit}
               disabled={isProcessing || list.status === 'published'}
               className="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
             >
@@ -639,8 +540,7 @@ export default function VocabularyReviewPage({ params }: { params: { id: string 
         <WordReviewCard
           word={currentWord}
           onAccept={() => handleAccept(currentWord.id)}
-          onReject={(feedback) => handleReject(currentWord.id, feedback)}
-          onManualUpdate={(data) => handleManualUpdate(currentWord.id, data)}
+          onEdit={(data) => handleWordEdit(currentWord.id, data)}
           onRegenerate={() => handleRegenerate(currentWord.id)}
           isProcessing={isProcessing}
         />
