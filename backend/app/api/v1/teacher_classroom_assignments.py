@@ -738,6 +738,12 @@ async def update_all_classroom_assignments(
     logger.info(f"Updating assignments for classroom {classroom_id}")
     logger.info(f"Request assignments count: {len(request.assignments)}")
     
+    # IMPORTANT: The logic here works as follows:
+    # 1. We get only ACTIVE assignments (not soft-deleted) as "current"
+    # 2. When adding assignments, we check for ANY existing record (including soft-deleted)
+    # 3. If a soft-deleted record exists, we reactivate it instead of creating a new one
+    # 4. This allows previously removed assignments to be re-added to the classroom
+    
     # Verify classroom exists and belongs to teacher
     result = await db.execute(
         select(Classroom).where(
@@ -972,7 +978,9 @@ async def update_all_classroom_assignments(
     
     # Add new reading assignments
     display_order = len(current_assignments) - len(reading_to_remove) - len(vocabulary_to_remove) - len(debate_to_remove) - len(writing_to_remove) - len(lecture_to_remove)
+    logger.info(f"Starting to add new assignments. Display order starting at: {display_order}")
     for assignment_id in reading_to_add:
+        logger.info(f"Adding reading assignment {assignment_id} to classroom {classroom_id}")
         # Verify assignment exists and belongs to teacher
         assignment_result = await db.execute(
             select(ReadingAssignmentModel).where(
@@ -988,7 +996,7 @@ async def update_all_classroom_assignments(
             logger.warning(f"Reading assignment {assignment_id} not found or archived, skipping")
             continue
         
-        # Check if assignment already exists for this classroom
+        # Check if assignment already exists for this classroom (including soft-deleted)
         existing_result = await db.execute(
             select(ClassroomAssignment).where(
                 and_(
@@ -997,7 +1005,28 @@ async def update_all_classroom_assignments(
                 )
             )
         )
-        if not existing_result.scalar_one_or_none():
+        existing_assignment = existing_result.scalar_one_or_none()
+        
+        if existing_assignment:
+            if existing_assignment.removed_from_classroom_at:
+                # Reactivate the soft-deleted assignment
+                logger.info(f"Reactivating soft-deleted assignment {assignment_id}")
+                schedule = requested_reading[assignment_id]
+                existing_assignment.removed_from_classroom_at = None
+                existing_assignment.removed_by = None
+                existing_assignment.start_date = schedule.start_date
+                existing_assignment.end_date = schedule.end_date
+                existing_assignment.display_order = display_order
+                display_order += 1
+            else:
+                # Assignment is already active, just update dates if needed
+                logger.info(f"Active assignment already exists for {assignment_id}, updating dates")
+                schedule = requested_reading[assignment_id]
+                existing_assignment.start_date = schedule.start_date
+                existing_assignment.end_date = schedule.end_date
+        else:
+            # No existing assignment, create new one
+            logger.info(f"No existing assignment found, creating new one for {assignment_id}")
             schedule = requested_reading[assignment_id]
             ca = ClassroomAssignment(
                 classroom_id=classroom_id,
@@ -1012,6 +1041,7 @@ async def update_all_classroom_assignments(
     
     # Add new vocabulary assignments
     for list_id in vocabulary_to_add:
+        logger.info(f"Adding vocabulary assignment {list_id} to classroom {classroom_id}")
         # Verify vocabulary list exists and belongs to teacher
         vocab_result = await db.execute(
             select(VocabularyList).where(
@@ -1027,7 +1057,7 @@ async def update_all_classroom_assignments(
             logger.warning(f"Vocabulary list {list_id} not found or archived, skipping")
             continue
         
-        # Check if vocabulary assignment already exists for this classroom
+        # Check if vocabulary assignment already exists for this classroom (including soft-deleted)
         existing_result = await db.execute(
             select(ClassroomAssignment).where(
                 and_(
@@ -1037,7 +1067,28 @@ async def update_all_classroom_assignments(
                 )
             )
         )
-        if not existing_result.scalar_one_or_none():
+        existing_assignment = existing_result.scalar_one_or_none()
+        
+        if existing_assignment:
+            if existing_assignment.removed_from_classroom_at:
+                # Reactivate the soft-deleted assignment
+                logger.info(f"Reactivating soft-deleted vocabulary assignment {list_id}")
+                schedule = requested_vocabulary[list_id]
+                existing_assignment.removed_from_classroom_at = None
+                existing_assignment.removed_by = None
+                existing_assignment.start_date = schedule.start_date
+                existing_assignment.end_date = schedule.end_date
+                existing_assignment.display_order = display_order
+                display_order += 1
+            else:
+                # Assignment is already active, just update dates if needed
+                logger.info(f"Active vocabulary assignment already exists for {list_id}, updating dates")
+                schedule = requested_vocabulary[list_id]
+                existing_assignment.start_date = schedule.start_date
+                existing_assignment.end_date = schedule.end_date
+        else:
+            # No existing assignment, create new one
+            logger.info(f"No existing vocabulary assignment found, creating new one for {list_id}")
             schedule = requested_vocabulary[list_id]
             ca = ClassroomAssignment(
                 classroom_id=classroom_id,
@@ -1067,7 +1118,7 @@ async def update_all_classroom_assignments(
             logger.warning(f"Debate assignment {assignment_id} not found or archived, skipping")
             continue
         
-        # Check if debate assignment already exists for this classroom
+        # Check if debate assignment already exists for this classroom (including soft-deleted)
         existing_result = await db.execute(
             select(ClassroomAssignment).where(
                 and_(
@@ -1077,7 +1128,28 @@ async def update_all_classroom_assignments(
                 )
             )
         )
-        if not existing_result.scalar_one_or_none():
+        existing_assignment = existing_result.scalar_one_or_none()
+        
+        if existing_assignment:
+            if existing_assignment.removed_from_classroom_at:
+                # Reactivate the soft-deleted assignment
+                logger.info(f"Reactivating soft-deleted debate assignment {assignment_id}")
+                schedule = requested_debate[assignment_id]
+                existing_assignment.removed_from_classroom_at = None
+                existing_assignment.removed_by = None
+                existing_assignment.start_date = schedule.start_date
+                existing_assignment.end_date = schedule.end_date
+                existing_assignment.display_order = display_order
+                display_order += 1
+            else:
+                # Assignment is already active, just update dates if needed
+                logger.info(f"Active debate assignment already exists for {assignment_id}, updating dates")
+                schedule = requested_debate[assignment_id]
+                existing_assignment.start_date = schedule.start_date
+                existing_assignment.end_date = schedule.end_date
+        else:
+            # No existing assignment, create new one
+            logger.info(f"No existing debate assignment found, creating new one for {assignment_id}")
             schedule = requested_debate[assignment_id]
             ca = ClassroomAssignment(
                 classroom_id=classroom_id,
@@ -1107,7 +1179,7 @@ async def update_all_classroom_assignments(
             logger.warning(f"Writing assignment {assignment_id} not found or archived, skipping")
             continue
         
-        # Check if writing assignment already exists for this classroom
+        # Check if writing assignment already exists for this classroom (including soft-deleted)
         existing_result = await db.execute(
             select(ClassroomAssignment).where(
                 and_(
@@ -1117,7 +1189,28 @@ async def update_all_classroom_assignments(
                 )
             )
         )
-        if not existing_result.scalar_one_or_none():
+        existing_assignment = existing_result.scalar_one_or_none()
+        
+        if existing_assignment:
+            if existing_assignment.removed_from_classroom_at:
+                # Reactivate the soft-deleted assignment
+                logger.info(f"Reactivating soft-deleted writing assignment {assignment_id}")
+                schedule = requested_writing[assignment_id]
+                existing_assignment.removed_from_classroom_at = None
+                existing_assignment.removed_by = None
+                existing_assignment.start_date = schedule.start_date
+                existing_assignment.end_date = schedule.end_date
+                existing_assignment.display_order = display_order
+                display_order += 1
+            else:
+                # Assignment is already active, just update dates if needed
+                logger.info(f"Active writing assignment already exists for {assignment_id}, updating dates")
+                schedule = requested_writing[assignment_id]
+                existing_assignment.start_date = schedule.start_date
+                existing_assignment.end_date = schedule.end_date
+        else:
+            # No existing assignment, create new one
+            logger.info(f"No existing writing assignment found, creating new one for {assignment_id}")
             schedule = requested_writing[assignment_id]
             ca = ClassroomAssignment(
                 classroom_id=classroom_id,
@@ -1148,7 +1241,7 @@ async def update_all_classroom_assignments(
             logger.warning(f"UMALecture assignment {assignment_id} not found or archived, skipping")
             continue
         
-        # Check if UMALecture assignment already exists for this classroom
+        # Check if UMALecture assignment already exists for this classroom (including soft-deleted)
         existing_result = await db.execute(
             select(ClassroomAssignment).where(
                 and_(
@@ -1158,7 +1251,28 @@ async def update_all_classroom_assignments(
                 )
             )
         )
-        if not existing_result.scalar_one_or_none():
+        existing_assignment = existing_result.scalar_one_or_none()
+        
+        if existing_assignment:
+            if existing_assignment.removed_from_classroom_at:
+                # Reactivate the soft-deleted assignment
+                logger.info(f"Reactivating soft-deleted UMALecture assignment {assignment_id}")
+                schedule = requested_lecture[assignment_id]
+                existing_assignment.removed_from_classroom_at = None
+                existing_assignment.removed_by = None
+                existing_assignment.start_date = schedule.start_date
+                existing_assignment.end_date = schedule.end_date
+                existing_assignment.display_order = display_order
+                display_order += 1
+            else:
+                # Assignment is already active, just update dates if needed
+                logger.info(f"Active UMALecture assignment already exists for {assignment_id}, updating dates")
+                schedule = requested_lecture[assignment_id]
+                existing_assignment.start_date = schedule.start_date
+                existing_assignment.end_date = schedule.end_date
+        else:
+            # No existing assignment, create new one
+            logger.info(f"No existing UMALecture assignment found, creating new one for {assignment_id}")
             schedule = requested_lecture[assignment_id]
             ca = ClassroomAssignment(
                 classroom_id=classroom_id,
@@ -1189,7 +1303,7 @@ async def update_all_classroom_assignments(
             logger.warning(f"Test assignment {assignment_id} not found or archived, skipping")
             continue
         
-        # Check if test assignment already exists for this classroom
+        # Check if test assignment already exists for this classroom (including soft-deleted)
         existing_result = await db.execute(
             select(ClassroomAssignment).where(
                 and_(
@@ -1199,7 +1313,28 @@ async def update_all_classroom_assignments(
                 )
             )
         )
-        if not existing_result.scalar_one_or_none():
+        existing_assignment = existing_result.scalar_one_or_none()
+        
+        if existing_assignment:
+            if existing_assignment.removed_from_classroom_at:
+                # Reactivate the soft-deleted assignment
+                logger.info(f"Reactivating soft-deleted test assignment {assignment_id}")
+                schedule = requested_test[assignment_id]
+                existing_assignment.removed_from_classroom_at = None
+                existing_assignment.removed_by = None
+                existing_assignment.start_date = schedule.start_date
+                existing_assignment.end_date = schedule.end_date
+                existing_assignment.display_order = display_order
+                display_order += 1
+            else:
+                # Assignment is already active, just update dates if needed
+                logger.info(f"Active test assignment already exists for {assignment_id}, updating dates")
+                schedule = requested_test[assignment_id]
+                existing_assignment.start_date = schedule.start_date
+                existing_assignment.end_date = schedule.end_date
+        else:
+            # No existing assignment, create new one
+            logger.info(f"No existing test assignment found, creating new one for {assignment_id}")
             schedule = requested_test[assignment_id]
             ca = ClassroomAssignment(
                 classroom_id=classroom_id,
@@ -1244,6 +1379,11 @@ async def update_all_classroom_assignments(
     
     total_added = len(reading_to_add) + len(vocabulary_to_add) + len(debate_to_add) + len(writing_to_add) + len(lecture_to_add) + len(test_to_add)
     total_removed = len(reading_to_remove) + len(vocabulary_to_remove) + len(debate_to_remove) + len(writing_to_remove) + len(lecture_to_remove) + len(test_to_remove)
+    
+    logger.info(f"Assignment update completed for classroom {classroom_id}")
+    logger.info(f"Added: {total_added} assignments - {list(reading_to_add)} reading, {list(vocabulary_to_add)} vocabulary")
+    logger.info(f"Removed: {total_removed} assignments")
+    logger.info(f"Total now assigned: {len(requested_reading) + len(requested_vocabulary) + len(requested_debate) + len(requested_writing) + len(requested_lecture) + len(requested_test)}")
     
     return UpdateClassroomAssignmentsResponse(
         added=[str(id) for id in list(reading_to_add) + list(vocabulary_to_add) + list(debate_to_add) + list(writing_to_add) + list(lecture_to_add) + list(test_to_add)],

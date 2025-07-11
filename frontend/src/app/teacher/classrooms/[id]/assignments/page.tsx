@@ -121,17 +121,22 @@ export default function AssignmentManagementPage() {
       setAssignments(response.assignments)
       setPagination(prev => ({ ...prev, total_count: response.total_count }))
       
-      // Initialize selected IDs and schedules on first load
+      // Update selected IDs based on current assignments
+      // This needs to happen for all pages and filter combinations to properly reflect the saved state
+      const currentPageAssignedIds = new Set(
+        response.assignments.filter(a => a.is_assigned).map(a => a.id)
+      )
+      
+      // For non-filtered first load, completely reset the state
       if (pagination.page === 1 && filters.search === '' && filters.assignment_type === 'all' && 
           filters.grade_level === 'all' && filters.status === 'all') {
-        const assignedAssignments = response.assignments.filter(a => a.is_assigned)
-        const assignedIds = new Set(assignedAssignments.map(a => a.id))
-        setSelectedIds(assignedIds)
-        setOriginalIds(new Set(assignedIds))
+        // This is the initial load - set everything fresh
+        setSelectedIds(currentPageAssignedIds)
+        setOriginalIds(new Set(currentPageAssignedIds))
         
         // Initialize schedules for ALL assigned assignments
         const initialSchedules = new Map<string, AssignmentSchedule>()
-        assignedAssignments.forEach(assignment => {
+        response.assignments.filter(a => a.is_assigned).forEach(assignment => {
           initialSchedules.set(assignment.id, {
             assignment_id: assignment.id,
             start_date: assignment.current_schedule?.start_date || null,
@@ -140,7 +145,37 @@ export default function AssignmentManagementPage() {
         })
         setSchedules(new Map(initialSchedules))
         setOriginalSchedules(new Map(initialSchedules))
+      } else {
+        // For filtered views or subsequent pages, update selected state based on server response
+        setSelectedIds(prev => {
+          const newSelected = new Set(prev)
+          
+          // For each assignment on this page, update its selected state based on is_assigned
+          response.assignments.forEach(assignment => {
+            if (assignment.is_assigned) {
+              newSelected.add(assignment.id)
+            } else {
+              newSelected.delete(assignment.id)
+            }
+          })
+          
+          return newSelected
+        })
         
+        // Update schedules for newly assigned items
+        setSchedules(prev => {
+          const newSchedules = new Map(prev)
+          response.assignments.filter(a => a.is_assigned).forEach(assignment => {
+            if (!newSchedules.has(assignment.id) || assignment.current_schedule) {
+              newSchedules.set(assignment.id, {
+                assignment_id: assignment.id,
+                start_date: assignment.current_schedule?.start_date || null,
+                end_date: assignment.current_schedule?.end_date || null
+              })
+            }
+          })
+          return newSchedules
+        })
       }
     } catch (error) {
       console.error('Failed to fetch assignments:', error)
@@ -300,7 +335,8 @@ export default function AssignmentManagementPage() {
       setOriginalIds(new Set(selectedIds))
       setOriginalSchedules(new Map(schedules))
       
-      // Refresh assignments to get updated state
+      // Force a complete refresh of assignments to get updated state
+      // This ensures all assignments reflect their correct is_assigned status
       await fetchAssignments()
       
       // Show success message
@@ -337,7 +373,8 @@ export default function AssignmentManagementPage() {
       setOriginalIds(new Set(selectedIds))
       setOriginalSchedules(new Map(schedules))
       
-      // Refresh assignments to get updated state
+      // Force a complete refresh of assignments to get updated state
+      // This ensures all assignments reflect their correct is_assigned status
       await fetchAssignments()
       
       // Show success message
