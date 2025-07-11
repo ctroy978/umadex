@@ -270,7 +270,8 @@ async def delete_vocabulary_list(
         .where(
             and_(
                 ClassroomAssignment.vocabulary_list_id == list_id,
-                ClassroomAssignment.assignment_type == "vocabulary"
+                ClassroomAssignment.assignment_type == "vocabulary",
+                ClassroomAssignment.removed_from_classroom_at.is_(None)
             )
         )
     )
