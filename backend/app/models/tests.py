@@ -26,7 +26,7 @@ class AssignmentTest(Base):
     # Relationships
     assignment = relationship("ReadingAssignment", back_populates="tests")
     approved_by_user = relationship("User", foreign_keys=[approved_by])
-    test_results = relationship("TestResult", back_populates="test", cascade="all, delete-orphan")
+    # Removed test_results relationship - table doesn't exist in current schema
 
 
 class TestResult(Base):
@@ -50,7 +50,7 @@ class TestResult(Base):
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 
     # Relationships
-    test = relationship("AssignmentTest", back_populates="test_results")
+    test = relationship("AssignmentTest")
     student = relationship("User", foreign_keys=[student_id])
     
     # Constraints

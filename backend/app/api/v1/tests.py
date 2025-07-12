@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 
 from app.core.database import get_db
 from app.utils.deps import get_current_user
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.models.reading import ReadingAssignment
 from app.models.tests import AssignmentTest, TestResult, StudentTestAttempt
 from app.models.classroom import ClassroomAssignment
@@ -438,35 +438,55 @@ async def delete_test(
 ):
     """Delete a test (teacher only, draft tests only)."""
     
-    if current_user.role != UserRole.TEACHER:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only teachers can delete tests"
+    try:
+        if current_user.role != UserRole.TEACHER:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only teachers can delete tests"
+            )
+        
+        # Check test exists and verify ownership through assignment
+        result = await db.execute(
+            select(AssignmentTest, ReadingAssignment)
+            .join(ReadingAssignment, AssignmentTest.assignment_id == ReadingAssignment.id)
+            .where(
+                and_(
+                    AssignmentTest.id == test_id,
+                    ReadingAssignment.teacher_id == current_user.id
+                )
+            )
         )
-    
-    # Check test exists and is in draft status
-    test = await db.execute(
-        select(AssignmentTest).where(AssignmentTest.id == test_id)
-    )
-    test = test.scalar_one_or_none()
-    
-    if not test:
+        row = result.first()
+        
+        if not row:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Test not found or you don't have permission to access it"
+            )
+        
+        test, assignment = row
+        
+        if test.status != "draft":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Can only delete draft tests"
+            )
+        
+        # Delete the test
+        await db.delete(test)
+        await db.commit()
+        
+        return {"message": "Test deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(f"Error in delete_test: {str(e)}")
+        print(traceback.format_exc())
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Test not found"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error deleting test: {str(e)}"
         )
-    
-    if test.status != "draft":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Can only delete draft tests"
-        )
-    
-    # Delete the test
-    await db.delete(test)
-    await db.commit()
-    
-    return {"message": "Test deleted successfully"}
 
 
 # Student endpoints

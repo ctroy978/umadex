@@ -153,10 +153,23 @@ export default function TestReviewPage({ params }: { params: { id: string } }) {
       const token = tokenStorage.getAccessToken();
       
       // Delete the existing test
-      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/v1/tests/${testId}`, {
+      const deleteResponse = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/v1/tests/${testId}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
+
+      if (!deleteResponse.ok) {
+        const errorData = await deleteResponse.text();
+        console.error('Delete error response:', errorData);
+        throw new Error(`Failed to delete test: ${deleteResponse.status} - ${errorData}`);
+      }
+
+      // Clear the testId to ensure the page knows the test was deleted
+      setTestId(null);
+      setTest(null);
+
+      // Small delay to ensure database transaction completes
+      await new Promise(resolve => setTimeout(resolve, 500));
 
       // Generate a new test
       await generateTest();
