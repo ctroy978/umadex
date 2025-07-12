@@ -10,6 +10,9 @@ interface TestQuestion {
   answer_key: string;
   grading_context: string;
   difficulty: number;
+  answer_explanation?: string;
+  evaluation_criteria?: string;
+  [key: string]: any; // Allow for any additional fields from backend
 }
 
 interface TestData {
@@ -187,6 +190,8 @@ export default function TestReviewPage({ params }: { params: { id: string } }) {
       [field]: value
     };
     setQuestions(updatedQuestions);
+    // Clear success message when user makes changes
+    if (success) setSuccess('');
   };
 
   const addQuestion = () => {
@@ -209,28 +214,78 @@ export default function TestReviewPage({ params }: { params: { id: string } }) {
     setError('');
     setSuccess('');
 
+    // Validate questions before sending
+    const invalidQuestions = questions.filter((q, index) => {
+      if (!q.question || !q.answer_key || !q.grading_context) {
+        return true;
+      }
+      return false;
+    });
+
+    if (invalidQuestions.length > 0) {
+      setError('Please fill in all required fields for each question (question text, answer key, and grading context)');
+      setSaving(false);
+      return;
+    }
+
     try {
       const token = tokenStorage.getAccessToken();
+      
+      // Ensure questions have the correct structure
+      const formattedQuestions = questions.map(q => ({
+        question: String(q.question || ''),
+        answer_key: String(q.answer_key || ''),
+        grading_context: String(q.grading_context || ''),
+        difficulty: Number(q.difficulty) || 5,
+        // Include optional fields if they exist
+        ...(q.answer_explanation && { answer_explanation: String(q.answer_explanation) }),
+        ...(q.evaluation_criteria && { evaluation_criteria: String(q.evaluation_criteria) })
+      }));
+      
+      const payload = {
+        questions: formattedQuestions,
+        time_limit_minutes: timeLimit,
+        max_attempts: maxAttempts,
+        teacher_notes: teacherNotes
+      };
+      console.log('Sending payload:', payload);
+      console.log('Formatted questions:', formattedQuestions);
+      
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/v1/tests/${testId}`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({
-          questions,
-          time_limit_minutes: timeLimit,
-          max_attempts: maxAttempts,
-          teacher_notes: teacherNotes
-        })
+        body: JSON.stringify(payload)
       });
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.detail || 'Failed to save test');
+        console.error('Save test error:', errorData);
+        
+        // Handle validation errors from FastAPI
+        if (errorData.detail && Array.isArray(errorData.detail)) {
+          const errorMessages = errorData.detail.map((err: any) => {
+            if (typeof err === 'string') return err;
+            if (err.msg) return err.msg;
+            if (err.loc && err.msg) return `${err.loc.join('.')}: ${err.msg}`;
+            return JSON.stringify(err);
+          });
+          throw new Error(errorMessages.join(', '));
+        } else if (typeof errorData.detail === 'string') {
+          throw new Error(errorData.detail);
+        } else {
+          throw new Error('Failed to save test');
+        }
       }
 
       setSuccess('Test saved successfully!');
+      
+      // Clear success message after 3 seconds
+      setTimeout(() => {
+        setSuccess('');
+      }, 3000);
     } catch (err) {
       if (err instanceof Error) {
         setError(err.message);
@@ -348,7 +403,10 @@ export default function TestReviewPage({ params }: { params: { id: string } }) {
                   min="10"
                   max="180"
                   value={timeLimit}
-                  onChange={(e) => setTimeLimit(parseInt(e.target.value))}
+                  onChange={(e) => {
+                    setTimeLimit(parseInt(e.target.value));
+                    if (success) setSuccess('');
+                  }}
                   disabled={test.status !== 'draft'}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
                 />
@@ -360,7 +418,10 @@ export default function TestReviewPage({ params }: { params: { id: string } }) {
                 <select
                   id="maxAttempts"
                   value={maxAttempts}
-                  onChange={(e) => setMaxAttempts(parseInt(e.target.value))}
+                  onChange={(e) => {
+                    setMaxAttempts(parseInt(e.target.value));
+                    if (success) setSuccess('');
+                  }}
                   disabled={test.status !== 'draft'}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
                 >
@@ -393,7 +454,10 @@ export default function TestReviewPage({ params }: { params: { id: string } }) {
                 id="teacherNotes"
                 placeholder="Any notes about this test..."
                 value={teacherNotes}
-                onChange={(e) => setTeacherNotes(e.target.value)}
+                onChange={(e) => {
+                  setTeacherNotes(e.target.value);
+                  if (success) setSuccess('');
+                }}
                 rows={3}
                 disabled={test.status !== 'draft'}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
@@ -421,7 +485,7 @@ export default function TestReviewPage({ params }: { params: { id: string } }) {
               </div>
               <div className="p-6 space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Question Text</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Question Text <span className="text-red-500">*</span></label>
                   <textarea
                     value={question.question}
                     onChange={(e) => updateQuestion(index, 'question', e.target.value)}
@@ -432,7 +496,7 @@ export default function TestReviewPage({ params }: { params: { id: string } }) {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Answer Key
+                    Answer Key <span className="text-red-500">*</span>
                     <span className="text-xs text-gray-500 ml-2">(What students should include in their answer)</span>
                   </label>
                   <textarea
@@ -446,7 +510,7 @@ export default function TestReviewPage({ params }: { params: { id: string } }) {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Grading Context
+                    Grading Context <span className="text-red-500">*</span>
                     <span className="text-xs text-gray-500 ml-2">(Relevant text passages for evaluating the answer)</span>
                   </label>
                   <textarea
@@ -508,9 +572,13 @@ export default function TestReviewPage({ params }: { params: { id: string } }) {
             <button
               onClick={saveTest}
               disabled={saving}
-              className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              className={`px-4 py-2 border rounded-md transition-all duration-200 ${
+                success.includes('saved') 
+                  ? 'border-green-500 bg-green-50 text-green-700' 
+                  : 'border-gray-300 hover:bg-gray-50'
+              } disabled:opacity-50 disabled:cursor-not-allowed`}
             >
-              Save Draft
+              {saving ? 'Saving...' : success.includes('saved') ? '✓ Saved' : 'Save Draft'}
             </button>
           )}
           {test.status === 'draft' && (
