@@ -71,17 +71,8 @@ export default function UMATestInterface({ testData, onComplete }: UMATestInterf
     }
   }, [answers])
 
-  // Auto-save functionality
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      const currentAnswer = answers[String(currentQuestionIndex)]
-      if (currentAnswer && currentAnswer.trim() && !isSaving) {
-        saveAnswer(currentQuestionIndex, currentAnswer)
-      }
-    }, 2000) // Save 2 seconds after typing stops
-
-    return () => clearTimeout(timer)
-  }, [answers, currentQuestionIndex, isSaving])
+  // Track if current answer has been saved
+  const [unsavedChanges, setUnsavedChanges] = useState(false)
 
   // Track time spent on current question
   useEffect(() => {
@@ -89,7 +80,7 @@ export default function UMATestInterface({ testData, onComplete }: UMATestInterf
   }, [currentQuestionIndex])
 
   const saveAnswer = async (questionIndex: number, answer: string) => {
-    if (isSaving) return
+    if (isSaving || !answer.trim()) return
     
     console.log(`=== DEBUG: saveAnswer called ===`)
     console.log(`Question index: ${questionIndex}`)
@@ -107,6 +98,7 @@ export default function UMATestInterface({ testData, onComplete }: UMATestInterf
       })
       setTimeSpent(prev => prev + timeOnQuestion)
       setLastSaveTime(new Date())
+      setUnsavedChanges(false)
       console.log(`Answer saved successfully for question ${questionIndex}`)
     } catch (error: any) {
       console.error('Failed to save answer:', error)
@@ -122,13 +114,16 @@ export default function UMATestInterface({ testData, onComplete }: UMATestInterf
       ...prev,
       [String(currentQuestionIndex)]: answer
     }))
+    setUnsavedChanges(true)
   }
 
-  const handleNavigate = (direction: 'prev' | 'next') => {
-    // Save current answer before navigating
-    const currentAnswer = answers[String(currentQuestionIndex)] || ''
-    if (currentAnswer) {
-      saveAnswer(currentQuestionIndex, currentAnswer)
+  const handleNavigate = async (direction: 'prev' | 'next') => {
+    // Save current answer before navigating if there are unsaved changes
+    if (unsavedChanges) {
+      const currentAnswer = answers[String(currentQuestionIndex)] || ''
+      if (currentAnswer) {
+        await saveAnswer(currentQuestionIndex, currentAnswer)
+      }
     }
 
     if (direction === 'next' && currentQuestionIndex < testData.questions.length - 1) {
@@ -138,11 +133,13 @@ export default function UMATestInterface({ testData, onComplete }: UMATestInterf
     }
   }
 
-  const handleQuestionSelect = (index: number) => {
-    // Save current answer before navigating
-    const currentAnswer = answers[String(currentQuestionIndex)] || ''
-    if (currentAnswer) {
-      saveAnswer(currentQuestionIndex, currentAnswer)
+  const handleQuestionSelect = async (index: number) => {
+    // Save current answer before navigating if there are unsaved changes
+    if (unsavedChanges) {
+      const currentAnswer = answers[String(currentQuestionIndex)] || ''
+      if (currentAnswer) {
+        await saveAnswer(currentQuestionIndex, currentAnswer)
+      }
     }
     setCurrentQuestionIndex(index)
   }
@@ -157,18 +154,21 @@ export default function UMATestInterface({ testData, onComplete }: UMATestInterf
     console.log('Answer values:', Object.entries(answers).map(([k, v]) => `Q${k}: "${v.substring(0, 50)}..."`))
     
     try {
-      // Save current answer first if needed
-      const currentAnswer = answers[String(currentQuestionIndex)] || ''
-      if (currentAnswer) {
-        console.log(`Saving current answer for question ${currentQuestionIndex} before submission`)
-        try {
-          await saveAnswer(currentQuestionIndex, currentAnswer)
-        } catch (saveError) {
-          console.warn('Failed to save current answer, continuing with submission:', saveError)
+      // Save all unsaved answers before submission
+      console.log('Saving all answers before submission...')
+      for (const [questionIndex, answer] of Object.entries(answers)) {
+        if (answer && answer.trim()) {
+          console.log(`Saving answer for question ${questionIndex}`)
+          try {
+            await saveAnswer(parseInt(questionIndex), answer)
+          } catch (saveError) {
+            console.warn(`Failed to save answer for question ${questionIndex}:`, saveError)
+          }
         }
       }
 
       // Submit test
+      console.log('All answers saved, submitting test...')
       const result = await umatestApi.submitTest(testData.test_attempt_id)
       console.log('Test submitted successfully:', result)
       
