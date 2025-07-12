@@ -53,7 +53,7 @@ export function QuestionPanel({
         answer: '',
         submitted: questionsCorrect[index] === true,
         isCorrect: questionsCorrect[index] || null,
-        feedback: questionsCorrect[index] ? 'You have already answered this question correctly!' : null,
+        feedback: null,
         isEvaluating: false,
         attemptCount: 0,
       }))
@@ -113,7 +113,7 @@ export function QuestionPanel({
           ...newStates[questionIndex],
           submitted: true,
           isCorrect: result.is_correct,
-          feedback: result.feedback,
+          feedback: result.is_correct ? 'You have answered this question correctly!' : result.feedback,
           isEvaluating: false,
           attemptCount: (newStates[questionIndex].attemptCount || 0) + 1,
         }

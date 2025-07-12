@@ -594,9 +594,10 @@ Remember: We want students to feel successful when they demonstrate understandin
             result = json.loads(json_str.strip())
             
             # Ensure all required fields are present
+            is_correct = result.get("is_correct", False)
             return {
-                "is_correct": result.get("is_correct", False),
-                "feedback": result.get("feedback", "Unable to evaluate response. Please try again."),
+                "is_correct": is_correct,
+                "feedback": "You have answered this question correctly!" if is_correct else result.get("feedback", "Unable to evaluate response. Please try again."),
                 "points_earned": result.get("points_earned", 0)
             }
             

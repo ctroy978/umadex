@@ -759,21 +759,16 @@ CREATE TABLE student_test_attempts (
 CREATE TABLE test_question_evaluations (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     test_attempt_id UUID NOT NULL REFERENCES student_test_attempts(id) ON DELETE CASCADE,
-    question_number INTEGER CHECK (question_number BETWEEN 0 AND 9),
-    question_text TEXT NOT NULL,
-    student_answer TEXT,
-    answer_key TEXT,
-    answer_explanation TEXT,
-    rubric_score INTEGER CHECK (rubric_score BETWEEN 0 AND 4),
-    points_earned INTEGER CHECK (points_earned IN (0, 2, 5, 8, 10)),
-    scoring_rationale TEXT,
-    feedback_text TEXT,
+    question_index INTEGER NOT NULL,
+    rubric_score INTEGER NOT NULL CHECK (rubric_score >= 0 AND rubric_score <= 4),
+    points_earned DECIMAL(5,2) NOT NULL CHECK (points_earned >= 0),
+    max_points DECIMAL(5,2) NOT NULL CHECK (max_points > 0),
+    scoring_rationale TEXT NOT NULL,
+    feedback TEXT,
     key_concepts_identified JSONB DEFAULT '[]',
     misconceptions_detected JSONB DEFAULT '[]',
-    evaluation_confidence DECIMAL(3,2) CHECK (evaluation_confidence BETWEEN 0 AND 1),
-    time_spent_seconds INTEGER,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    evaluation_confidence DECIMAL(3,2) NOT NULL CHECK (evaluation_confidence >= 0 AND evaluation_confidence <= 1),
+    evaluated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Security incident tracking for tests
@@ -1256,6 +1251,7 @@ CREATE INDEX idx_test_assignments_status ON test_assignments(status);
 CREATE INDEX idx_test_question_cache_lecture_id ON test_question_cache(lecture_id);
 CREATE INDEX idx_test_question_cache_topic_id ON test_question_cache(topic_id);
 CREATE INDEX idx_test_question_evaluations_attempt_id ON test_question_evaluations(test_attempt_id);
+CREATE INDEX idx_test_question_evaluations_question ON test_question_evaluations(test_attempt_id, question_index);
 CREATE INDEX idx_test_generation_log_assignment ON test_generation_log(test_assignment_id);
 
 -- Security incident tracking indexes
@@ -1511,10 +1507,7 @@ CREATE TRIGGER update_student_test_attempts_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
-CREATE TRIGGER update_test_question_evaluations_updated_at
-    BEFORE UPDATE ON test_question_evaluations
-    FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at_column();
+-- Note: test_question_evaluations doesn't have updated_at column, so no trigger needed
 
 CREATE TRIGGER update_vocabulary_lists_updated_at
     BEFORE UPDATE ON vocabulary_lists
