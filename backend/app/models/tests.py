@@ -104,6 +104,8 @@ class StudentTestAttempt(Base):
     # Schedule and override tracking
     grace_period_end = Column(DateTime(timezone=True))
     schedule_violation_reason = Column(Text)
+    started_within_schedule = Column(Boolean, default=True)
+    override_code_used = Column(UUID(as_uuid=True), nullable=True)  # Note: FK to test_override_codes removed as table doesn't exist
     
     # Audit
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)

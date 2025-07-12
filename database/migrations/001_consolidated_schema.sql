@@ -776,6 +776,17 @@ CREATE TABLE test_question_evaluations (
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Security incident tracking for tests
+CREATE TABLE test_security_incidents (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    test_attempt_id UUID NOT NULL REFERENCES student_test_attempts(id) ON DELETE CASCADE,
+    student_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    incident_type VARCHAR(50) NOT NULL CHECK (incident_type IN ('focus_loss', 'tab_switch', 'navigation_attempt', 'window_blur', 'app_switch', 'orientation_cheat')),
+    incident_data JSONB,
+    resulted_in_lock BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
 -- ============================================================================
 -- SCHEDULING & ACCESS CONTROL
 -- ============================================================================
@@ -1246,6 +1257,11 @@ CREATE INDEX idx_test_question_cache_lecture_id ON test_question_cache(lecture_i
 CREATE INDEX idx_test_question_cache_topic_id ON test_question_cache(topic_id);
 CREATE INDEX idx_test_question_evaluations_attempt_id ON test_question_evaluations(test_attempt_id);
 CREATE INDEX idx_test_generation_log_assignment ON test_generation_log(test_assignment_id);
+
+-- Security incident tracking indexes
+CREATE INDEX idx_test_security_incidents_test_attempt_id ON test_security_incidents(test_attempt_id);
+CREATE INDEX idx_test_security_incidents_student_id ON test_security_incidents(student_id);
+CREATE INDEX idx_test_security_incidents_created_at ON test_security_incidents(created_at);
 
 -- Scheduling indexes
 CREATE INDEX idx_classroom_test_schedules_classroom_id ON classroom_test_schedules(classroom_id);

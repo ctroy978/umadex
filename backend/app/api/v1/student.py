@@ -1038,7 +1038,8 @@ async def get_assignment_test_status(
     ca_query = ca_query.where(
         and_(
             ClassroomAssignment.assignment_id == assignment_id,
-            ClassroomAssignment.assignment_type == "reading"
+            ClassroomAssignment.assignment_type == "reading",
+            ClassroomAssignment.removed_from_classroom_at.is_(None)
         )
     )
     

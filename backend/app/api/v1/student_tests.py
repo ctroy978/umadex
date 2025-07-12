@@ -774,13 +774,13 @@ async def log_security_incident(
 ):
     """Log a security violation (focus loss, tab switch, etc.)"""
     
-    # Get the active test attempt
+    # Get the active test attempt - test_id here is actually the test_attempt_id
     attempt_query = await db.execute(
         select(StudentTestAttempt)
         .where(
             and_(
+                StudentTestAttempt.id == test_id,
                 StudentTestAttempt.student_id == current_user.id,
-                StudentTestAttempt.assignment_test_id == test_id,
                 StudentTestAttempt.status == "in_progress",
                 StudentTestAttempt.is_locked == False
             )
@@ -881,16 +881,15 @@ async def get_security_status(
 ):
     """Get current security violation count and lock status"""
     
-    # Get the test attempt
+    # Get the test attempt - test_id here is actually the test_attempt_id
     attempt_query = await db.execute(
         select(StudentTestAttempt)
         .where(
             and_(
-                StudentTestAttempt.student_id == current_user.id,
-                StudentTestAttempt.assignment_test_id == test_id
+                StudentTestAttempt.id == test_id,
+                StudentTestAttempt.student_id == current_user.id
             )
         )
-        .order_by(StudentTestAttempt.created_at.desc())
     )
     test_attempt = attempt_query.scalar_one_or_none()
     

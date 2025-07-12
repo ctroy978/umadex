@@ -36,7 +36,7 @@ export default function TestInterface({ testData, readingContent, onComplete }: 
   
   // Use the security hook
   const { violationCount, isLocked, showWarning, acknowledgeWarning } = useTestSecurity({
-    testId: testData.test_id,
+    testId: testData.test_attempt_id,
     isActive: isTestActive && testData.status === 'in_progress',
     onWarning: () => {
       // Pause any timers if needed
