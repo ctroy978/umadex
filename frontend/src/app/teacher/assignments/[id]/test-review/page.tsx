@@ -226,12 +226,17 @@ export default function TestReviewPage({ params }: { params: { id: string } }) {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to save test');
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Failed to save test');
       }
 
       setSuccess('Test saved successfully!');
     } catch (err) {
-      setError('Failed to save test');
+      if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError('Failed to save test');
+      }
       console.error(err);
     } finally {
       setSaving(false);
@@ -320,6 +325,12 @@ export default function TestReviewPage({ params }: { params: { id: string } }) {
           </div>
         )}
 
+        {test.status === 'approved' && (
+          <div className="mb-4 bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <p className="text-blue-800">This test has been approved and is available for students. You cannot make changes to an approved test.</p>
+          </div>
+        )}
+
         {/* Test Settings */}
         <div className="mb-6 bg-white rounded-lg shadow border border-gray-200">
           <div className="p-6 border-b border-gray-200">
@@ -338,7 +349,8 @@ export default function TestReviewPage({ params }: { params: { id: string } }) {
                   max="180"
                   value={timeLimit}
                   onChange={(e) => setTimeLimit(parseInt(e.target.value))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={test.status !== 'draft'}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
                 />
               </div>
               <div>
@@ -349,7 +361,8 @@ export default function TestReviewPage({ params }: { params: { id: string } }) {
                   id="maxAttempts"
                   value={maxAttempts}
                   onChange={(e) => setMaxAttempts(parseInt(e.target.value))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={test.status !== 'draft'}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
                 >
                   <option value="1">1 attempt</option>
                   <option value="2">2 attempts</option>
@@ -367,7 +380,8 @@ export default function TestReviewPage({ params }: { params: { id: string } }) {
                   max="365"
                   value={expirationDays}
                   onChange={(e) => setExpirationDays(parseInt(e.target.value))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={test.status !== 'draft'}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
                 />
               </div>
             </div>
@@ -381,7 +395,8 @@ export default function TestReviewPage({ params }: { params: { id: string } }) {
                 value={teacherNotes}
                 onChange={(e) => setTeacherNotes(e.target.value)}
                 rows={3}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                disabled={test.status !== 'draft'}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
               />
             </div>
           </div>
@@ -394,12 +409,14 @@ export default function TestReviewPage({ params }: { params: { id: string } }) {
               <div className="p-6 border-b border-gray-200">
                 <div className="flex justify-between items-center">
                   <h3 className="text-lg font-semibold">Question {index + 1}</h3>
-                  <button
-                    onClick={() => removeQuestion(index)}
-                    className="text-red-600 hover:text-red-700 p-2"
-                  >
-                    ✕
-                  </button>
+                  {test.status === 'draft' && (
+                    <button
+                      onClick={() => removeQuestion(index)}
+                      className="text-red-600 hover:text-red-700 p-2"
+                    >
+                      ✕
+                    </button>
+                  )}
                 </div>
               </div>
               <div className="p-6 space-y-4">
@@ -409,7 +426,8 @@ export default function TestReviewPage({ params }: { params: { id: string } }) {
                     value={question.question}
                     onChange={(e) => updateQuestion(index, 'question', e.target.value)}
                     rows={2}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    disabled={test.status !== 'draft'}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
                   />
                 </div>
                 <div>
@@ -421,8 +439,9 @@ export default function TestReviewPage({ params }: { params: { id: string } }) {
                     value={question.answer_key}
                     onChange={(e) => updateQuestion(index, 'answer_key', e.target.value)}
                     rows={3}
+                    disabled={test.status !== 'draft'}
                     placeholder="Example: Student should explain that the protagonist felt lonely because they moved to a new city and left all their friends behind, as described in paragraph 3."
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
                   />
                 </div>
                 <div>
@@ -434,8 +453,9 @@ export default function TestReviewPage({ params }: { params: { id: string } }) {
                     value={question.grading_context}
                     onChange={(e) => updateQuestion(index, 'grading_context', e.target.value)}
                     rows={3}
+                    disabled={test.status !== 'draft'}
                     placeholder='Example: "Sarah stared out the window of her new apartment, the unfamiliar skyline reminding her of how far she was from everyone she loved." (Paragraph 3)'
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm disabled:bg-gray-100 disabled:cursor-not-allowed"
                   />
                 </div>
                 <div>
@@ -443,7 +463,8 @@ export default function TestReviewPage({ params }: { params: { id: string } }) {
                   <select
                     value={question.difficulty}
                     onChange={(e) => updateQuestion(index, 'difficulty', parseInt(e.target.value))}
-                    className="w-32 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    disabled={test.status !== 'draft'}
+                    className="w-32 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
                   >
                     {[1, 2, 3, 4, 5, 6, 7, 8].map(level => (
                       <option key={level} value={level}>
@@ -459,12 +480,14 @@ export default function TestReviewPage({ params }: { params: { id: string } }) {
 
         {/* Action Buttons */}
         <div className="flex flex-col md:flex-row gap-4">
-          <button
-            onClick={addQuestion}
-            className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 flex items-center"
-          >
-            + Add Question
-          </button>
+          {test.status === 'draft' && (
+            <button
+              onClick={addQuestion}
+              className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 flex items-center"
+            >
+              + Add Question
+            </button>
+          )}
           {test.status === 'draft' && (
             <button
               onClick={regenerateQuestions}
@@ -481,20 +504,24 @@ export default function TestReviewPage({ params }: { params: { id: string } }) {
           >
             Cancel
           </button>
-          <button
-            onClick={saveTest}
-            disabled={saving || test.status !== 'draft'}
-            className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Save Draft
-          </button>
-          <button
-            onClick={approveTest}
-            disabled={saving || test.status !== 'draft' || questions.length === 0}
-            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {saving ? 'Processing...' : 'Approve Test'}
-          </button>
+          {test.status === 'draft' && (
+            <button
+              onClick={saveTest}
+              disabled={saving}
+              className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Save Draft
+            </button>
+          )}
+          {test.status === 'draft' && (
+            <button
+              onClick={approveTest}
+              disabled={saving || questions.length === 0}
+              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {saving ? 'Processing...' : 'Approve Test'}
+            </button>
+          )}
         </div>
       </div>
   );
