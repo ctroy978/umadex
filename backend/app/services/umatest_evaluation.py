@@ -156,6 +156,11 @@ class UMATestEvaluationService:
         answers = test_data["answers"]
         test_assignment = test_data["test_assignment"]
         
+        logger.info(f"=== DEBUG: _perform_ai_evaluation ===")
+        logger.info(f"Number of answers received: {len(answers)}")
+        logger.info(f"Answers data: {answers}")
+        logger.info(f"Questions structure: {list(questions.keys())}")
+        
         # Build list of questions with answers
         question_list = []
         question_index_map = {}
@@ -163,12 +168,16 @@ class UMATestEvaluationService:
         
         for topic_id, topic_data in questions.items():
             for question in topic_data.get('questions', []):
+                answer_key = str(index)
+                student_answer = answers.get(answer_key, '')
+                logger.info(f"Question {index}: answer_key='{answer_key}', student_answer='{student_answer[:50]}...' (len={len(student_answer)})")
+                
                 question_list.append({
                     'index': index,
                     'question': question,
                     'topic': topic_data.get('topic_title', ''),
                     'lecture': topic_data.get('source_lecture_title', ''),
-                    'answer': answers.get(str(index), '')
+                    'answer': student_answer
                 })
                 question_index_map[index] = question
                 index += 1
