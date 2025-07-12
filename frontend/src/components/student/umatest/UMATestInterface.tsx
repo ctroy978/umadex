@@ -21,10 +21,6 @@ export default function UMATestInterface({ testData, onComplete }: UMATestInterf
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(testData.current_question - 1)
   const [answers, setAnswers] = useState<Record<string, string>>(testData.saved_answers || {})
   const [isSaving, setIsSaving] = useState(false)
-  
-  console.log('=== DEBUG: UMATestInterface initialized ===')
-  console.log('Test data saved_answers:', testData.saved_answers)
-  console.log('Initial answers state:', answers)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [lastSaveTime, setLastSaveTime] = useState<Date | null>(null)
   const [showSubmitModal, setShowSubmitModal] = useState(false)
@@ -82,11 +78,6 @@ export default function UMATestInterface({ testData, onComplete }: UMATestInterf
   const saveAnswer = async (questionIndex: number, answer: string) => {
     if (isSaving || !answer.trim()) return
     
-    console.log(`=== DEBUG: saveAnswer called ===`)
-    console.log(`Question index: ${questionIndex}`)
-    console.log(`Answer: "${answer}"`)
-    console.log(`Answer length: ${answer.length}`)
-    
     setIsSaving(true)
     setSaveError(null)
     try {
@@ -99,7 +90,6 @@ export default function UMATestInterface({ testData, onComplete }: UMATestInterf
       setTimeSpent(prev => prev + timeOnQuestion)
       setLastSaveTime(new Date())
       setUnsavedChanges(false)
-      console.log(`Answer saved successfully for question ${questionIndex}`)
     } catch (error: any) {
       console.error('Failed to save answer:', error)
       const errorMessage = error.response?.data?.detail || error.message || 'Failed to save answer'
@@ -148,17 +138,10 @@ export default function UMATestInterface({ testData, onComplete }: UMATestInterf
     setShowSubmitModal(false)
     setIsSubmitting(true)
     
-    console.log('=== DEBUG: handleSubmit ===')
-    console.log('Current answers state:', answers)
-    console.log('Answer keys:', Object.keys(answers))
-    console.log('Answer values:', Object.entries(answers).map(([k, v]) => `Q${k}: "${v.substring(0, 50)}..."`))
-    
     try {
       // Save all unsaved answers before submission
-      console.log('Saving all answers before submission...')
       for (const [questionIndex, answer] of Object.entries(answers)) {
         if (answer && answer.trim()) {
-          console.log(`Saving answer for question ${questionIndex}`)
           try {
             await saveAnswer(parseInt(questionIndex), answer)
           } catch (saveError) {
@@ -168,9 +151,7 @@ export default function UMATestInterface({ testData, onComplete }: UMATestInterf
       }
 
       // Submit test
-      console.log('All answers saved, submitting test...')
       const result = await umatestApi.submitTest(testData.test_attempt_id)
-      console.log('Test submitted successfully:', result)
       
       // Redirect to results after successful submission
       onComplete()

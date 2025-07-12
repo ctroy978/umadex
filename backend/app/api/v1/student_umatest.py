@@ -272,12 +272,6 @@ async def save_umatest_answer(
     test_attempt.answers_data[str(request.question_index)] = request.answer
     test_attempt.last_activity_at = datetime.now(timezone.utc)
     
-    logger.info(f"=== DEBUG: save_answer ===")
-    logger.info(f"Saving answer for question {request.question_index}")
-    logger.info(f"Answer length: {len(request.answer)}")
-    logger.info(f"Total answers saved: {len(test_attempt.answers_data)}")
-    logger.info(f"All answer keys: {list(test_attempt.answers_data.keys())}")
-    
     # Update total time spent if provided
     if request.time_spent_seconds:
         current_time = test_attempt.time_spent_seconds or 0
@@ -318,11 +312,6 @@ async def submit_umatest(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Test has already been submitted"
         )
-    
-    logger.info(f"=== DEBUG: submit_test ===")
-    logger.info(f"Test attempt ID: {test_attempt_id}")
-    logger.info(f"Answers data at submission: {test_attempt.answers_data}")
-    logger.info(f"Number of answers: {len(test_attempt.answers_data) if test_attempt.answers_data else 0}")
     
     # Update status to submitted
     test_attempt.status = 'submitted'
