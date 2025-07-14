@@ -30,9 +30,7 @@ from app.config.rubric_config import (
 
 logger = logging.getLogger(__name__)
 
-# Configure Gemini AI
-gemini_config = get_gemini_config()
-genai.configure(api_key=gemini_config.api_key)
+# Gemini configuration will be done in the evaluation method
 
 
 # Pydantic models for structured AI responses
@@ -84,7 +82,11 @@ class UMATestEvaluationService:
         Returns:
             Dict containing evaluation results and status
         """
-        logger.info(f"Evaluating UMATest attempt: {test_attempt_id}")
+        logger.info(f"\n{'='*60}")
+        logger.info(f"STARTING UMATEST EVALUATION")
+        logger.info(f"Test Attempt ID: {test_attempt_id}")
+        logger.info(f"Trigger Source: {trigger_source}")
+        logger.info(f"{'='*60}\n")
         
         try:
             # Load test data
@@ -112,7 +114,7 @@ class UMATestEvaluationService:
             }
             
         except Exception as e:
-            logger.error(f"Error evaluating test {test_attempt_id}: {str(e)}")
+            logger.error(f"Error evaluating test {test_attempt_id}: {str(e)}", exc_info=True)
             await self._handle_evaluation_failure(test_attempt_id, str(e))
             raise
     
@@ -156,36 +158,77 @@ class UMATestEvaluationService:
         answers = test_data["answers"]
         test_assignment = test_data["test_assignment"]
         
+        logger.info(f"Processing test with {len(questions)} topics")
+        logger.info(f"Answers data keys: {list(answers.keys()) if answers else 'No answers'}")
+        logger.info(f"Answers data: {answers}")
+        logger.info(f"Question structure sample: {list(questions.keys())[:3] if questions else 'No questions'}")
+        
         # Build list of questions with answers
         question_list = []
         question_index_map = {}
         index = 0
         
         for topic_id, topic_data in questions.items():
-            for question in topic_data.get('questions', []):
+            topic_questions = topic_data.get('questions', [])
+            logger.info(f"Topic {topic_id}: {len(topic_questions)} questions, topic_data keys: {list(topic_data.keys())}")
+            
+            for q_idx, question in enumerate(topic_questions):
+                answer = answers.get(str(index), '')
+                logger.info(f"Question {index} (topic {topic_id}, q_idx {q_idx}): Has answer: {bool(answer)}, Answer length: {len(answer)}")
+                logger.info(f"Question type: {type(question)}, Question keys: {list(question.keys()) if isinstance(question, dict) else 'Not a dict'}")
+                
                 question_list.append({
                     'index': index,
                     'question': question,
                     'topic': topic_data.get('topic_title', ''),
                     'lecture': topic_data.get('source_lecture_title', ''),
-                    'answer': answers.get(str(index), '')
+                    'answer': answer
                 })
                 question_index_map[index] = question
                 index += 1
         
         # Evaluate each question
         evaluations = []
+        logger.info(f"Starting evaluation of {len(question_list)} questions")
+        
         for item in question_list:
-            evaluation = await self._evaluate_single_question(
-                question_data=item['question'],
-                student_answer=item['answer'],
-                topic_context=item['topic'],
-                lecture_context=item['lecture']
-            )
-            evaluations.append(evaluation)
+            try:
+                logger.info(f"\n=== EVALUATING QUESTION {item['index']} ===")
+                logger.info(f"Question text: {item['question'].get('question_text', '')[:100]}...")
+                logger.info(f"Student answer present: {bool(item['answer'])}, Length: {len(item['answer']) if item['answer'] else 0}")
+                
+                evaluation = await self._evaluate_single_question(
+                    question_data=item['question'],
+                    student_answer=item['answer'],
+                    topic_context=item['topic'],
+                    lecture_context=item['lecture']
+                )
+                evaluations.append(evaluation)
+                
+                logger.info(f"Question {item['index']} evaluated successfully - Score: {evaluation.rubric_score}")
+                logger.info(f"Total evaluations completed: {len(evaluations)} of {len(question_list)}")
+                
+                # Add small delay between evaluations to avoid rate limiting
+                if item['index'] < len(question_list) - 1:
+                    logger.info(f"Waiting 0.5s before next evaluation...")
+                    await asyncio.sleep(0.5)
+            except Exception as e:
+                logger.error(f"\n!!! EVALUATION FAILED for question {item['index']} !!!", exc_info=True)
+                # Add a failed evaluation so we don't skip questions
+                evaluations.append(QuestionEvaluation(
+                    rubric_score=0,
+                    scoring_rationale=f"Evaluation failed: {str(e)[:100]}",
+                    feedback="Please ask your teacher to review this question.",
+                    key_concepts_identified=[],
+                    misconceptions_detected=[],
+                    confidence=0.1
+                ))
+                logger.info(f"Added fallback evaluation for question {item['index']}")
         
         # Calculate overall confidence
         avg_confidence = sum(e.confidence for e in evaluations) / len(evaluations) if evaluations else 0.5
+        
+        logger.info(f"Completed evaluation of {len(evaluations)} questions (expected {len(question_list)})")
         
         return TestEvaluationResult(
             question_evaluations=evaluations,
@@ -223,6 +266,15 @@ class UMATestEvaluationService:
         # Try AI evaluation with retries
         for attempt in range(self.max_retries):
             try:
+                # Configure Gemini for each attempt to ensure fresh connection
+                gemini_config = get_gemini_config()
+                if not gemini_config.api_key:
+                    logger.error("GEMINI_API_KEY not found in configuration!")
+                    raise ValueError("GEMINI_API_KEY is not configured")
+                genai.configure(api_key=gemini_config.api_key)
+                
+                logger.info(f"Creating Gemini model {ANSWER_EVALUATION_MODEL} for question evaluation (attempt {attempt + 1})")
+                
                 model = genai.GenerativeModel(
                     model_name=ANSWER_EVALUATION_MODEL,
                     generation_config={
@@ -232,21 +284,29 @@ class UMATestEvaluationService:
                     }
                 )
                 
+                # Use asyncio.to_thread for async compatibility
+                logger.info(f"Sending request to Gemini API for question evaluation...")
                 response = await asyncio.to_thread(
                     model.generate_content,
                     prompt
                 )
                 
+                logger.info(f"Received response from Gemini API")
+                logger.debug(f"Raw AI response: {response.text[:500]}...")
+                
                 # Parse the response
                 evaluation = self._parse_ai_response(response.text)
+                logger.info(f"Successfully parsed AI response - Score: {evaluation.rubric_score}")
                 return evaluation
                 
             except Exception as e:
-                logger.warning(f"AI evaluation attempt {attempt + 1} failed: {str(e)}")
+                logger.error(f"AI evaluation attempt {attempt + 1} failed for question: {str(e)}")
+                logger.error(f"Question text: {question_data.get('question_text', '')[:100]}...")
                 if attempt < self.max_retries - 1:
                     await asyncio.sleep(self.retry_delay)
                 else:
                     # Fallback to basic evaluation
+                    logger.warning("Using fallback basic evaluation")
                     return self._basic_evaluation(student_answer, question_data)
     
     def _build_evaluation_prompt(
@@ -315,6 +375,8 @@ Format your response as JSON:
     def _parse_ai_response(self, response_text: str) -> QuestionEvaluation:
         """Parse AI response into QuestionEvaluation object."""
         try:
+            logger.debug(f"Parsing AI response of length: {len(response_text)}")
+            
             # Clean up response text
             response_text = response_text.strip()
             if response_text.startswith('```json'):
@@ -324,9 +386,10 @@ Format your response as JSON:
             
             # Parse JSON
             data = json.loads(response_text)
+            logger.debug(f"Parsed JSON data keys: {list(data.keys())}")
             
             # Create evaluation object
-            return QuestionEvaluation(
+            evaluation = QuestionEvaluation(
                 rubric_score=int(data.get('rubric_score', 0)),
                 scoring_rationale=data.get('scoring_rationale', 'Unable to parse evaluation'),
                 feedback=data.get('feedback'),
@@ -335,8 +398,12 @@ Format your response as JSON:
                 confidence=float(data.get('confidence', 0.5))
             )
             
+            logger.debug(f"Created evaluation object with score: {evaluation.rubric_score}")
+            return evaluation
+            
         except Exception as e:
-            logger.error(f"Failed to parse AI response: {str(e)}")
+            logger.error(f"Failed to parse AI response: {str(e)}", exc_info=True)
+            logger.error(f"Response text that failed to parse: {response_text[:200]}...")
             # Return a conservative evaluation
             return QuestionEvaluation(
                 rubric_score=1,
@@ -398,36 +465,50 @@ Format your response as JSON:
         test_data: Dict[str, Any]
     ):
         """Store evaluation results in the database."""
-        # Delete any existing evaluations
-        await self.db.execute(
-            TestQuestionEvaluation.__table__.delete().where(
-                TestQuestionEvaluation.test_attempt_id == test_attempt_id
+        try:
+            # Delete any existing evaluations
+            logger.info(f"Deleting existing evaluations for test {test_attempt_id}")
+            await self.db.execute(
+                TestQuestionEvaluation.__table__.delete().where(
+                    TestQuestionEvaluation.test_attempt_id == test_attempt_id
+                )
             )
-        )
-        
-        # Calculate points per question
-        total_questions = len(evaluation_result.question_evaluations)
-        points_per_question = 100.0 / total_questions if total_questions > 0 else 0
-        
-        # Store each question evaluation
-        for index, evaluation in enumerate(evaluation_result.question_evaluations):
-            points_earned = (evaluation.rubric_score / 4.0) * points_per_question
             
-            question_eval = TestQuestionEvaluation(
-                test_attempt_id=test_attempt_id,
-                question_index=index,
-                rubric_score=evaluation.rubric_score,
-                points_earned=Decimal(str(round(points_earned, 2))),
-                max_points=Decimal(str(round(points_per_question, 2))),
-                scoring_rationale=evaluation.scoring_rationale,
-                feedback=evaluation.feedback,
-                key_concepts_identified=evaluation.key_concepts_identified,
-                misconceptions_detected=evaluation.misconceptions_detected,
-                evaluation_confidence=evaluation.confidence
-            )
-            self.db.add(question_eval)
-        
-        await self.db.commit()
+            # Calculate points per question
+            total_questions = len(evaluation_result.question_evaluations)
+            points_per_question = 100.0 / total_questions if total_questions > 0 else 0
+            
+            # Store each question evaluation
+            logger.info(f"Starting to store {len(evaluation_result.question_evaluations)} question evaluations")
+            
+            for index, evaluation in enumerate(evaluation_result.question_evaluations):
+                points_earned = (evaluation.rubric_score / 4.0) * points_per_question
+                
+                logger.info(f"Creating evaluation record for question {index}: Score {evaluation.rubric_score}, Points: {points_earned}")
+                
+                question_eval = TestQuestionEvaluation(
+                    test_attempt_id=test_attempt_id,
+                    question_index=index,
+                    rubric_score=evaluation.rubric_score,
+                    points_earned=Decimal(str(round(points_earned, 2))),
+                    max_points=Decimal(str(round(points_per_question, 2))),
+                    scoring_rationale=evaluation.scoring_rationale,
+                    feedback=evaluation.feedback,
+                    key_concepts_identified=evaluation.key_concepts_identified,
+                    misconceptions_detected=evaluation.misconceptions_detected,
+                    evaluation_confidence=evaluation.confidence
+                )
+                self.db.add(question_eval)
+                logger.info(f"Added evaluation for question {index} to session")
+            
+            logger.info(f"Committing {len(evaluation_result.question_evaluations)} evaluations to database")
+            await self.db.commit()
+            logger.info(f"Successfully committed all evaluations to database")
+            
+        except Exception as e:
+            logger.error(f"Error storing evaluation results: {str(e)}", exc_info=True)
+            await self.db.rollback()
+            raise
     
     async def _calculate_and_store_final_score(
         self,

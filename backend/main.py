@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 import os
+import logging
 from dotenv import load_dotenv
 
 from app.core.config import settings
@@ -11,6 +12,12 @@ from app.api.v1 import auth, admin_simple as admin, teacher, student, umaread_si
 from app.core.redis import redis_client
 
 load_dotenv()
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

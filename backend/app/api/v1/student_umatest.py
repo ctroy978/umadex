@@ -269,8 +269,16 @@ async def save_umatest_answer(
     if not test_attempt.answers_data:
         test_attempt.answers_data = {}
     
+    # Log the save operation
+    logger.info(f"Saving answer for question {request.question_index}: '{request.answer[:50]}...' (length: {len(request.answer)})")
+    logger.info(f"Current answers before save: {list(test_attempt.answers_data.keys())}")
+    
     test_attempt.answers_data[str(request.question_index)] = request.answer
     test_attempt.last_activity_at = datetime.now(timezone.utc)
+    
+    # Force the ORM to recognize the change
+    from sqlalchemy.orm.attributes import flag_modified
+    flag_modified(test_attempt, "answers_data")
     
     # Update total time spent if provided
     if request.time_spent_seconds:
@@ -278,6 +286,9 @@ async def save_umatest_answer(
         test_attempt.time_spent_seconds = current_time + request.time_spent_seconds
     
     await db.commit()
+    await db.refresh(test_attempt)
+    
+    logger.info(f"After save - Total answers: {len(test_attempt.answers_data)}, Keys: {list(test_attempt.answers_data.keys())}")
     
     return {"success": True, "message": "Answer saved"}
 
@@ -318,6 +329,10 @@ async def submit_umatest(
     test_attempt.submitted_at = datetime.now(timezone.utc)
     
     await db.commit()
+    await db.refresh(test_attempt)
+    
+    # Log submission details
+    logger.info(f"Test submitted - ID: {test_attempt_id}, Answers: {len(test_attempt.answers_data or {})}")
     
     # Trigger AI evaluation service
     try:
@@ -343,6 +358,50 @@ async def submit_umatest(
             "test_attempt_id": str(test_attempt_id),
             "evaluation_status": "pending"
         }
+
+
+@router.get("/test/debug/{test_attempt_id}")
+async def debug_test_evaluation(
+    test_attempt_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Debug endpoint to check evaluation status"""
+    # Get test attempt
+    test_attempt = await db.execute(
+        select(StudentTestAttempt)
+        .where(
+            and_(
+                StudentTestAttempt.id == test_attempt_id,
+                StudentTestAttempt.student_id == current_user.id
+            )
+        )
+    )
+    test_attempt = test_attempt.scalar_one_or_none()
+    
+    if not test_attempt:
+        raise HTTPException(status_code=404, detail="Test not found")
+    
+    # Get evaluations
+    evaluations_result = await db.execute(
+        select(TestQuestionEvaluation)
+        .where(TestQuestionEvaluation.test_attempt_id == test_attempt_id)
+        .order_by(TestQuestionEvaluation.question_index)
+    )
+    evaluations = evaluations_result.scalars().all()
+    
+    return {
+        "test_attempt_id": str(test_attempt_id),
+        "status": test_attempt.status,
+        "submitted_at": test_attempt.submitted_at,
+        "evaluated_at": test_attempt.evaluated_at,
+        "score": float(test_attempt.score) if test_attempt.score else None,
+        "answers_count": len(test_attempt.answers_data) if test_attempt.answers_data else 0,
+        "answer_indices": sorted(test_attempt.answers_data.keys()) if test_attempt.answers_data else [],
+        "evaluations_count": len(evaluations),
+        "evaluation_indices": [e.question_index for e in evaluations],
+        "evaluation_scores": {e.question_index: e.rubric_score for e in evaluations}
+    }
 
 
 @router.get("/test/results/{test_attempt_id}", response_model=UMATestResultsResponse)
@@ -384,6 +443,10 @@ async def get_umatest_results(
         .order_by(TestQuestionEvaluation.question_index)
     )
     evaluations = evaluations_result.scalars().all()
+    
+    logger.info(f"Found {len(evaluations)} evaluations for test attempt {test_attempt_id}")
+    for eval in evaluations:
+        logger.info(f"Evaluation {eval.question_index}: Score={eval.rubric_score}, Points={eval.points_earned}/{eval.max_points}")
     
     # Format question evaluations
     question_evaluations = []
