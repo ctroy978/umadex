@@ -407,15 +407,13 @@ async def submit_student_post(
                     detail=f"Position not set for debate {student_debate.current_debate}"
                 )
             
-            # AI takes the opposite position from the student
-            ai_position = 'con' if position == 'pro' else 'pro'
-            
+            # Pass the student's position - AI service will take the opposite
             ai_response = await ai_service.generate_ai_response(
                 student_post=post.content,
                 debate_context={
                     'topic': debate_assignment.topic,
                     'debate_point': debate_point,
-                    'position': ai_position,
+                    'position': position,  # Pass student position, AI service will flip it
                     'round_number': student_debate.current_debate,
                     'statement_number': statement_count + 1,
                     'difficulty': debate_assignment.difficulty_level,
