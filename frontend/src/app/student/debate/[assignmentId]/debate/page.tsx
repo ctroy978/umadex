@@ -217,10 +217,84 @@ export default function DebateInterfacePage() {
       <div className="flex-1 overflow-hidden flex flex-col max-w-4xl w-full mx-auto">
         {/* Topic Section */}
         {assignment && progress && (
-          <div className="bg-blue-50 border-b border-blue-200 p-4">
+          <div className={(() => {
+            const studentDebate = progress.studentDebate
+            if (!studentDebate) return "bg-blue-50 border-b border-blue-200"
+            
+            const currentDebate = studentDebate.currentDebate
+            let position = null
+            
+            // Access position fields directly based on current debate
+            if (currentDebate === 1) {
+              position = studentDebate.debate1Position
+            } else if (currentDebate === 2) {
+              position = studentDebate.debate2Position
+            } else if (currentDebate === 3) {
+              position = studentDebate.debate3Position
+            }
+            
+            // Debug logging for topic box color
+            console.log('Topic Box Color Debug:', {
+              studentDebate,
+              currentDebate,
+              position,
+              debate1Position: studentDebate.debate1Position,
+              debate2Position: studentDebate.debate2Position,
+              debate3Position: studentDebate.debate3Position
+            })
+            
+            if (position === 'pro') {
+              return "bg-green-50 border-b border-green-200"
+            } else if (position === 'con') {
+              return "bg-red-50 border-b border-red-200"
+            }
+            return "bg-blue-50 border-b border-blue-200"
+          })() + " p-4"}>
             <div className="max-w-4xl mx-auto">
-              <h2 className="text-lg font-semibold text-blue-900 mb-1">Debate Topic:</h2>
-              <p className="text-blue-800 text-base mb-3">{assignment.topic}</p>
+              <h2 className={`text-lg font-semibold mb-1 ${(() => {
+                const studentDebate = progress.studentDebate
+                if (!studentDebate) return "text-blue-900"
+                
+                const currentDebate = studentDebate.currentDebate
+                let position = null
+                
+                if (currentDebate === 1) {
+                  position = studentDebate.debate1Position
+                } else if (currentDebate === 2) {
+                  position = studentDebate.debate2Position
+                } else if (currentDebate === 3) {
+                  position = studentDebate.debate3Position
+                }
+                
+                if (position === 'pro') {
+                  return "text-green-900"
+                } else if (position === 'con') {
+                  return "text-red-900"
+                }
+                return "text-blue-900"
+              })()}`}>Debate Topic:</h2>
+              <p className={`text-base mb-3 ${(() => {
+                const studentDebate = progress.studentDebate
+                if (!studentDebate) return "text-blue-800"
+                
+                const currentDebate = studentDebate.currentDebate
+                let position = null
+                
+                if (currentDebate === 1) {
+                  position = studentDebate.debate1Position
+                } else if (currentDebate === 2) {
+                  position = studentDebate.debate2Position
+                } else if (currentDebate === 3) {
+                  position = studentDebate.debate3Position
+                }
+                
+                if (position === 'pro') {
+                  return "text-green-800"
+                } else if (position === 'con') {
+                  return "text-red-800"
+                }
+                return "text-blue-800"
+              })()}`}>{assignment.topic}</p>
               
               
               {/* Position Indicator */}
@@ -234,18 +308,18 @@ export default function DebateInterfacePage() {
                 // Debug logging
                 console.log('StudentDebate object:', studentDebate)
                 console.log('Current debate:', currentDebate)
-                console.log('debate_1Position:', studentDebate.debate_1Position)
-                console.log('debate_2Position:', studentDebate.debate_2Position)
-                console.log('debate_3Position:', studentDebate.debate_3Position)
+                console.log('debate1Position:', studentDebate.debate1Position)
+                console.log('debate2Position:', studentDebate.debate2Position)
+                console.log('debate3Position:', studentDebate.debate3Position)
                 
                 // Access position fields directly based on current debate
-                // The API returns them as debate_1Position, debate_2Position, etc.
+                // The API returns them as debate1Position, debate2Position, etc.
                 if (currentDebate === 1) {
-                  position = studentDebate.debate_1Position
+                  position = studentDebate.debate1Position
                 } else if (currentDebate === 2) {
-                  position = studentDebate.debate_2Position
+                  position = studentDebate.debate2Position
                 } else if (currentDebate === 3) {
-                  position = studentDebate.debate_3Position
+                  position = studentDebate.debate3Position
                 }
                 
                 console.log('Selected position:', position)
@@ -283,11 +357,11 @@ export default function DebateInterfacePage() {
                   let position = null
                   
                   if (currentDebate === 1) {
-                    position = studentDebate.debate_1Position
+                    position = studentDebate.debate1Position
                   } else if (currentDebate === 2) {
-                    position = studentDebate.debate_2Position
+                    position = studentDebate.debate2Position
                   } else if (currentDebate === 3) {
-                    position = studentDebate.debate_3Position
+                    position = studentDebate.debate3Position
                   }
                   
                   if (position) {

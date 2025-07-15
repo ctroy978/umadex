@@ -59,8 +59,6 @@ export default function DebateConfigurePage() {
         ...config
       }
       
-      console.log('Submitting assignment data:', assignmentData)
-      
       const assignment = await debateApi.createAssignment(assignmentData)
       
       // Clear session storage
