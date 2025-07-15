@@ -31,7 +31,7 @@ interface StudentGrade {
   student_name: string;
   assignment_id: string;
   assignment_title: string;
-  assignment_type: string; // 'UMARead' or 'UMAVocab' or 'UMADebate' or 'UMAWrite'
+  assignment_type: string; // 'UMARead' or 'UMAVocab' or 'UMADebate' or 'UMAWrite' or 'UMATest'
   work_title: string;
   date_assigned: string;
   date_completed: string | null;
@@ -255,6 +255,31 @@ export default function Gradebook() {
         allAssignments.push(...writeAssignments);
       }
       
+      // Fetch UMATest assignments
+      try {
+        const testResponse = await fetch('/api/v1/teacher/umatest/tests?status=published&page_size=100', {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        if (testResponse.ok) {
+          const data = await testResponse.json();
+          const testAssignments = data.tests
+            .filter((t: any) => t.status === 'published')
+            .map((t: any) => ({
+              id: t.id,
+              title: t.test_title,
+              workTitle: t.test_description || 'Comprehensive Test',
+              type: 'UMATest'
+            }));
+          allAssignments.push(...testAssignments);
+        } else {
+          console.error('Failed to fetch UMATest assignments:', testResponse.status);
+        }
+      } catch (error) {
+        console.error('Error fetching UMATest assignments:', error);
+      }
+      
       setAssignments(allAssignments);
     } catch (error) {
       console.error('Error fetching assignments:', error);
@@ -436,7 +461,7 @@ export default function Gradebook() {
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Gradebook</h2>
           <p className="mt-1 text-sm text-gray-600">
-            View and analyze student test scores across all your UMARead, UMAVocab, UMADebate, and UMAWrite assignments
+            View and analyze student test scores across all your UMARead, UMAVocab, UMADebate, UMAWrite, and UMATest assignments
           </p>
         </div>
         <div className="flex gap-2">
@@ -521,12 +546,13 @@ export default function Gradebook() {
                   setFilters({ ...filters, assignmentTypes: selected, assignments: [] });
                 }}
                 className="w-full border-gray-300 rounded-md shadow-sm"
-                size={3}
+                size={5}
               >
                 <option value="UMARead">UMARead</option>
                 <option value="UMAVocab">UMAVocab</option>
                 <option value="UMADebate">UMADebate</option>
                 <option value="UMAWrite">UMAWrite</option>
+                <option value="UMATest">UMATest</option>
               </select>
             </div>
 
@@ -747,7 +773,9 @@ export default function Gradebook() {
                             ? 'bg-purple-100 text-purple-800'
                             : grade.assignment_type === 'UMADebate'
                             ? 'bg-green-100 text-green-800'
-                            : 'bg-orange-100 text-orange-800'
+                            : grade.assignment_type === 'UMAWrite'
+                            ? 'bg-orange-100 text-orange-800'
+                            : 'bg-teal-100 text-teal-800' // UMATest
                         }`}>
                           {grade.assignment_type}
                         </span>

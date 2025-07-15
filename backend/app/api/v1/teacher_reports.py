@@ -22,6 +22,7 @@ from app.models.tests import StudentTestAttempt
 from app.models.vocabulary import VocabularyList
 from app.models.debate import DebateAssignment, StudentDebate
 from app.models.writing import WritingAssignment, StudentWritingSubmission
+from app.models.umatest import TestAssignment
 
 router = APIRouter()
 
@@ -72,7 +73,7 @@ class StudentGrade(BaseModel):
     student_name: str
     assignment_id: UUID
     assignment_title: str
-    assignment_type: str  # 'UMARead' or 'UMAVocab' or 'UMADebate' or 'UMAWrite'
+    assignment_type: str  # 'UMARead' or 'UMAVocab' or 'UMADebate' or 'UMAWrite' or 'UMATest'
     work_title: str
     date_assigned: datetime
     date_completed: Optional[datetime]
@@ -267,7 +268,7 @@ async def get_gradebook(
     db: AsyncSession = Depends(get_db),
     classrooms: Optional[str] = Query(None, description="Comma-separated classroom IDs"),
     assignments: Optional[str] = Query(None, description="Comma-separated assignment IDs"),
-    assignment_types: Optional[str] = Query(None, description="Comma-separated assignment types (UMARead,UMAVocab,UMADebate,UMAWrite)"),
+    assignment_types: Optional[str] = Query(None, description="Comma-separated assignment types (UMARead,UMAVocab,UMADebate,UMAWrite,UMATest)"),
     assigned_after: Optional[datetime] = Query(None),
     assigned_before: Optional[datetime] = Query(None),
     completed_after: Optional[datetime] = Query(None),
@@ -282,12 +283,12 @@ async def get_gradebook(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100)
 ):
-    """Get gradebook data for teacher's classrooms (UMARead, UMAVocab, and UMADebate)"""
+    """Get gradebook data for teacher's classrooms (UMARead, UMAVocab, UMADebate, UMAWrite, and UMATest)"""
     
     # Parse filters
     classroom_ids = [UUID(cid) for cid in classrooms.split(',')] if classrooms else None
     assignment_ids = [UUID(aid) for aid in assignments.split(',')] if assignments else None
-    type_filter = assignment_types.split(',') if assignment_types else ['UMARead', 'UMAVocab', 'UMADebate', 'UMAWrite']
+    type_filter = assignment_types.split(',') if assignment_types else ['UMARead', 'UMAVocab', 'UMADebate', 'UMAWrite', 'UMATest']
     
     # Get all teacher's classrooms if not specified
     if not classroom_ids:
@@ -729,6 +730,122 @@ async def get_gradebook(
                 status=status
             ))
     
+    # Query 5: Get UMATest scores
+    if 'UMATest' in type_filter:
+        umatest_query = select(
+            StudentTestAttempt,
+            User,
+            ClassroomAssignment,
+            TestAssignment,
+            Classroom
+        ).join(
+            User, StudentTestAttempt.student_id == User.id
+        ).join(
+            TestAssignment, StudentTestAttempt.test_id == TestAssignment.id
+        ).join(
+            ClassroomAssignment, StudentTestAttempt.classroom_assignment_id == ClassroomAssignment.id
+        ).join(
+            Classroom, ClassroomAssignment.classroom_id == Classroom.id
+        ).where(
+            and_(
+                Classroom.id.in_(classroom_ids),
+                Classroom.teacher_id == teacher.id,
+                Classroom.deleted_at.is_(None),
+                ClassroomAssignment.assignment_type == 'test',
+                StudentTestAttempt.test_id.isnot(None),  # Only UMATest attempts (not UMARead)
+                User.deleted_at.is_(None)
+            )
+        )
+        
+        # Apply filters to UMATest query
+        if assignment_ids:
+            umatest_query = umatest_query.where(TestAssignment.id.in_(assignment_ids))
+        if assigned_after:
+            umatest_query = umatest_query.where(ClassroomAssignment.assigned_at >= assigned_after)
+        if assigned_before:
+            umatest_query = umatest_query.where(ClassroomAssignment.assigned_at <= assigned_before)
+        if completed_after:
+            umatest_query = umatest_query.where(StudentTestAttempt.submitted_at >= completed_after)
+        if completed_before:
+            umatest_query = umatest_query.where(StudentTestAttempt.submitted_at <= completed_before)
+        if student_search:
+            search_term = f"%{student_search}%"
+            umatest_query = umatest_query.where(
+                or_(
+                    User.first_name.ilike(search_term),
+                    User.last_name.ilike(search_term),
+                    func.concat(User.first_name, ' ', User.last_name).ilike(search_term)
+                )
+            )
+        if completion_status == "completed":
+            umatest_query = umatest_query.where(StudentTestAttempt.status == 'graded')
+        elif completion_status == "incomplete":
+            umatest_query = umatest_query.where(StudentTestAttempt.status != 'graded')
+        if min_score is not None:
+            umatest_query = umatest_query.where(StudentTestAttempt.score >= min_score)
+        if max_score is not None:
+            umatest_query = umatest_query.where(StudentTestAttempt.score <= max_score)
+        
+        # Execute UMATest query
+        umatest_result = await db.execute(umatest_query)
+        umatest_rows = umatest_result.all()
+        
+        # Process UMATest results - deduplicate by keeping only the best attempt per student/test
+        umatest_attempts = {}  # Key: (student_id, test_id), Value: StudentGrade
+        
+        for row in umatest_rows:
+            test_attempt = row.StudentTestAttempt
+            student = row.User
+            classroom_assignment = row.ClassroomAssignment
+            assignment = row.TestAssignment
+            
+            # Determine status
+            if test_attempt.status == 'graded' and test_attempt.score is not None:
+                status = 'completed'
+            elif test_attempt.status in ['submitted', 'completed']:
+                status = 'in_progress'  # Awaiting grading
+            elif test_attempt.status == 'in_progress':
+                status = 'in_progress'
+            else:
+                status = 'not_started'
+            
+            grade = StudentGrade(
+                id=str(test_attempt.id),
+                student_id=student.id,
+                student_name=f"{student.last_name}, {student.first_name}",
+                assignment_id=assignment.id,
+                assignment_title=assignment.test_title,
+                assignment_type='UMATest',
+                work_title=assignment.test_description or 'Comprehensive Test',
+                date_assigned=classroom_assignment.assigned_at,
+                date_completed=test_attempt.submitted_at if test_attempt.status == 'graded' else None,
+                test_date=test_attempt.submitted_at,
+                test_score=float(test_attempt.score) if test_attempt.score is not None else None,
+                difficulty_reached=None,  # Not applicable for UMATest
+                time_spent=test_attempt.time_spent_seconds // 60 if test_attempt.time_spent_seconds else None,
+                status=status
+            )
+            
+            # Key for deduplication
+            key = (student.id, assignment.id)
+            
+            # Keep only the best attempt (highest score if graded, otherwise most recent)
+            if key not in umatest_attempts:
+                umatest_attempts[key] = grade
+            else:
+                existing = umatest_attempts[key]
+                # Replace if: new score is higher, or both ungraded but new is more recent
+                if (grade.test_score is not None and 
+                    (existing.test_score is None or grade.test_score > existing.test_score)):
+                    umatest_attempts[key] = grade
+                elif (grade.test_score is None and existing.test_score is None and
+                      grade.test_date and existing.test_date and 
+                      grade.test_date > existing.test_date):
+                    umatest_attempts[key] = grade
+        
+        # Add deduplicated UMATest grades to all_grades
+        all_grades.extend(umatest_attempts.values())
+    
     # Calculate summary statistics
     total_students = len(set(grade.student_id for grade in all_grades))
     scores = [grade.test_score for grade in all_grades if grade.test_score is not None]
@@ -792,7 +909,7 @@ async def export_gradebook(
     db: AsyncSession = Depends(get_db),
     classrooms: Optional[str] = Query(None, description="Comma-separated classroom IDs"),
     assignments: Optional[str] = Query(None, description="Comma-separated assignment IDs"),
-    assignment_types: Optional[str] = Query(None, description="Comma-separated assignment types (UMARead,UMAVocab,UMADebate,UMAWrite)"),
+    assignment_types: Optional[str] = Query(None, description="Comma-separated assignment types (UMARead,UMAVocab,UMADebate,UMAWrite,UMATest)"),
     assigned_after: Optional[datetime] = Query(None),
     assigned_before: Optional[datetime] = Query(None),
     completed_after: Optional[datetime] = Query(None),
