@@ -9,7 +9,7 @@ import { Progress } from '@/components/ui/progress'
 import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Clock, CheckCircle, AlertTriangle, BookOpen } from 'lucide-react'
+import { Clock, CheckCircle, AlertTriangle, BookOpen, Loader2 } from 'lucide-react'
 
 interface VocabularyTestInterfaceProps {
   assignmentId: string
@@ -126,11 +126,22 @@ export default function VocabularyTestInterface({
     setState(prev => ({ ...prev, isSubmitting: true, error: null }))
 
     try {
+      // Start timing to ensure minimum loading display
+      const startTime = Date.now()
+      
       const results = await studentApi.submitVocabularyTest(
         testData.test_attempt_id,
         state.answers
       )
-      onComplete(results)
+      
+      // Calculate remaining time to show loading for at least 2 seconds
+      const elapsedTime = Date.now() - startTime
+      const remainingTime = Math.max(0, 2000 - elapsedTime)
+      
+      // Wait for remaining time before completing
+      setTimeout(() => {
+        onComplete(results)
+      }, remainingTime)
     } catch (error) {
       console.error('Error submitting test:', error)
       setState(prev => ({
@@ -318,37 +329,54 @@ export default function VocabularyTestInterface({
                 <CardTitle>Submit Test</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <p>
-                  Are you sure you want to submit your test? You have answered{' '}
-                  <strong>{answeredCount} out of {testData.total_questions}</strong> questions.
-                </p>
-                
-                {answeredCount < testData.total_questions && (
-                  <Alert>
-                    <AlertTriangle className="h-4 w-4" />
-                    <AlertDescription>
-                      You have {testData.total_questions - answeredCount} unanswered questions.
-                      These will be marked as incorrect.
-                    </AlertDescription>
-                  </Alert>
-                )}
+                {state.isSubmitting ? (
+                  <div className="text-center py-8">
+                    <Loader2 className="h-12 w-12 animate-spin text-blue-600 mx-auto mb-4" />
+                    <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                      Evaluating Your Answers
+                    </h3>
+                    <p className="text-gray-600">
+                      Our AI is reviewing your vocabulary responses. This may take a moment...
+                    </p>
+                    <p className="text-sm text-gray-500 mt-4">
+                      Please don't close this window.
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <p>
+                      Are you sure you want to submit your test? You have answered{' '}
+                      <strong>{answeredCount} out of {testData.total_questions}</strong> questions.
+                    </p>
+                    
+                    {answeredCount < testData.total_questions && (
+                      <Alert>
+                        <AlertTriangle className="h-4 w-4" />
+                        <AlertDescription>
+                          You have {testData.total_questions - answeredCount} unanswered questions.
+                          These will be marked as incorrect.
+                        </AlertDescription>
+                      </Alert>
+                    )}
 
-                <div className="flex gap-2 justify-end">
-                  <Button
-                    variant="outline"
-                    onClick={() => setState(prev => ({ ...prev, showSubmitConfirm: false }))}
-                    disabled={state.isSubmitting}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    onClick={handleSubmitTest}
-                    disabled={state.isSubmitting}
-                    className="bg-green-600 hover:bg-green-700"
-                  >
-                    {state.isSubmitting ? 'Submitting...' : 'Submit Test'}
-                  </Button>
-                </div>
+                    <div className="flex gap-2 justify-end">
+                      <Button
+                        variant="outline"
+                        onClick={() => setState(prev => ({ ...prev, showSubmitConfirm: false }))}
+                        disabled={state.isSubmitting}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        onClick={handleSubmitTest}
+                        disabled={state.isSubmitting}
+                        className="bg-green-600 hover:bg-green-700"
+                      >
+                        Submit Test
+                      </Button>
+                    </div>
+                  </>
+                )}
               </CardContent>
             </Card>
           </div>
