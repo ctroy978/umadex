@@ -58,7 +58,7 @@ export default function StudentWritingAssignmentPage() {
         await studentWritingApi.startAssignment(assignmentId)
       }
     } catch (error) {
-      console.error('Error loading assignment:', error)
+      // Error loading assignment
       alert('Failed to load assignment')
     } finally {
       setLoading(false)
@@ -88,7 +88,7 @@ export default function StudentWritingAssignmentPage() {
       setLastSavedContent(content)
       setLastSavedTechniques(selectedTechniques)
     } catch (error) {
-      console.error('Error saving draft:', error)
+      // Error saving draft
     } finally {
       setSaving(false)
     }
@@ -139,7 +139,7 @@ export default function StudentWritingAssignmentPage() {
         is_final: isFinal
       })
       
-      console.log('Submission response:', submission)
+      // Submission created successfully
       setLastSubmission(submission)
       alert(isFinal ? 'Assignment submitted successfully!' : 'Draft submitted for feedback')
       
@@ -149,22 +149,22 @@ export default function StudentWritingAssignmentPage() {
       // Trigger AI evaluation
       setTimeout(async () => {
         try {
-          console.log('Triggering evaluation for submission:', submission.id)
+          // Triggering evaluation
           const evalResult = await studentWritingApi.evaluateSubmission(submission.id)
-          console.log('Evaluation result:', evalResult)
+          // Evaluation completed
           
           if (evalResult.ai_feedback) {
             setLastSubmission(prev => {
               const updated = prev ? { ...prev, ai_feedback: evalResult.ai_feedback, score: evalResult.score } : null
-              console.log('Updated submission with feedback:', updated)
+              // Updated submission with feedback
               return updated
             })
             setShowFeedback(true)
           } else {
             // Try polling for feedback
-            console.log('No immediate feedback, trying to poll...')
+            // No immediate feedback, trying to poll...
             const feedback = await studentWritingApi.getFeedback(assignmentId, submission.id)
-            console.log('Polled feedback:', feedback)
+            // Received feedback after polling
             
             if (feedback.feedback) {
               setLastSubmission(prev => prev ? { ...prev, ai_feedback: feedback.feedback, score: feedback.score } : null)
@@ -174,24 +174,24 @@ export default function StudentWritingAssignmentPage() {
             }
           }
         } catch (error) {
-          console.error('Error triggering evaluation:', error)
+          // Error triggering evaluation
           // Try to get feedback anyway
           try {
             const feedback = await studentWritingApi.getFeedback(assignmentId, submission.id)
-            console.log('Fallback feedback attempt:', feedback)
+            // Fallback feedback received
             if (feedback.feedback) {
               setLastSubmission(prev => prev ? { ...prev, ai_feedback: feedback.feedback, score: feedback.score } : null)
               setShowFeedback(true)
             }
           } catch (feedbackError) {
-            console.error('Error getting feedback:', feedbackError)
+            // Error getting feedback
             alert('Failed to get feedback. Please try refreshing the page.')
           }
         }
         setEvaluating(false) // Clear evaluating state
       }, 3000) // Increased timeout to 3 seconds
     } catch (error) {
-      console.error('Error submitting:', error)
+      // Error submitting
       alert('Failed to submit assignment')
     } finally {
       setSubmitting(false)
@@ -358,21 +358,14 @@ export default function StudentWritingAssignmentPage() {
               saving={saving}
             />
 
-            {/* Submit Buttons */}
-            <div className="mt-6 flex flex-col sm:flex-row gap-4">
-              <button
-                onClick={() => handleSubmit(false)}
-                disabled={submitting || wordCount === 0}
-                className="flex-1 px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Save Draft & Get Feedback
-              </button>
+            {/* Submit Button */}
+            <div className="mt-6 flex justify-center">
               <button
                 onClick={() => handleSubmit(true)}
-                disabled={submitting || wordCount === 0}
-                className="flex-1 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={submitting || wordCount === 0 || (progress?.is_completed ?? false)}
+                className="px-8 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Submit Final Response
+                {progress?.is_completed ? 'Assignment Completed' : 'Submit Final Response'}
               </button>
             </div>
           </div>
@@ -455,7 +448,13 @@ export default function StudentWritingAssignmentPage() {
       {lastSubmission?.ai_feedback && (
         <FeedbackModal
           isOpen={showFeedback}
-          onClose={() => setShowFeedback(false)}
+          onClose={() => {
+            setShowFeedback(false)
+            // Redirect to dashboard after closing feedback for final submissions
+            if (lastSubmission.is_final_submission) {
+              router.push('/student/dashboard')
+            }
+          }}
           feedback={lastSubmission.ai_feedback}
           canRevise={!lastSubmission.is_final_submission}
           onRevise={() => {
