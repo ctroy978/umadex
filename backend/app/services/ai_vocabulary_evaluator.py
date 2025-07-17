@@ -6,10 +6,11 @@ import re
 import json
 from typing import Dict, Any, Optional
 from app.core.config import settings
-from app.config.ai_config import get_claude_config, get_openai_config
+from app.config.ai_config import get_claude_config, get_openai_config, get_gemini_config
 import httpx
 import asyncio
 import logging
+import google.generativeai as genai
 from datetime import datetime
 from uuid import UUID
 
@@ -26,8 +27,16 @@ class AIVocabularyEvaluator:
     CLARITY_WEIGHT = 0.10           # 10 points
     
     def __init__(self):
+        self.gemini_config = get_gemini_config()
         self.claude_config = get_claude_config()
         self.openai_config = get_openai_config()
+        
+        # Initialize Gemini if API key is available
+        if self.gemini_config.api_key:
+            genai.configure(api_key=self.gemini_config.api_key)
+            self.gemini_model = genai.GenerativeModel('gemini-2.0-flash')
+        else:
+            self.gemini_model = None
     
     async def evaluate_definition(
         self,
@@ -51,6 +60,7 @@ class AIVocabularyEvaluator:
         
         Returns:
             Dictionary with score, feedback, strengths, and areas for growth
+            Raises exception if AI evaluation is not available
         """
         
         # Basic validation
@@ -58,35 +68,35 @@ class AIVocabularyEvaluator:
             logger.info(f"Minimal response for word '{word}': '{student_definition}'")
             return self._create_minimal_response_feedback(word)
         
+        # Check if AI is available
+        ai_available = await self._is_ai_available()
+        logger.info(f"AI evaluation available: {ai_available}")
+        logger.info(f"Claude API key present: {bool(self.claude_config.api_key)}")
+        logger.info(f"OpenAI API key present: {bool(self.openai_config.api_key)}")
+        
+        if not ai_available:
+            error_msg = "AI evaluation is required but no AI service is configured. Please set GEMINI_API_KEY, CLAUDE_API_KEY, or OPENAI_API_KEY environment variable."
+            logger.error(error_msg)
+            raise Exception(error_msg)
+        
         try:
-            # Check if AI is available and log the result
-            ai_available = await self._is_ai_available()
-            logger.info(f"AI evaluation available: {ai_available}")
-            logger.info(f"Evaluating definition for '{word}': '{student_definition}' (Reference: '{reference_definition}')")
+            logger.info(f"Starting AI evaluation for '{word}': '{student_definition}' (Reference: '{reference_definition}')")
             
-            # Use AI evaluation if available
-            if ai_available:
-                logger.info("Using AI evaluation method")
-                result = await self._ai_evaluate_definition(
-                    word, example_sentence, reference_definition, 
-                    student_definition, grade_level, subject_area
-                )
-            else:
-                # Fallback to rule-based evaluation
-                logger.warning("AI not available, using fallback evaluation method")
-                result = self._fallback_evaluate_definition(
-                    word, example_sentence, reference_definition, 
-                    student_definition
-                )
+            # AI evaluation is mandatory
+            result = await self._ai_evaluate_definition(
+                word, example_sentence, reference_definition, 
+                student_definition, grade_level, subject_area
+            )
             
-            logger.info(f"Evaluation result for '{word}': score={result.get('score', 'N/A')}, method={'AI' if ai_available else 'fallback'}")
+            logger.info(f"AI evaluation successful for '{word}': score={result.get('score', 'N/A')}")
             
             # Ensure result has all required fields
             return self._validate_evaluation_result(result)
             
         except Exception as e:
-            logger.error(f"Definition evaluation failed: {e}", exc_info=True)
-            return self._create_error_response(word, student_definition)
+            logger.error(f"AI evaluation failed for '{word}': {str(e)}", exc_info=True)
+            # Re-raise the exception - no fallback allowed
+            raise Exception(f"AI evaluation failed: {str(e)}")
     
     async def _ai_evaluate_definition(
         self,
@@ -97,32 +107,35 @@ class AIVocabularyEvaluator:
         grade_level: Optional[int],
         subject_area: Optional[str]
     ) -> Dict[str, Any]:
-        """Evaluate definition using AI service"""
+        """Evaluate definition using AI service - no fallback allowed"""
         
         prompt = self._build_evaluation_prompt(
             word, example_sentence, reference_definition,
             student_definition, grade_level, subject_area
         )
         
+        logger.debug(f"AI evaluation prompt length: {len(prompt)} characters")
+        
         try:
             # Call AI service
+            logger.info("Calling AI API for evaluation...")
             ai_response = await self._call_ai_api(prompt)
+            logger.info("AI API call completed successfully")
             
             # Parse AI response
+            logger.debug("Parsing AI response...")
             evaluation = self._parse_ai_response(ai_response)
             
             # Validate scores are reasonable
             evaluation = self._validate_scores(evaluation)
             
+            logger.info(f"AI evaluation completed: score={evaluation.get('score', 'N/A')}")
             return evaluation
             
         except Exception as e:
-            logger.error(f"AI evaluation failed: {e}")
-            # Fall back to rule-based evaluation
-            return self._fallback_evaluate_definition(
-                word, example_sentence, reference_definition, 
-                student_definition
-            )
+            logger.error(f"AI evaluation failed: {type(e).__name__}: {str(e)}", exc_info=True)
+            # No fallback - re-raise the exception
+            raise
     
     def _build_evaluation_prompt(
         self,
@@ -190,7 +203,7 @@ STRICT SCORING RULES:
 - No minimum score guarantees - wrong is wrong
 - Be honest about what the student doesn't understand
 
-Return your evaluation as JSON with this exact structure:
+Return your evaluation as a valid JSON object with this exact structure:
 {{
     "score": [total score 0-100],
     "feedback": "[Honest assessment - acknowledge effort but be clear about accuracy]",
@@ -202,7 +215,9 @@ Return your evaluation as JSON with this exact structure:
         "completeness": [0-20],
         "clarity": [0-10]
     }}
-}}"""
+}}
+
+Ensure all arrays contain string values and all numbers are integers."""
         
         return prompt
     
@@ -210,19 +225,66 @@ Return your evaluation as JSON with this exact structure:
         """Call AI service for evaluation"""
         
         try:
-            # Prefer Claude for evaluation
-            if self.claude_config.api_key:
+            # Prefer Gemini for evaluation (consistent with rest of app)
+            if self.gemini_config.api_key:
+                logger.info("Attempting to call Gemini API")
+                return await self._call_gemini_api(prompt)
+            elif self.claude_config.api_key:
                 logger.info("Attempting to call Claude API")
                 return await self._call_claude_api(prompt)
             elif self.openai_config.api_key:
                 logger.info("Attempting to call OpenAI API")
                 return await self._call_openai_api(prompt)
             else:
-                logger.error("No AI service configured - both CLAUDE_API_KEY and OPENAI_API_KEY are missing")
+                logger.error("No AI service configured - GEMINI_API_KEY, CLAUDE_API_KEY, and OPENAI_API_KEY are all missing")
                 raise Exception("No AI service configured")
                 
         except Exception as e:
             logger.error(f"AI API call failed: {e}", exc_info=True)
+            raise
+    
+    async def _call_gemini_api(self, prompt: str) -> str:
+        """Call Gemini API"""
+        try:
+            logger.debug(f"Calling Gemini API with model: gemini-2.0-flash")
+            
+            # Configure generation settings to return JSON
+            generation_config = {
+                "temperature": 0.3,  # Lower temperature for consistent evaluation
+                "max_output_tokens": 1000,
+                "top_p": 0.95,
+            }
+            
+            # Add instruction to return JSON
+            json_prompt = prompt + "\n\nIMPORTANT: Return ONLY valid JSON without any markdown formatting or code blocks."
+            
+            # Generate response in a thread pool to avoid blocking
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(
+                None,
+                lambda: self.gemini_model.generate_content(
+                    json_prompt,
+                    generation_config=generation_config
+                )
+            )
+            
+            if response.text:
+                logger.info("Gemini API call successful")
+                # Clean up response - remove any markdown code blocks if present
+                text = response.text.strip()
+                if text.startswith("```json"):
+                    text = text[7:]  # Remove ```json
+                if text.startswith("```"):
+                    text = text[3:]  # Remove ```
+                if text.endswith("```"):
+                    text = text[:-3]  # Remove closing ```
+                return text.strip()
+            else:
+                logger.error("No text in Gemini response")
+                raise Exception("Empty response from Gemini")
+                
+        except Exception as e:
+            logger.error(f"Gemini API call failed: {type(e).__name__}: {e}")
             raise
     
     async def _call_claude_api(self, prompt: str) -> str:
@@ -270,7 +332,7 @@ Return your evaluation as JSON with this exact structure:
                     json={
                         "model": self.openai_config.model,
                         "messages": [
-                            {"role": "system", "content": "You are an educational assessment tool that evaluates student vocabulary definitions accurately and fairly. Be honest about incorrect answers while maintaining an encouraging tone."},
+                            {"role": "system", "content": "You are an educational assessment tool that evaluates student vocabulary definitions accurately and fairly. Be honest about incorrect answers while maintaining an encouraging tone. Always return valid JSON."},
                             {"role": "user", "content": prompt}
                         ],
                         "temperature": 0.3,
@@ -302,173 +364,16 @@ Return your evaluation as JSON with this exact structure:
                 if field not in evaluation:
                     raise ValueError(f"Missing required field: {field}")
             
+            logger.debug(f"Successfully parsed AI response with score: {evaluation.get('score')}")
             return evaluation
             
         except (json.JSONDecodeError, ValueError) as e:
             logger.error(f"Failed to parse AI response: {e}")
-            # Return a generous default evaluation
-            return {
-                "score": 75,
-                "feedback": "Good job! Your definition shows solid understanding of the word.",
-                "strengths": ["Shows good effort", "Demonstrates understanding"],
-                "areas_for_growth": ["You could add a bit more detail", "Keep practicing with new words"],
-                "component_scores": {
-                    "core_meaning": 30,
-                    "context_appropriateness": 23,
-                    "completeness": 15,
-                    "clarity": 7
-                }
-            }
+            logger.error(f"Raw AI response: {ai_response[:500]}...")  # Log first 500 chars
+            # No default evaluation - raise exception
+            raise Exception(f"Failed to parse AI response: {str(e)}")
     
-    def _fallback_evaluate_definition(
-        self,
-        word: str,
-        example_sentence: str,
-        reference_definition: str,
-        student_definition: str
-    ) -> Dict[str, Any]:
-        """Rule-based fallback evaluation - strict and accurate"""
-        
-        logger.info(f"Using fallback evaluation for '{word}'")
-        
-        student_def_lower = student_definition.lower().strip()
-        reference_def_lower = reference_definition.lower().strip()
-        word_lower = word.lower()
-        
-        strengths = []
-        areas_for_growth = []
-        
-        # Check for core meaning (40 points) - STRICT SCORING
-        core_meaning_score = 0  # Start at 0, build up based on accuracy
-        
-        # Extract key words from reference definition
-        reference_words = set(re.findall(r'\b\w{3,}\b', reference_def_lower))
-        student_words = set(re.findall(r'\b\w{3,}\b', student_def_lower))
-        
-        # Remove common words that don't carry meaning
-        common_stop_words = {'the', 'and', 'for', 'with', 'that', 'this', 'are', 'was', 'were', 'been', 'have', 'has', 'had', 'will', 'would', 'could', 'should', 'may', 'might', 'can', 'could'}
-        reference_words -= common_stop_words
-        student_words -= common_stop_words
-        
-        # Check for completely wrong answers first
-        # Special cases for common wrong patterns
-        wrong_answer_indicators = [
-            # If the student uses antonyms or opposite concepts
-            ('discord', ['harmony', 'love', 'peace', 'agreement', 'unity']),
-            ('benevolent', ['evil', 'mean', 'cruel', 'harsh', 'malevolent']),
-            ('spurious', ['genuine', 'real', 'authentic', 'true', 'valid']),
-            ('incite', ['calm', 'soothe', 'peaceful', 'makeup', 'cosmetic']),
-            ('defunct', ['alive', 'working', 'functional', 'music', 'cool', 'active'])
-        ]
-        
-        for check_word, wrong_terms in wrong_answer_indicators:
-            if word_lower == check_word.lower():
-                if any(term in student_def_lower for term in wrong_terms):
-                    core_meaning_score = 2  # Completely wrong
-                    areas_for_growth.append(f"Your definition suggests the opposite of what '{word}' means")
-                    logger.info(f"Detected completely wrong answer for '{word}': '{student_definition}'")
-                    break
-        
-        # If not completely wrong, calculate word overlap
-        if core_meaning_score == 0:  # Not yet scored as completely wrong
-            common_words = reference_words & student_words
-            if common_words:
-                overlap_ratio = len(common_words) / max(len(reference_words), 1)
-                # Much stricter scoring based on overlap
-                if overlap_ratio >= 0.5:
-                    core_meaning_score = 35  # Excellent understanding
-                    strengths.append("Strong understanding of the core meaning")
-                elif overlap_ratio >= 0.35:
-                    core_meaning_score = 28  # Good understanding
-                    strengths.append("Good grasp of the word's meaning")
-                elif overlap_ratio >= 0.2:
-                    core_meaning_score = 20  # Partial understanding
-                    strengths.append("Shows some understanding")
-                else:
-                    core_meaning_score = 10  # Minimal understanding
-                    areas_for_growth.append("Review the word's actual meaning")
-            else:
-                # No meaningful overlap
-                core_meaning_score = 5  # Very low score for no understanding
-                areas_for_growth.append("Your definition doesn't capture the word's meaning")
-        
-        # Context appropriateness (30 points) - Based on core meaning accuracy
-        if core_meaning_score <= 5:
-            context_score = 3  # Wrong answers get minimal context points
-        elif core_meaning_score <= 10:
-            context_score = 8
-        elif core_meaning_score <= 20:
-            context_score = 15
-        elif core_meaning_score <= 28:
-            context_score = 22
-        else:
-            context_score = 27  # Only high accuracy gets high context score
-        
-        # Completeness (20 points) - Based on accuracy, not just length
-        word_count = len(student_def_lower.split())
-        if core_meaning_score <= 5:
-            completeness_score = 2  # Wrong answers get minimal points
-        elif word_count >= 5 and core_meaning_score >= 20:
-            completeness_score = 15
-            if "Complete definition" not in str(strengths):
-                strengths.append("Complete definition provided")
-        elif word_count >= 3 and core_meaning_score >= 10:
-            completeness_score = 10
-        else:
-            completeness_score = 5
-        
-        # Clarity (10 points) - Can be decent even for wrong answers if clearly stated
-        if len(student_definition) > 10 and word_count >= 3:
-            clarity_score = 7  # Clear expression
-        elif len(student_definition) > 5:
-            clarity_score = 5  # Basic clarity
-        else:
-            clarity_score = 2  # Minimal clarity
-        
-        # Calculate total - NO MINIMUM GUARANTEES
-        total_score = core_meaning_score + context_score + completeness_score + clarity_score
-        
-        # Generate HONEST feedback
-        if total_score >= 80:
-            feedback = f"Excellent work! You clearly understand what '{word}' means."
-        elif total_score >= 60:
-            feedback = f"Good effort! You have a decent understanding of '{word}'."
-        elif total_score >= 40:
-            feedback = f"You're making progress with '{word}', but there's room for improvement."
-        elif total_score >= 20:
-            feedback = f"Your understanding of '{word}' needs work. Review the word's meaning and try again."
-        else:
-            feedback = f"Your definition of '{word}' is not accurate. Please study this word more carefully."
-        
-        # Be honest about strengths
-        if not strengths:
-            if core_meaning_score > 10:
-                strengths = ["Shows some effort", "Attempts to provide a definition"]
-            else:
-                strengths = ["Provided an answer"]  # Minimal strength for wrong answers
-        
-        # Clear growth areas
-        if not areas_for_growth:
-            if core_meaning_score < 20:
-                areas_for_growth = ["Study the word's actual meaning", "Use the context sentence to understand the word better"]
-            else:
-                areas_for_growth = ["Could be more precise", "Consider adding more detail"]
-        
-        result = {
-            "score": total_score,
-            "feedback": feedback,
-            "strengths": strengths[:2],  # Limit to 2
-            "areas_for_growth": areas_for_growth[:2],  # Limit to 2
-            "component_scores": {
-                "core_meaning": core_meaning_score,
-                "context_appropriateness": context_score,
-                "completeness": completeness_score,
-                "clarity": clarity_score
-            }
-        }
-        
-        logger.info(f"Fallback evaluation result for '{word}': {result}")
-        return result
+    # Removed fallback evaluation method - AI evaluation is mandatory
     
     def _validate_scores(self, evaluation: Dict[str, Any]) -> Dict[str, Any]:
         """Validate and adjust scores to be reasonable"""
@@ -531,31 +436,19 @@ Return your evaluation as JSON with this exact structure:
             }
         }
     
-    def _create_error_response(self, word: str, student_definition: str) -> Dict[str, Any]:
-        """Create response when evaluation fails"""
-        
-        # Give partial credit for effort
-        base_score = 50 if len(student_definition) > 20 else 30
-        
-        return {
-            "score": base_score,
-            "feedback": f"Your definition of '{word}' has been recorded. Keep up the good work!",
-            "strengths": ["Provided a definition", "Shows effort"],
-            "areas_for_growth": ["Review the word in context", "Practice defining words"],
-            "component_scores": {
-                "core_meaning": base_score * 0.4,
-                "context_appropriateness": base_score * 0.3,
-                "completeness": base_score * 0.2,
-                "clarity": base_score * 0.1
-            }
-        }
+    # Removed error response method - AI evaluation is mandatory, errors should be raised
     
     async def _is_ai_available(self) -> bool:
         """Check if AI service is available"""
-        claude_available = bool(self.claude_config.api_key)
-        openai_available = bool(self.openai_config.api_key)
+        gemini_available = bool(self.gemini_config.api_key and self.gemini_config.api_key.strip())
+        claude_available = bool(self.claude_config.api_key and self.claude_config.api_key.strip())
+        openai_available = bool(self.openai_config.api_key and self.openai_config.api_key.strip())
         
-        logger.debug(f"Claude API key present: {claude_available}")
-        logger.debug(f"OpenAI API key present: {openai_available}")
+        logger.info(f"Gemini API key present: {gemini_available} (length: {len(self.gemini_config.api_key) if self.gemini_config.api_key else 0})")
+        logger.info(f"Claude API key present: {claude_available} (length: {len(self.claude_config.api_key) if self.claude_config.api_key else 0})")
+        logger.info(f"OpenAI API key present: {openai_available} (length: {len(self.openai_config.api_key) if self.openai_config.api_key else 0})")
         
-        return claude_available or openai_available
+        if not gemini_available and not claude_available and not openai_available:
+            logger.error("No AI service available - all API keys are missing or empty")
+        
+        return gemini_available or claude_available or openai_available
