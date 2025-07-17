@@ -55,27 +55,37 @@ class AIVocabularyEvaluator:
         
         # Basic validation
         if not student_definition or len(student_definition.strip()) < 5:
+            logger.info(f"Minimal response for word '{word}': '{student_definition}'")
             return self._create_minimal_response_feedback(word)
         
         try:
+            # Check if AI is available and log the result
+            ai_available = await self._is_ai_available()
+            logger.info(f"AI evaluation available: {ai_available}")
+            logger.info(f"Evaluating definition for '{word}': '{student_definition}' (Reference: '{reference_definition}')")
+            
             # Use AI evaluation if available
-            if await self._is_ai_available():
+            if ai_available:
+                logger.info("Using AI evaluation method")
                 result = await self._ai_evaluate_definition(
                     word, example_sentence, reference_definition, 
                     student_definition, grade_level, subject_area
                 )
             else:
                 # Fallback to rule-based evaluation
+                logger.warning("AI not available, using fallback evaluation method")
                 result = self._fallback_evaluate_definition(
                     word, example_sentence, reference_definition, 
                     student_definition
                 )
             
+            logger.info(f"Evaluation result for '{word}': score={result.get('score', 'N/A')}, method={'AI' if ai_available else 'fallback'}")
+            
             # Ensure result has all required fields
             return self._validate_evaluation_result(result)
             
         except Exception as e:
-            logger.error(f"Definition evaluation failed: {e}")
+            logger.error(f"Definition evaluation failed: {e}", exc_info=True)
             return self._create_error_response(word, student_definition)
     
     async def _ai_evaluate_definition(
@@ -128,7 +138,7 @@ class AIVocabularyEvaluator:
         grade_context = f"Grade Level: {grade_level}" if grade_level else "Grade Level: Not specified"
         subject_context = f"Subject Area: {subject_area}" if subject_area else ""
         
-        prompt = f"""You are an encouraging educational evaluator assessing a student's vocabulary understanding. Your goal is to reward understanding over perfection.
+        prompt = f"""You are a fair and accurate educational evaluator assessing a student's vocabulary understanding. Your goal is to provide honest, accurate scoring that reflects the student's actual understanding.
 
 Word: {word}
 Context Sentence: {example_sentence}
@@ -139,51 +149,53 @@ Reference Definition: {reference_definition}
 Student's Definition: {student_definition}
 
 SCORING PHILOSOPHY:
-- Students who demonstrate understanding deserve high scores (75%+)
-- Simple language that shows comprehension is EXCELLENT
-- Academic language is NOT required - clarity of understanding matters most
-- Focus on what the student got RIGHT, not what they missed
-- If the core concept is understood, be generous with points
+- Accuracy is paramount - wrong answers must receive low scores
+- Understanding must be demonstrated, not just effort
+- Be encouraging in feedback but honest in scoring
+- Grade based on correctness, not length or complexity
 
 SCORING EXAMPLES:
-- "spurious → fake or false" should score 35-40/40 for core meaning (captures essence perfectly)
-- "skeptical → doesn't trust something" should score 30-35/40 for core meaning (shows clear understanding)
-- "pragmatic → practical, focused on results" should score 35-40/40 for core meaning (excellent grasp)
-- Even partial understanding deserves 20-25/40 for core meaning
+- "discord → love" should score 0-5/40 for core meaning (completely wrong)
+- "incite → to put on makeup" should score 0-5/40 for core meaning (completely wrong)
+- "benevolent → trying hard" should score 5-10/40 for core meaning (shows effort but wrong)
+- "spurious → fake or false" should score 35-40/40 for core meaning (correct)
+- "skeptical → doesn't trust something" should score 30-35/40 for core meaning (essentially correct)
+- "defunct → to make cool music" should score 0-5/40 for core meaning (completely wrong)
 
 Evaluate on a 0-100 scale:
-1. Core meaning understanding (40 points) - Does the student grasp the essential concept?
-   - Full understanding = 35-40 points
-   - Good understanding = 30-35 points  
-   - Partial understanding = 20-30 points
-   - Minimal understanding = 10-20 points
-   - No understanding = 0-10 points
+1. Core meaning understanding (40 points) - Does the student grasp the actual meaning?
+   - Correct understanding = 30-40 points
+   - Mostly correct with minor issues = 20-30 points  
+   - Partial/related understanding = 10-20 points
+   - Minimal/tangential understanding = 5-10 points
+   - Completely wrong = 0-5 points
 
-2. Context appropriateness (30 points) - Does it fit the example?
-   - Start at 20 points for any reasonable attempt
-   - Add points for matching the contextual usage
+2. Context appropriateness (30 points) - Does the definition fit the example sentence?
+   - If core meaning is wrong, maximum 5 points
+   - If core meaning is partially correct, scale appropriately
+   - Full points only for definitions that work in context
 
-3. Completeness (20 points) - Is enough detail provided?
-   - Start at 15 points for any complete thought
-   - Simple but complete definitions deserve full points
+3. Completeness (20 points) - Is the definition adequate?
+   - Wrong answers get 0-5 points regardless of length
+   - Partial understanding gets 5-10 points
+   - Correct answers can get full points even if brief
 
 4. Communication clarity (10 points) - Is it clearly expressed?
-   - Start at 7 points for any coherent response
-   - Simple, clear language deserves full points
+   - Even wrong answers can get 5-10 points if clearly stated
+   - Confused or incoherent responses get 0-5 points
 
-CRITICAL REMINDERS:
-- A student showing they understand "spurious = fake" deserves 85-95% total
-- Don't penalize informal language or simple explanations
-- Grade-appropriate expectations: younger students need less sophistication
-- Minimum 50% total score for genuine effort (answers >10 characters)
-- Always start feedback with what the student did WELL
+STRICT SCORING RULES:
+- Completely wrong answers (like "love" for "discord") must score 5-15% total
+- Effort alone does not warrant points - accuracy matters
+- No minimum score guarantees - wrong is wrong
+- Be honest about what the student doesn't understand
 
 Return your evaluation as JSON with this exact structure:
 {{
     "score": [total score 0-100],
-    "feedback": "[Start with praise for what they understood, then gentle suggestions]",
-    "strengths": ["What they got right", "Evidence of understanding"],
-    "areas_for_growth": ["Gentle suggestion 1", "Encouraging tip 2"],
+    "feedback": "[Honest assessment - acknowledge effort but be clear about accuracy]",
+    "strengths": ["What they actually got right", "Any positive aspects"],
+    "areas_for_growth": ["What they need to understand", "Specific improvements needed"],
     "component_scores": {{
         "core_meaning": [0-40],
         "context_appropriateness": [0-30],
@@ -200,62 +212,83 @@ Return your evaluation as JSON with this exact structure:
         try:
             # Prefer Claude for evaluation
             if self.claude_config.api_key:
+                logger.info("Attempting to call Claude API")
                 return await self._call_claude_api(prompt)
             elif self.openai_config.api_key:
+                logger.info("Attempting to call OpenAI API")
                 return await self._call_openai_api(prompt)
             else:
+                logger.error("No AI service configured - both CLAUDE_API_KEY and OPENAI_API_KEY are missing")
                 raise Exception("No AI service configured")
                 
         except Exception as e:
-            logger.error(f"AI API call failed: {e}")
+            logger.error(f"AI API call failed: {e}", exc_info=True)
             raise
     
     async def _call_claude_api(self, prompt: str) -> str:
         """Call Claude API"""
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={
-                    "x-api-key": self.claude_config.api_key,
-                    "Content-Type": "application/json",
-                    "anthropic-version": "2023-06-01"
-                },
-                json={
-                    "model": self.claude_config.model,
-                    "messages": [{"role": "user", "content": prompt}],
-                    "temperature": 0.3,  # Lower temperature for consistent evaluation
-                    "max_tokens": 1000
-                },
-                timeout=30.0
-            )
-            response.raise_for_status()
-            result = response.json()
-            return result['content'][0]['text']
+        try:
+            async with httpx.AsyncClient() as client:
+                logger.debug(f"Calling Claude API with model: {self.claude_config.model}")
+                response = await client.post(
+                    "https://api.anthropic.com/v1/messages",
+                    headers={
+                        "x-api-key": self.claude_config.api_key,
+                        "Content-Type": "application/json",
+                        "anthropic-version": "2023-06-01"
+                    },
+                    json={
+                        "model": self.claude_config.model,
+                        "messages": [{"role": "user", "content": prompt}],
+                        "temperature": 0.3,  # Lower temperature for consistent evaluation
+                        "max_tokens": 1000
+                    },
+                    timeout=30.0
+                )
+                response.raise_for_status()
+                result = response.json()
+                logger.info("Claude API call successful")
+                return result['content'][0]['text']
+        except httpx.HTTPStatusError as e:
+            logger.error(f"Claude API HTTP error: {e.response.status_code} - {e.response.text}")
+            raise
+        except Exception as e:
+            logger.error(f"Claude API call failed: {type(e).__name__}: {e}")
+            raise
     
     async def _call_openai_api(self, prompt: str) -> str:
         """Call OpenAI API"""
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                "https://api.openai.com/v1/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {self.openai_config.api_key}",
-                    "Content-Type": "application/json"
-                },
-                json={
-                    "model": self.openai_config.model,
-                    "messages": [
-                        {"role": "system", "content": "You are an educational assessment tool that evaluates student vocabulary definitions with encouraging, constructive feedback."},
-                        {"role": "user", "content": prompt}
-                    ],
-                    "temperature": 0.3,
-                    "max_tokens": 1000,
-                    "response_format": {"type": "json_object"}
-                },
-                timeout=30.0
-            )
-            response.raise_for_status()
-            result = response.json()
-            return result['choices'][0]['message']['content']
+        try:
+            async with httpx.AsyncClient() as client:
+                logger.debug(f"Calling OpenAI API with model: {self.openai_config.model}")
+                response = await client.post(
+                    "https://api.openai.com/v1/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {self.openai_config.api_key}",
+                        "Content-Type": "application/json"
+                    },
+                    json={
+                        "model": self.openai_config.model,
+                        "messages": [
+                            {"role": "system", "content": "You are an educational assessment tool that evaluates student vocabulary definitions accurately and fairly. Be honest about incorrect answers while maintaining an encouraging tone."},
+                            {"role": "user", "content": prompt}
+                        ],
+                        "temperature": 0.3,
+                        "max_tokens": 1000,
+                        "response_format": {"type": "json_object"}
+                    },
+                    timeout=30.0
+                )
+                response.raise_for_status()
+                result = response.json()
+                logger.info("OpenAI API call successful")
+                return result['choices'][0]['message']['content']
+        except httpx.HTTPStatusError as e:
+            logger.error(f"OpenAI API HTTP error: {e.response.status_code} - {e.response.text}")
+            raise
+        except Exception as e:
+            logger.error(f"OpenAI API call failed: {type(e).__name__}: {e}")
+            raise
     
     def _parse_ai_response(self, ai_response: str) -> Dict[str, Any]:
         """Parse AI response into structured evaluation"""
@@ -294,106 +327,134 @@ Return your evaluation as JSON with this exact structure:
         reference_definition: str,
         student_definition: str
     ) -> Dict[str, Any]:
-        """Rule-based fallback evaluation - generous and encouraging"""
+        """Rule-based fallback evaluation - strict and accurate"""
         
-        student_def_lower = student_definition.lower()
-        reference_def_lower = reference_definition.lower()
+        logger.info(f"Using fallback evaluation for '{word}'")
+        
+        student_def_lower = student_definition.lower().strip()
+        reference_def_lower = reference_definition.lower().strip()
         word_lower = word.lower()
         
         strengths = []
         areas_for_growth = []
         
-        # Check for core meaning (40 points) - START GENEROUS
-        core_meaning_score = 20  # Base score for any genuine attempt
+        # Check for core meaning (40 points) - STRICT SCORING
+        core_meaning_score = 0  # Start at 0, build up based on accuracy
         
         # Extract key words from reference definition
-        reference_words = set(re.findall(r'\b\w{3,}\b', reference_def_lower))  # Include 3+ letter words
+        reference_words = set(re.findall(r'\b\w{3,}\b', reference_def_lower))
         student_words = set(re.findall(r'\b\w{3,}\b', student_def_lower))
         
         # Remove common words that don't carry meaning
-        common_stop_words = {'the', 'and', 'for', 'with', 'that', 'this', 'are', 'was', 'were', 'been'}
+        common_stop_words = {'the', 'and', 'for', 'with', 'that', 'this', 'are', 'was', 'were', 'been', 'have', 'has', 'had', 'will', 'would', 'could', 'should', 'may', 'might', 'can', 'could'}
         reference_words -= common_stop_words
         student_words -= common_stop_words
         
-        # Calculate overlap
-        common_words = reference_words & student_words
-        if common_words:
-            overlap_ratio = len(common_words) / max(len(reference_words), 1)
-            # Generous scoring: even 20% overlap gets good points
-            if overlap_ratio >= 0.3:
-                core_meaning_score = 35  # Excellent understanding
-                strengths.append("Excellent grasp of the core meaning")
-            elif overlap_ratio >= 0.2:
-                core_meaning_score = 30  # Good understanding
-                strengths.append("Good understanding of the word")
+        # Check for completely wrong answers first
+        # Special cases for common wrong patterns
+        wrong_answer_indicators = [
+            # If the student uses antonyms or opposite concepts
+            ('discord', ['harmony', 'love', 'peace', 'agreement', 'unity']),
+            ('benevolent', ['evil', 'mean', 'cruel', 'harsh', 'malevolent']),
+            ('spurious', ['genuine', 'real', 'authentic', 'true', 'valid']),
+            ('incite', ['calm', 'soothe', 'peaceful', 'makeup', 'cosmetic']),
+            ('defunct', ['alive', 'working', 'functional', 'music', 'cool', 'active'])
+        ]
+        
+        for check_word, wrong_terms in wrong_answer_indicators:
+            if word_lower == check_word.lower():
+                if any(term in student_def_lower for term in wrong_terms):
+                    core_meaning_score = 2  # Completely wrong
+                    areas_for_growth.append(f"Your definition suggests the opposite of what '{word}' means")
+                    logger.info(f"Detected completely wrong answer for '{word}': '{student_definition}'")
+                    break
+        
+        # If not completely wrong, calculate word overlap
+        if core_meaning_score == 0:  # Not yet scored as completely wrong
+            common_words = reference_words & student_words
+            if common_words:
+                overlap_ratio = len(common_words) / max(len(reference_words), 1)
+                # Much stricter scoring based on overlap
+                if overlap_ratio >= 0.5:
+                    core_meaning_score = 35  # Excellent understanding
+                    strengths.append("Strong understanding of the core meaning")
+                elif overlap_ratio >= 0.35:
+                    core_meaning_score = 28  # Good understanding
+                    strengths.append("Good grasp of the word's meaning")
+                elif overlap_ratio >= 0.2:
+                    core_meaning_score = 20  # Partial understanding
+                    strengths.append("Shows some understanding")
+                else:
+                    core_meaning_score = 10  # Minimal understanding
+                    areas_for_growth.append("Review the word's actual meaning")
             else:
-                core_meaning_score = 25  # Partial understanding
-                strengths.append("Shows understanding of key concepts")
+                # No meaningful overlap
+                core_meaning_score = 5  # Very low score for no understanding
+                areas_for_growth.append("Your definition doesn't capture the word's meaning")
+        
+        # Context appropriateness (30 points) - Based on core meaning accuracy
+        if core_meaning_score <= 5:
+            context_score = 3  # Wrong answers get minimal context points
+        elif core_meaning_score <= 10:
+            context_score = 8
+        elif core_meaning_score <= 20:
+            context_score = 15
+        elif core_meaning_score <= 28:
+            context_score = 22
         else:
-            # Check for synonyms or related concepts
-            if any(word in student_def_lower for word in ['similar', 'like', 'type', 'kind', 'means']):
-                core_meaning_score = 25
-                strengths.append("Attempts to explain the meaning")
-            areas_for_growth.append("Try to capture more of the word's specific meaning")
+            context_score = 27  # Only high accuracy gets high context score
         
-        # Context appropriateness (30 points) - START HIGH
-        context_score = 20  # Base score for any attempt
-        if len(student_definition) > 10:
-            context_score = 25  # Good effort
-            strengths.append("Provides a thoughtful response")
-        if len(student_definition) > 20:
-            context_score = 28  # Excellent effort
-        
-        # Completeness (20 points) - GENEROUS
-        completeness_score = 15  # Base score
+        # Completeness (20 points) - Based on accuracy, not just length
         word_count = len(student_def_lower.split())
-        if word_count >= 3:
-            completeness_score = 17
-            if "Complete thought" not in str(strengths):
-                strengths.append("Complete thought provided")
-        if word_count >= 6:
-            completeness_score = 19
+        if core_meaning_score <= 5:
+            completeness_score = 2  # Wrong answers get minimal points
+        elif word_count >= 5 and core_meaning_score >= 20:
+            completeness_score = 15
+            if "Complete definition" not in str(strengths):
+                strengths.append("Complete definition provided")
+        elif word_count >= 3 and core_meaning_score >= 10:
+            completeness_score = 10
+        else:
+            completeness_score = 5
         
-        # Clarity (10 points) - ASSUME GOOD CLARITY
-        clarity_score = 8  # Default high clarity
-        if len(student_definition) > 15:
-            clarity_score = 9  # Very clear
+        # Clarity (10 points) - Can be decent even for wrong answers if clearly stated
+        if len(student_definition) > 10 and word_count >= 3:
+            clarity_score = 7  # Clear expression
+        elif len(student_definition) > 5:
+            clarity_score = 5  # Basic clarity
+        else:
+            clarity_score = 2  # Minimal clarity
         
-        # Calculate total - ENSURE MINIMUM 50% FOR GENUINE EFFORT
+        # Calculate total - NO MINIMUM GUARANTEES
         total_score = core_meaning_score + context_score + completeness_score + clarity_score
         
-        # Ensure minimum 50% for any genuine effort (>10 characters)
-        if len(student_definition) > 10 and total_score < 50:
-            total_score = 50
-            # Adjust component scores proportionally
-            adjustment_ratio = 50 / (core_meaning_score + context_score + completeness_score + clarity_score)
-            core_meaning_score = int(core_meaning_score * adjustment_ratio)
-            context_score = int(context_score * adjustment_ratio)
-            completeness_score = int(completeness_score * adjustment_ratio)
-            clarity_score = int(clarity_score * adjustment_ratio)
-        
-        # Generate ENCOURAGING feedback
+        # Generate HONEST feedback
         if total_score >= 80:
-            feedback = f"Excellent work with '{word}'! You clearly understand what this word means."
-        elif total_score >= 70:
-            feedback = f"Good job with '{word}'! You show solid understanding of its meaning."
+            feedback = f"Excellent work! You clearly understand what '{word}' means."
         elif total_score >= 60:
-            feedback = f"Nice effort with '{word}'! You're demonstrating good comprehension."
+            feedback = f"Good effort! You have a decent understanding of '{word}'."
+        elif total_score >= 40:
+            feedback = f"You're making progress with '{word}', but there's room for improvement."
+        elif total_score >= 20:
+            feedback = f"Your understanding of '{word}' needs work. Review the word's meaning and try again."
         else:
-            feedback = f"Good try with '{word}'! You're on the right path to understanding this word."
+            feedback = f"Your definition of '{word}' is not accurate. Please study this word more carefully."
         
-        # Always have positive strengths
+        # Be honest about strengths
         if not strengths:
-            strengths = ["Shows effort and engagement", "Attempts to explain the meaning"]
-        
-        # Gentle, encouraging growth areas
-        if not areas_for_growth:
-            if total_score < 80:
-                areas_for_growth = ["Consider how the word is used in the example", "You might add a bit more detail"]
+            if core_meaning_score > 10:
+                strengths = ["Shows some effort", "Attempts to provide a definition"]
             else:
-                areas_for_growth = ["Keep up the great work", "Continue building your vocabulary"]
+                strengths = ["Provided an answer"]  # Minimal strength for wrong answers
         
-        return {
+        # Clear growth areas
+        if not areas_for_growth:
+            if core_meaning_score < 20:
+                areas_for_growth = ["Study the word's actual meaning", "Use the context sentence to understand the word better"]
+            else:
+                areas_for_growth = ["Could be more precise", "Consider adding more detail"]
+        
+        result = {
             "score": total_score,
             "feedback": feedback,
             "strengths": strengths[:2],  # Limit to 2
@@ -405,6 +466,9 @@ Return your evaluation as JSON with this exact structure:
                 "clarity": clarity_score
             }
         }
+        
+        logger.info(f"Fallback evaluation result for '{word}': {result}")
+        return result
     
     def _validate_scores(self, evaluation: Dict[str, Any]) -> Dict[str, Any]:
         """Validate and adjust scores to be reasonable"""
@@ -488,4 +552,10 @@ Return your evaluation as JSON with this exact structure:
     
     async def _is_ai_available(self) -> bool:
         """Check if AI service is available"""
-        return bool(self.claude_config.api_key or self.openai_config.api_key)
+        claude_available = bool(self.claude_config.api_key)
+        openai_available = bool(self.openai_config.api_key)
+        
+        logger.debug(f"Claude API key present: {claude_available}")
+        logger.debug(f"OpenAI API key present: {openai_available}")
+        
+        return claude_available or openai_available

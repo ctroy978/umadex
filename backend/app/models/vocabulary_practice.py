@@ -278,7 +278,7 @@ class VocabularyPuzzleGame(Base):
     
     __table_args__ = (
         CheckConstraint(
-            "puzzle_type IN ('scrambled', 'crossword_clue', 'word_match')",
+            "puzzle_type IN ('scrambled', 'crossword_clue', 'word_match', 'fill_blank')",
             name='check_puzzle_type'
         ),
         UniqueConstraint('vocabulary_list_id', 'puzzle_order', name='unique_puzzle_order'),

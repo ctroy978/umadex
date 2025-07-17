@@ -2445,7 +2445,38 @@ class VocabularyPracticeService:
         sentences = sentences_result.scalars().all()
         
         if not sentences:
-            raise ValueError("No fill-in-the-blank sentences found for this vocabulary list")
+            # Generate sentences if they don't exist
+            try:
+                logger.info(f"No fill-in-blank sentences found for list {vocabulary_list_id}, generating...")
+                from app.services.vocabulary_fill_in_blank_generator import VocabularyFillInBlankGenerator
+                generator = VocabularyFillInBlankGenerator(self.db)
+                await generator.generate_fill_in_blank_sentences(vocabulary_list_id)
+                
+                # Reload sentences
+                sentences_result = await self.db.execute(
+                    select(VocabularyFillInBlankSentence)
+                    .where(VocabularyFillInBlankSentence.vocabulary_list_id == vocabulary_list_id)
+                    .order_by(VocabularyFillInBlankSentence.sentence_order)
+                )
+                sentences = sentences_result.scalars().all()
+                logger.info(f"Generated {len(sentences)} fill-in-blank sentences for list {vocabulary_list_id}")
+                
+                if not sentences:
+                    raise ValueError("Failed to generate fill-in-the-blank sentences for this vocabulary list")
+            except Exception as e:
+                logger.warning(f"Fill-in-blank generation failed for list {vocabulary_list_id}: {str(e)}")
+                # If generation fails due to constraint violation, try to reload existing sentences
+                # This can happen if another request generated them concurrently
+                await self.db.rollback()
+                sentences_result = await self.db.execute(
+                    select(VocabularyFillInBlankSentence)
+                    .where(VocabularyFillInBlankSentence.vocabulary_list_id == vocabulary_list_id)
+                    .order_by(VocabularyFillInBlankSentence.sentence_order)
+                )
+                sentences = sentences_result.scalars().all()
+                
+                if not sentences:
+                    raise ValueError(f"No fill-in-the-blank sentences found and generation failed: {str(e)}")
         
         # Get vocabulary words for answer choices
         words_result = await self.db.execute(
@@ -2571,7 +2602,11 @@ class VocabularyPracticeService:
                 select(VocabularyFillInBlankSentence)
                 .where(VocabularyFillInBlankSentence.id == current_sentence_id)
             )
-            current_sentence = sentence_result.scalar_one()
+            current_sentence = sentence_result.scalar_one_or_none()
+            
+            if not current_sentence:
+                # Sentence was deleted, invalidate the session
+                raise ValueError("Fill-in-blank session data is stale. Please start a new session.")
             
             sentence_data = {
                 'id': str(current_sentence.id),
