@@ -714,7 +714,7 @@ async def get_gradebook(
             time_spent_minutes = None
             
             all_grades.append(StudentGrade(
-                id=str(student_assignment.id),
+                id=str(submission.id) if submission else str(student_assignment.id),
                 student_id=student.id,
                 student_name=f"{student.last_name}, {student.first_name}",
                 assignment_id=assignment.id,
