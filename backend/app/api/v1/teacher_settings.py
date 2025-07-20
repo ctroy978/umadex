@@ -130,9 +130,9 @@ async def generate_one_time_bypass_code(
     db: AsyncSession = Depends(get_db)
 ):
     """Generate a one-time bypass code for any UMA app scenario"""
-    # Generate 8-character alphanumeric code
+    # Generate 12-character alphanumeric code (minimum 10 chars required by frontend)
     alphabet = string.ascii_uppercase + string.digits
-    bypass_code = ''.join(secrets.choice(alphabet) for _ in range(8))
+    bypass_code = ''.join(secrets.choice(alphabet) for _ in range(12))
     
     # Get student ID if email provided
     student_id = None

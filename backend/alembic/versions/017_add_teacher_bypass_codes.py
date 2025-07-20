@@ -24,7 +24,7 @@ def upgrade():
         sa.Column('context_type', sa.String(length=50), nullable=True, server_default='test'),
         sa.Column('context_id', postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column('student_id', postgresql.UUID(as_uuid=True), nullable=True),
-        sa.Column('bypass_code', sa.String(length=8), nullable=False),
+        sa.Column('bypass_code', sa.String(length=12), nullable=False),
         sa.Column('used_at', sa.DateTime(timezone=True), nullable=True),
         sa.Column('expires_at', sa.DateTime(timezone=True), nullable=False),
         sa.Column('created_at', sa.DateTime(timezone=True), nullable=True, server_default=sa.text('CURRENT_TIMESTAMP')),

@@ -14,6 +14,7 @@ from app.models.reading import ReadingAssignment, ReadingChunk
 from app.models.classroom import StudentAssignment, ClassroomAssignment
 from app.models.user import User
 from app.models.image_analysis import AssignmentImage
+from app.services.bypass_validation import validate_bypass_code
 from app.schemas.umaread import (
     StudentProgress,
     ChunkProgress,
@@ -234,6 +235,39 @@ class UMAReadService:
         
         if not student_assignment:
             raise ValueError("Student assignment not found")
+        
+        # Check if this is a bypass code attempt
+        bypass_valid, bypass_type, teacher_id = await validate_bypass_code(
+            db=db,
+            student_id=str(student_id),
+            answer_text=answer.answer_text,
+            context_type="umaread",
+            context_id=str(answer.assignment_id),
+            assignment_id=str(answer.assignment_id)
+        )
+        
+        if bypass_valid:
+            # Create a successful evaluation for bypass
+            evaluation = AnswerEvaluation(
+                is_correct=True,
+                feedback="Instructor override accepted. Moving to next question.",
+                attempt_number=1
+            )
+            
+            # Store the bypass response
+            await self._store_student_response(
+                db, student_id, answer, evaluation,
+                "Bypass code used", 0  # question_text and difficulty
+            )
+            
+            # Check if we can proceed (both questions answered)
+            can_proceed = await self._update_progress_if_complete(
+                db, student_id, answer.assignment_id,
+                answer.chunk_number, evaluation
+            )
+            
+            await db.commit()
+            return evaluation, can_proceed
         
         # Get chunk content for context
         chunk_result = await db.execute(

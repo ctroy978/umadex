@@ -56,6 +56,8 @@ async def validate_bypass_code(
         # Find the teacher through assignment or classroom context
         teacher_id = await _find_teacher_for_context(db, student_id, assignment_id, context_id)
         
+        print(f"DEBUG: Bypass validation - Student: {student_id}, Assignment: {assignment_id}, Found teacher: {teacher_id}")
+        
         if teacher_id:
             # Get the teacher's bypass code
             teacher_result = await db.execute(
@@ -86,8 +88,8 @@ async def validate_bypass_code(
         )
         return False, None, None
     
-    # Check for one-time bypass code (8 alphanumeric characters)
-    one_time_pattern = r'^([A-Z0-9]{8})$'
+    # Check for one-time bypass code (12 alphanumeric characters)
+    one_time_pattern = r'^([A-Z0-9]{12})$'
     one_time_match = re.match(one_time_pattern, answer_text.upper())
     
     if one_time_match:
@@ -135,6 +137,8 @@ async def _find_teacher_for_context(
 ) -> Optional[str]:
     """Find the relevant teacher for the given context"""
     
+    print(f"DEBUG: Finding teacher - Student: {student_id}, Assignment: {assignment_id}, Context: {context_id}")
+    
     if assignment_id:
         # Try to find teacher through student assignment
         student_assignment_result = await db.execute(
@@ -147,6 +151,8 @@ async def _find_teacher_for_context(
             )
         )
         student_assignment = student_assignment_result.scalar_one_or_none()
+        
+        print(f"DEBUG: Found student_assignment: {student_assignment is not None}, classroom_assignment_id: {student_assignment.classroom_assignment_id if student_assignment else 'N/A'}")
         
         if student_assignment and student_assignment.classroom_assignment_id:
             # Get classroom through classroom assignment
