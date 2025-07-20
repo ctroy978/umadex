@@ -19,7 +19,7 @@ from app.schemas.umaread import (
     QuestionType,
     StudentAnswer
 )
-from app.services.umaread_simple import UMAReadService
+from app.services.umaread import UMAReadService
 
 
 router = APIRouter(prefix="/umaread", tags=["umaread"])

@@ -47,6 +47,7 @@ export interface SubmitAnswerResponse {
   next_question_type?: 'summary' | 'comprehension';
   difficulty_changed: boolean;
   new_difficulty_level?: number;
+  assignment_complete?: boolean;
 }
 
 export interface StudentProgress {

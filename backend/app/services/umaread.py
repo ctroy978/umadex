@@ -10,10 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, and_, func, delete
 from sqlalchemy.orm import selectinload
 
-from app.models.reading import ReadingAssignment, ReadingChunk
+from app.models.reading import ReadingAssignment, ReadingChunk, AssignmentImage
 from app.models.classroom import StudentAssignment, ClassroomAssignment
 from app.models.user import User
-from app.models.image_analysis import AssignmentImage
 from app.services.bypass_validation import validate_bypass_code
 from app.schemas.umaread import (
     StudentProgress,

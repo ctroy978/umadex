@@ -185,8 +185,37 @@ async def get_current_question(
     print(f"DEBUG: Current question state for {state_key}: {question_state.get(state_key)}")
     print(f"DEBUG: All question states: {question_state}")
     
-    # Check if summary has been completed
-    if question_state.get(state_key) == "summary_complete":
+    # Check chunk progress from database to ensure consistency
+    from ..models.umaread import UmareadChunkProgress
+    chunk_progress_result = await db.execute(
+        select(UmareadChunkProgress).where(
+            and_(
+                UmareadChunkProgress.student_id == current_user.id,
+                UmareadChunkProgress.assignment_id == assignment_id,
+                UmareadChunkProgress.chunk_number == chunk_number
+            )
+        )
+    )
+    chunk_progress = chunk_progress_result.scalar_one_or_none()
+    
+    # Check if summary has been completed (from DB or memory state)
+    summary_complete = (
+        question_state.get(state_key) == "summary_complete" or 
+        (chunk_progress and chunk_progress.summary_completed)
+    )
+    
+    # Sync memory state with DB if needed
+    if chunk_progress and chunk_progress.summary_completed and question_state.get(state_key) != "summary_complete":
+        question_state[state_key] = "summary_complete"
+    
+    # If both are complete, return already completed message
+    if chunk_progress and chunk_progress.summary_completed and chunk_progress.comprehension_completed:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This chunk has already been completed. Please move to the next section."
+        )
+    
+    if summary_complete:
         print(f"DEBUG: Returning comprehension question for {state_key}")
         # Return comprehension question
         return {
@@ -271,6 +300,13 @@ async def submit_answer(
     )
     chunk = chunk_result.scalar_one_or_none()
     
+    # Get total chunks
+    total_chunks_result = await db.execute(
+        select(func.count(ReadingChunk.id))
+        .where(ReadingChunk.assignment_id == assignment_id)
+    )
+    total_chunks = total_chunks_result.scalar()
+    
     if not assignment or not chunk:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -291,6 +327,7 @@ async def submit_answer(
         }
     
     # Check if this is a bypass code attempt using unified validation
+    print(f"DEBUG: Checking bypass for answer: {student_answer}, assignment: {assignment_id}")
     bypass_valid, bypass_type, teacher_id = await validate_bypass_code(
         db=db,
         student_id=current_user.id,
@@ -299,30 +336,115 @@ async def submit_answer(
         context_id=str(assignment_id),
         assignment_id=assignment_id
     )
+    print(f"DEBUG: Bypass result - valid: {bypass_valid}, type: {bypass_type}, teacher: {teacher_id}")
+    
+    # Check if rate limited
+    if bypass_type == "rate_limited":
+        return {
+            "is_correct": False,
+            "feedback": "Too many bypass attempts. Please wait an hour before trying again or answer the question normally.",
+            "can_proceed": False,
+            "next_question_type": None,
+            "difficulty_changed": False,
+            "new_difficulty_level": current_difficulty
+        }
     
     if bypass_valid:
         # Bypass successful - mark answer as correct and continue
+        # First, update the chunk progress in the database
+        from ..models.umaread import UmareadChunkProgress
+        
+        # Get or create chunk progress record
+        chunk_progress_result = await db.execute(
+            select(UmareadChunkProgress).where(
+                and_(
+                    UmareadChunkProgress.student_id == current_user.id,
+                    UmareadChunkProgress.assignment_id == assignment_id,
+                    UmareadChunkProgress.chunk_number == chunk_number
+                )
+            )
+        )
+        chunk_progress = chunk_progress_result.scalar_one_or_none()
+        
+        if not chunk_progress:
+            chunk_progress = UmareadChunkProgress(
+                student_id=current_user.id,
+                assignment_id=assignment_id,
+                chunk_number=chunk_number,
+                current_difficulty_level=current_difficulty
+            )
+            db.add(chunk_progress)
+        
         # Update state for this chunk
         current_state = question_state.get(state_key, "answering_summary")
         
-        if current_state == "answering_summary" or current_state != "summary_complete":
-            # Just completed summary, move to comprehension
+        # Check what type of question was bypassed based on current progress
+        if not chunk_progress.summary_completed:
+            # Currently on summary question - bypass summary only
+            chunk_progress.summary_completed = True
             question_state[state_key] = "summary_complete"
             next_question_type = "comprehension"
         else:
-            # Completed comprehension, ready to proceed
+            # Already completed summary, so this is a comprehension bypass
+            chunk_progress.comprehension_completed = True
+            chunk_progress.completed_at = datetime.utcnow()
             question_state[state_key] = "complete"
             next_question_type = None
+            
+            # Update student assignment position to next chunk
+            from ..models.classroom import StudentAssignment
+            from ..models.umaread import UmareadAssignmentProgress
+            
+            student_assignment_result = await db.execute(
+                select(StudentAssignment).where(
+                    and_(
+                        StudentAssignment.student_id == current_user.id,
+                        StudentAssignment.assignment_id == assignment_id
+                    )
+                )
+            )
+            student_assignment = student_assignment_result.scalar_one_or_none()
+            
+            if student_assignment:
+                if chunk_number < total_chunks:
+                    # Move to next chunk
+                    student_assignment.current_position = chunk_number + 1
+                else:
+                    # This was the last chunk - mark assignment as completed
+                    student_assignment.status = "completed"
+                    student_assignment.completed_at = datetime.utcnow()
+                    
+                    # Also update UmareadAssignmentProgress
+                    progress_result = await db.execute(
+                        select(UmareadAssignmentProgress).where(
+                            and_(
+                                UmareadAssignmentProgress.student_id == current_user.id,
+                                UmareadAssignmentProgress.assignment_id == assignment_id
+                            )
+                        )
+                    )
+                    progress = progress_result.scalar_one_or_none()
+                    if progress:
+                        progress.completed_at = datetime.utcnow()
+                        progress.total_chunks_completed = total_chunks
+                    
+                    # Mark assignment as completed in memory
+                    completion_key = f"{current_user.id}:{assignment_id}"
+                    completed_assignments[completion_key] = True
         
         await db.commit()
         
+        # Check if this completes the assignment
+        assignment_complete = (next_question_type is None and chunk_number >= total_chunks)
+        
         return {
             "is_correct": True,
-            "feedback": "Instructor override accepted. Moving to next question.",
+            "feedback": "Instructor override accepted. Moving to next question." if not assignment_complete else "Instructor override accepted. Assignment completed!",
             "can_proceed": next_question_type is None,
             "next_question_type": next_question_type,
             "difficulty_changed": False,
-            "new_difficulty_level": current_difficulty
+            "new_difficulty_level": current_difficulty,
+            "assignment_complete": assignment_complete
         }
     
     # Determine which question we're evaluating

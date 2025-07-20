@@ -236,31 +236,66 @@ export default function QuestionFlow({
 
           {/* Action buttons */}
           <div className="mt-4 flex gap-2">
-            {result.is_correct && result.next_question_type && (
-              <button
-                onClick={() => {
-                  // Clear the result and load next question
-                  setResult(null);
-                  setAnswer('');
-                  setStartTime(Date.now());
-                  setLastSubmitTime(0); // Reset spam prevention
-                  if (onLoadNextQuestion) {
-                    onLoadNextQuestion();
-                  }
-                }}
-                className="px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                Continue to {result.next_question_type === 'comprehension' ? 'Comprehension' : 'Summary'} Question
-              </button>
+            {/* Check if this is a bypass response */}
+            {result.is_correct && result.feedback?.includes('Instructor override accepted') && (
+              <>
+                {result.next_question_type ? (
+                  <button
+                    onClick={() => {
+                      // Clear the result and load next question
+                      setResult(null);
+                      setAnswer('');
+                      setStartTime(Date.now());
+                      setLastSubmitTime(0); // Reset spam prevention
+                      if (onLoadNextQuestion) {
+                        onLoadNextQuestion();
+                      }
+                    }}
+                    className="px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    Continue to {result.next_question_type === 'comprehension' ? 'Comprehension' : 'Summary'} Question
+                  </button>
+                ) : (
+                  <button
+                    onClick={onProceed}
+                    className="px-4 py-2 bg-green-600 text-white font-medium rounded-lg hover:bg-green-700 transition-colors"
+                  >
+                    Continue to Next Section
+                  </button>
+                )}
+              </>
             )}
             
-            {result.is_correct && result.can_proceed && !result.next_question_type && (
-              <button
-                onClick={onProceed}
-                className="px-4 py-2 bg-green-600 text-white font-medium rounded-lg hover:bg-green-700 transition-colors"
-              >
-                Continue to Next Chunk
-              </button>
+            {/* Normal correct answer handling (non-bypass) */}
+            {result.is_correct && !result.feedback?.includes('Instructor override accepted') && (
+              <>
+                {result.next_question_type && (
+                  <button
+                    onClick={() => {
+                      // Clear the result and load next question
+                      setResult(null);
+                      setAnswer('');
+                      setStartTime(Date.now());
+                      setLastSubmitTime(0); // Reset spam prevention
+                      if (onLoadNextQuestion) {
+                        onLoadNextQuestion();
+                      }
+                    }}
+                    className="px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    Continue to {result.next_question_type === 'comprehension' ? 'Comprehension' : 'Summary'} Question
+                  </button>
+                )}
+                
+                {result.can_proceed && !result.next_question_type && (
+                  <button
+                    onClick={onProceed}
+                    className="px-4 py-2 bg-green-600 text-white font-medium rounded-lg hover:bg-green-700 transition-colors"
+                  >
+                    Continue to Next Chunk
+                  </button>
+                )}
+              </>
             )}
             
             {!result.is_correct && (

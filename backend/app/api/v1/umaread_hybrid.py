@@ -153,11 +153,11 @@ async def get_current_question(
     )
     chunk_progress = chunk_progress_result.scalar_one_or_none()
     
-    # Check if chunk is already complete
-    if chunk_progress and chunk_progress.comprehension_completed:
+    # Check if chunk is already complete (both questions must be complete)
+    if chunk_progress and chunk_progress.summary_completed and chunk_progress.comprehension_completed:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Chunk already completed"
+            detail="This chunk has already been completed. Please move to the next section."
         )
     
     # Get current state from Redis (for active session)
@@ -317,14 +317,133 @@ async def submit_answer(
     )
     chunk = chunk_result.scalar_one_or_none()
     
-    # Check for bypass code
-    bypass_code_used = False
-    bypass_match = re.search(r'\b(\d{4})\b', student_answer)
+    # Check for bypass code using unified validation
+    from app.services.bypass_validation import validate_bypass_code
     
-    if bypass_match:
-        # Bypass code handling (simplified for brevity)
-        # ... (bypass code logic here)
-        pass
+    print(f"DEBUG: Checking bypass for answer: {student_answer}, assignment: {assignment_id}")
+    bypass_valid, bypass_type, teacher_id = await validate_bypass_code(
+        db=db,
+        student_id=current_user.id,
+        answer_text=student_answer,
+        context_type="umaread",
+        context_id=str(assignment_id),
+        assignment_id=assignment_id
+    )
+    print(f"DEBUG: Bypass result - valid: {bypass_valid}, type: {bypass_type}, teacher: {teacher_id}")
+    
+    # Check if rate limited
+    if bypass_type == "rate_limited":
+        return {
+            "is_correct": False,
+            "feedback": "Too many bypass attempts. Please wait an hour before trying again or answer the question normally.",
+            "can_proceed": False,
+            "next_question_type": None,
+            "difficulty_changed": False,
+            "new_difficulty_level": difficulty
+        }
+    
+    if bypass_valid:
+        # Bypass successful - mark answer as correct and continue
+        # Count previous attempts to get the correct attempt number
+        attempt_count_result = await db.execute(
+            select(func.count(UmareadStudentResponse.id))
+            .where(
+                and_(
+                    UmareadStudentResponse.student_id == current_user.id,
+                    UmareadStudentResponse.assignment_id == assignment_id,
+                    UmareadStudentResponse.chunk_number == chunk_number,
+                    UmareadStudentResponse.question_type == question_type
+                )
+            )
+        )
+        attempt_count = attempt_count_result.scalar() or 0
+        
+        # Store successful response
+        response = UmareadStudentResponse(
+            student_id=current_user.id,
+            assignment_id=assignment_id,
+            chunk_number=chunk_number,
+            question_type=question_type,
+            question_text=current_question["question"],
+            student_answer=student_answer,
+            is_correct=True,
+            ai_feedback="Instructor override accepted. Moving to next question.",
+            attempt_number=attempt_count + 1,
+            difficulty_level=difficulty
+        )
+        db.add(response)
+        
+        # Get or create chunk progress
+        chunk_progress_result = await db.execute(
+            select(UmareadChunkProgress).where(
+                and_(
+                    UmareadChunkProgress.student_id == current_user.id,
+                    UmareadChunkProgress.assignment_id == assignment_id,
+                    UmareadChunkProgress.chunk_number == chunk_number
+                )
+            )
+        )
+        chunk_progress = chunk_progress_result.scalar_one_or_none()
+        
+        if not chunk_progress:
+            chunk_progress = UmareadChunkProgress(
+                student_id=current_user.id,
+                assignment_id=assignment_id,
+                chunk_number=chunk_number,
+                current_difficulty_level=difficulty
+            )
+            db.add(chunk_progress)
+        
+        # Update progress based on question type
+        if question_type == "summary":
+            chunk_progress.summary_completed = True
+            # Update session state to indicate summary is complete
+            await session_manager.set_question_state(
+                current_user.id, assignment_id, chunk_number, "summary_complete"
+            )
+        else:  # comprehension
+            chunk_progress.comprehension_completed = True
+            chunk_progress.completed_at = datetime.utcnow()
+            # Clear session state for this chunk as it's complete
+            await session_manager.clear_question_state(
+                current_user.id, assignment_id, chunk_number
+            )
+        
+        await db.commit()
+        
+        # Determine next action
+        if question_type == "summary":
+            # Just completed summary, move to comprehension
+            return {
+                "is_correct": True,
+                "feedback": "Instructor override accepted. Moving to next question.",
+                "can_proceed": False,
+                "next_question_type": "comprehension",
+                "difficulty_changed": False,
+                "new_difficulty_level": difficulty
+            }
+        else:
+            # Check if there are more chunks
+            total_chunks_result = await db.execute(
+                select(func.count(ReadingChunk.id))
+                .where(ReadingChunk.assignment_id == assignment_id)
+            )
+            total_chunks = total_chunks_result.scalar()
+            
+            # Check if assignment is complete
+            assignment_complete = chunk_number >= total_chunks
+            
+            return {
+                "is_correct": True,
+                "feedback": "Instructor override accepted. Assignment completed!" if assignment_complete else "Instructor override accepted. Moving to next question.",
+                "can_proceed": True,
+                "next_question_type": None,
+                "difficulty_changed": False,
+                "new_difficulty_level": difficulty,
+                "assignment_complete": assignment_complete
+            }
+    
+    # If not a bypass, continue with normal evaluation
     
     # Evaluate answer
     # Create a Question object from the cached question data

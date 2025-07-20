@@ -120,9 +120,22 @@ export default function UMAReadAssignmentPage({ params }: { params: { id: string
       setQuestion(data);
     } catch (err: any) {
       console.error('Error loading question:', err.response?.data);
-      if (err.response?.status === 400 && err.response?.data?.detail?.includes('already completed')) {
-        // Chunk is complete, move to next
-        handleNavigate('next');
+      if (err.response?.status === 400 && err.response?.data?.detail?.includes('already been completed')) {
+        // Both questions in chunk are complete
+        if (chunk && chunk.has_next) {
+          // Move to next chunk silently
+          handleNavigate('next');
+        } else {
+          // This was the last chunk - mark assignment as complete
+          setIsComplete(true);
+          // Check if there's a test available
+          try {
+            const testStatus = await studentApi.getAssignmentTestStatus(id);
+            setHasTest(testStatus.has_test);
+          } catch (err) {
+            console.error('Failed to check test status:', err);
+          }
+        }
       } else {
         setError(err.response?.data?.detail || 'Failed to load question');
       }
@@ -160,6 +173,19 @@ export default function UMAReadAssignmentPage({ params }: { params: { id: string
       answer_text: answer,
       time_spent_seconds: timeSpent
     });
+    
+    // Check if assignment is complete
+    if (response.assignment_complete) {
+      setIsComplete(true);
+      
+      // Check if there's a test available
+      try {
+        const testStatus = await studentApi.getAssignmentTestStatus(id);
+        setHasTest(testStatus.has_test);
+      } catch (err) {
+        console.error('Failed to check test status:', err);
+      }
+    }
     
     // Refresh progress after answer
     loadProgress();

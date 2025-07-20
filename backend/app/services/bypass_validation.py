@@ -51,7 +51,7 @@ async def validate_bypass_code(
         
         if bypass_attempts >= 5:
             print(f"Rate limit exceeded for bypass attempts by student {student_id}")
-            return False, None, None
+            return False, "rate_limited", None
         
         # Find the teacher through assignment or classroom context
         teacher_id = await _find_teacher_for_context(db, student_id, assignment_id, context_id)
@@ -170,6 +170,20 @@ async def _find_teacher_for_context(
                 classroom = classroom_result.scalar_one_or_none()
                 if classroom:
                     return classroom.teacher_id
+        
+        # Fallback: Try to find teacher directly from the assignment
+        # This handles cases where students access assignments directly without classroom context
+        from app.models.reading import ReadingAssignment
+        
+        # Check if this is a reading assignment
+        reading_assignment_result = await db.execute(
+            select(ReadingAssignment).where(ReadingAssignment.id == assignment_id)
+        )
+        reading_assignment = reading_assignment_result.scalar_one_or_none()
+        
+        if reading_assignment:
+            print(f"DEBUG: Found reading assignment with teacher_id: {reading_assignment.teacher_id}")
+            return str(reading_assignment.teacher_id)
     
     # If no assignment context, try to find through student's classrooms
     # This might need to be more specific based on context
