@@ -900,82 +900,100 @@ async def update_reading_assignment(
 async def upload_assignment_image(
     assignment_id: UUID,
     file: UploadFile = File(...),
+    custom_name: Optional[str] = Form(None),
     teacher: User = Depends(require_teacher),
     db: AsyncSession = Depends(get_db)
 ):
     """Upload an image for an assignment"""
-    # Verify assignment belongs to teacher
-    result = await db.execute(
-        select(ReadingAssignmentModel).where(
-            and_(
-                ReadingAssignmentModel.id == assignment_id,
-                ReadingAssignmentModel.teacher_id == teacher.id,
-                ReadingAssignmentModel.deleted_at.is_(None)
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    try:
+        # Verify assignment belongs to teacher
+        result = await db.execute(
+            select(ReadingAssignmentModel).where(
+                and_(
+                    ReadingAssignmentModel.id == assignment_id,
+                    ReadingAssignmentModel.teacher_id == teacher.id,
+                    ReadingAssignmentModel.deleted_at.is_(None)
+                )
             )
         )
-    )
-    assignment = result.scalar_one_or_none()
-    
-    if not assignment:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Assignment not found"
+        assignment = result.scalar_one_or_none()
+        
+        if not assignment:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Assignment not found"
+            )
+        
+        # Check image count limit
+        existing_images = await db.execute(
+            select(AssignmentImageModel).where(
+                AssignmentImageModel.assignment_id == assignment_id
+            )
         )
-    
-    # Check image count limit
-    existing_images = await db.execute(
-        select(AssignmentImageModel).where(
-            AssignmentImageModel.assignment_id == assignment_id
+        image_count = len(existing_images.scalars().all())
+        
+        if image_count >= 10:  # Max 10 images per assignment
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Maximum 10 images allowed per assignment"
+            )
+        
+        # Generate next image number
+        image_number = image_count + 1
+        
+        # Process and validate image
+        processor = ImageProcessor()
+        try:
+            image_data = await processor.validate_and_process_image(
+                file=file,
+                assignment_id=str(assignment_id),
+                image_number=image_number
+            )
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error processing image: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Error processing image: {str(e)}"
+            )
+        
+        # Create database record
+        image = AssignmentImageModel(
+            assignment_id=assignment_id,
+            image_tag=image_data["image_tag"],
+            image_key=image_data["image_key"],
+            file_name=image_data["file_name"],
+            original_url=image_data["original_url"],
+            display_url=image_data["display_url"],
+            thumbnail_url=image_data["thumbnail_url"],
+            image_url=image_data["image_url"],  # Backward compatibility
+            file_url=image_data.get("file_url", image_data["display_url"]),  # Use display_url as fallback
+            custom_name=custom_name,  # Add custom_name from form data
+            width=image_data["width"],
+            height=image_data["height"],
+            file_size=image_data["file_size"],
+            mime_type=image_data["mime_type"]
         )
-    )
-    image_count = len(existing_images.scalars().all())
-    
-    if image_count >= 10:  # Max 10 images per assignment
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Maximum 10 images allowed per assignment"
-        )
-    
-    # Generate next image number
-    image_number = image_count + 1
-    
-    # Process and validate image
-    processor = ImageProcessor()
-    try:
-        image_data = await processor.validate_and_process_image(
-            file=file,
-            assignment_id=str(assignment_id),
-            image_number=image_number
-        )
+        
+        db.add(image)
+        await db.commit()
+        await db.refresh(image)
+        
+        logger.info(f"Successfully uploaded image {image.id} for assignment {assignment_id}")
+        return image
+        
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"Unexpected error in upload_assignment_image: {str(e)}", exc_info=True)
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Error processing image: {str(e)}"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred while uploading the image"
         )
-    
-    # Create database record
-    image = AssignmentImageModel(
-        assignment_id=assignment_id,
-        image_tag=image_data["image_tag"],
-        image_key=image_data["image_key"],
-        file_name=image_data["file_name"],
-        original_url=image_data["original_url"],
-        display_url=image_data["display_url"],
-        thumbnail_url=image_data["thumbnail_url"],
-        image_url=image_data["image_url"],  # Backward compatibility
-        width=image_data["width"],
-        height=image_data["height"],
-        file_size=image_data["file_size"],
-        mime_type=image_data["mime_type"]
-    )
-    
-    db.add(image)
-    await db.commit()
-    await db.refresh(image)
-    
-    return image
 
 
 @router.delete("/assignments/reading/{assignment_id}/images/{image_id}")
