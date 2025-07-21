@@ -336,28 +336,26 @@ class TestEvaluationServiceV2:
             await self.db.execute(
                 text("""
                 INSERT INTO test_question_evaluations (
-                    test_attempt_id, question_number, question_text,
-                    student_answer, answer_key, answer_explanation,
-                    rubric_score, points_earned, scoring_rationale,
-                    feedback_text, key_concepts_identified, misconceptions_detected,
-                    evaluation_confidence
+                    test_attempt_id, question_index, question_number, question_text,
+                    student_answer, rubric_score, points_earned, max_points,
+                    scoring_rationale, feedback_text, key_concepts_identified, 
+                    misconceptions_detected, evaluation_confidence
                 ) VALUES (
-                    :test_attempt_id, :question_number, :question_text,
-                    :student_answer, :answer_key, :answer_explanation,
-                    :rubric_score, :points_earned, :scoring_rationale,
-                    :feedback_text, :key_concepts, :misconceptions,
-                    :confidence
+                    :test_attempt_id, :question_index, :question_number, :question_text,
+                    :student_answer, :rubric_score, :points_earned, :max_points,
+                    :scoring_rationale, :feedback_text, :key_concepts, 
+                    :misconceptions, :confidence
                 )
                 """),
                 {
                     "test_attempt_id": test_attempt_id,
-                    "question_number": i,
+                    "question_index": i,
+                    "question_number": i + 1,
                     "question_text": question["question"],
                     "student_answer": student_answers.get(str(i), ""),
-                    "answer_key": question["answer_key"],
-                    "answer_explanation": question.get("answer_explanation", ""),
                     "rubric_score": eval_result.rubric_score,
-                    "points_earned": points_earned,
+                    "points_earned": float(points_earned),
+                    "max_points": 10.0,
                     "scoring_rationale": eval_result.scoring_rationale,
                     "feedback_text": eval_result.feedback,
                     "key_concepts": json.dumps(eval_result.key_concepts_identified),
