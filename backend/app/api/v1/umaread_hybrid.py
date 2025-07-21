@@ -433,6 +433,27 @@ async def submit_answer(
             # Check if assignment is complete
             assignment_complete = chunk_number >= total_chunks
             
+            # Update assignment progress for bypass completion
+            update_values = {
+                "total_chunks_completed": UmareadAssignmentProgress.total_chunks_completed + 1,
+                "current_chunk": chunk_number + 1
+            }
+            
+            if assignment_complete:
+                update_values["completed_at"] = datetime.utcnow()
+            
+            await db.execute(
+                update(UmareadAssignmentProgress)
+                .where(
+                    and_(
+                        UmareadAssignmentProgress.student_id == current_user.id,
+                        UmareadAssignmentProgress.assignment_id == assignment_id
+                    )
+                )
+                .values(**update_values)
+            )
+            await db.commit()
+            
             return {
                 "is_correct": True,
                 "feedback": "Instructor override accepted. Assignment completed!" if assignment_complete else "Instructor override accepted. Moving to next question.",

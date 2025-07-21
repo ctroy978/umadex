@@ -730,7 +730,7 @@ CREATE TABLE student_test_attempts (
     classroom_assignment_id INTEGER REFERENCES classroom_assignments(id),
     current_question INTEGER DEFAULT 1,
     answers_data JSONB DEFAULT '{}',
-    status VARCHAR(50) DEFAULT 'in_progress' CHECK (status IN ('in_progress', 'completed', 'submitted', 'graded')),
+    status VARCHAR(50) DEFAULT 'in_progress' CHECK (status IN ('in_progress', 'completed', 'submitted', 'graded', 'evaluated')),
     attempt_number INTEGER DEFAULT 1,
     started_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     last_activity_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
@@ -751,6 +751,8 @@ CREATE TABLE student_test_attempts (
     locked_reason VARCHAR(255),
     grace_period_end TIMESTAMPTZ,
     schedule_violation_reason TEXT,
+    started_within_schedule BOOLEAN DEFAULT TRUE,
+    override_code_used UUID,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
@@ -760,11 +762,14 @@ CREATE TABLE test_question_evaluations (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     test_attempt_id UUID NOT NULL REFERENCES student_test_attempts(id) ON DELETE CASCADE,
     question_index INTEGER NOT NULL,
+    question_number INTEGER NOT NULL,
+    question_text TEXT,
+    student_answer TEXT,
     rubric_score INTEGER NOT NULL CHECK (rubric_score >= 0 AND rubric_score <= 4),
     points_earned DECIMAL(5,2) NOT NULL CHECK (points_earned >= 0),
     max_points DECIMAL(5,2) NOT NULL CHECK (max_points > 0),
     scoring_rationale TEXT NOT NULL,
-    feedback TEXT,
+    feedback_text TEXT,
     key_concepts_identified JSONB DEFAULT '[]',
     misconceptions_detected JSONB DEFAULT '[]',
     evaluation_confidence DECIMAL(3,2) NOT NULL CHECK (evaluation_confidence >= 0 AND evaluation_confidence <= 1),
@@ -1252,6 +1257,7 @@ CREATE INDEX idx_test_question_cache_lecture_id ON test_question_cache(lecture_i
 CREATE INDEX idx_test_question_cache_topic_id ON test_question_cache(topic_id);
 CREATE INDEX idx_test_question_evaluations_attempt_id ON test_question_evaluations(test_attempt_id);
 CREATE INDEX idx_test_question_evaluations_question ON test_question_evaluations(test_attempt_id, question_index);
+CREATE INDEX idx_test_question_evaluations_question_number ON test_question_evaluations(test_attempt_id, question_number);
 CREATE INDEX idx_test_generation_log_assignment ON test_generation_log(test_assignment_id);
 
 -- Security incident tracking indexes
