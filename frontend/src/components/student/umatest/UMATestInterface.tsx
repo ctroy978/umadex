@@ -257,7 +257,8 @@ export default function UMATestInterface({ testData, onComplete }: UMATestInterf
           </div>
         )}
         
-        {saveError && (
+        {/* Red box save error removed per request - students don't need to see save errors */}
+        {/* {saveError && (
           <div className="bg-red-600 text-white text-xs px-3 py-2 rounded-lg max-w-xs">
             <div className="font-medium">Save Failed!</div>
             <div className="text-red-100 mt-1">{saveError}</div>
@@ -273,7 +274,7 @@ export default function UMATestInterface({ testData, onComplete }: UMATestInterf
               Retry Save
             </button>
           </div>
-        )}
+        )} */}
         
         {!isSaving && !saveError && lastSaveTime && (
           <div className="bg-green-600 text-white text-xs px-3 py-2 rounded-lg">
