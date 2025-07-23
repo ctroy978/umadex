@@ -849,7 +849,8 @@ async def get_gradebook(
     # Query 6: Get UMALecture scores from gradebook_entries
     if 'UMALecture' in type_filter:
         # Build filters for SQL query
-        lecture_filters = [f"ge.classroom_id IN ({','.join([f"'{str(cid)}'" for cid in classroom_ids])})"]
+        quoted_classroom_ids = ','.join([f"'{str(cid)}'" for cid in classroom_ids])
+        lecture_filters = [f"ge.classroom_id IN ({quoted_classroom_ids})"]
         lecture_filters.append("ge.assignment_type = 'umalecture'")
         
         if student_search:
