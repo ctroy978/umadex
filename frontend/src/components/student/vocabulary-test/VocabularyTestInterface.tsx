@@ -10,6 +10,9 @@ import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Clock, CheckCircle, AlertTriangle, BookOpen, Loader2 } from 'lucide-react'
+import { useVocabularyTestSecurity } from '@/hooks/useVocabularyTestSecurity'
+import SecurityWarningModal from '@/components/student/test/SecurityWarningModal'
+import VocabularyTestLockoutModal from './VocabularyTestLockoutModal'
 
 interface VocabularyTestInterfaceProps {
   assignmentId: string
@@ -40,6 +43,17 @@ export default function VocabularyTestInterface({
     showSubmitConfirm: false,
     error: null
   })
+  
+  const { violationCount, isLocked, showWarning, acknowledgeWarning } = useVocabularyTestSecurity({
+    testAttemptId: testData.test_attempt_id,
+    isActive: !state.isSubmitting,
+    onWarning: () => {
+      console.log('Security warning issued')
+    },
+    onLock: () => {
+      console.log('Test locked due to security violation')
+    }
+  })
 
   // Timer countdown
   useEffect(() => {
@@ -60,16 +74,8 @@ export default function VocabularyTestInterface({
     return () => clearInterval(timer)
   }, [state.timeRemaining])
 
-  // Prevent navigation away
+  // Disable copy/paste and right-click (navigation prevention is handled by security hook)
   useEffect(() => {
-    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (Object.keys(state.answers).length > 0 && !state.isSubmitting) {
-        e.preventDefault()
-        e.returnValue = 'You have unsaved answers. Are you sure you want to leave?'
-      }
-    }
-
-    // Disable copy/paste and right-click
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.ctrlKey && ['c', 'v', 'a', 'x'].includes(e.key.toLowerCase())) {
         e.preventDefault()
@@ -80,16 +86,14 @@ export default function VocabularyTestInterface({
       e.preventDefault()
     }
 
-    window.addEventListener('beforeunload', handleBeforeUnload)
     document.addEventListener('keydown', handleKeyDown)
     document.addEventListener('contextmenu', handleContextMenu)
 
     return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload)
       document.removeEventListener('keydown', handleKeyDown)
       document.removeEventListener('contextmenu', handleContextMenu)
     }
-  }, [state.answers, state.isSubmitting])
+  }, [])
 
   const currentQuestion = testData.questions[state.currentQuestionIndex]
   const progress = ((state.currentQuestionIndex + 1) / testData.total_questions) * 100
@@ -381,6 +385,22 @@ export default function VocabularyTestInterface({
             </Card>
           </div>
         )}
+        
+        {/* Security Warning Modal */}
+        <SecurityWarningModal 
+          isOpen={showWarning} 
+          onAcknowledge={acknowledgeWarning} 
+        />
+        
+        {/* Vocabulary Test Lockout Modal */}
+        <VocabularyTestLockoutModal 
+          isOpen={isLocked} 
+          testAttemptId={testData.test_attempt_id}
+          onUnlockSuccess={() => {
+            // Refresh the page to restart the test
+            window.location.reload()
+          }}
+        />
       </div>
     </div>
   )

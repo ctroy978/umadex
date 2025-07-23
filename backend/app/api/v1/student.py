@@ -2307,6 +2307,28 @@ async def start_vocabulary_test(
             detail=eligibility["reason"]
         )
     
+    # Check for existing locked test attempt
+    from app.models.vocabulary_test import VocabularyTestAttempt
+    locked_attempt_result = await db.execute(
+        select(VocabularyTestAttempt)
+        .where(
+            and_(
+                VocabularyTestAttempt.student_id == current_user.id,
+                VocabularyTestAttempt.is_locked == True,
+                VocabularyTestAttempt.status == "in_progress"
+            )
+        )
+        .order_by(VocabularyTestAttempt.started_at.desc())
+    )
+    locked_attempt = locked_attempt_result.scalar_one_or_none()
+    
+    if locked_attempt:
+        raise HTTPException(
+            status_code=status.HTTP_423_LOCKED,
+            detail="You have a locked test attempt. Please contact your teacher to unlock it.",
+            headers={"X-Locked-Attempt-Id": str(locked_attempt.id)}
+        )
+    
     try:
         # Generate test
         test_data = await VocabularyTestService.generate_test(
@@ -2351,6 +2373,31 @@ async def submit_vocabulary_test(
     db: AsyncSession = Depends(get_db)
 ):
     """Submit vocabulary test answers"""
+    
+    # Check if test is locked before allowing submission
+    from app.models.vocabulary_test import VocabularyTestAttempt
+    attempt_result = await db.execute(
+        select(VocabularyTestAttempt)
+        .where(
+            and_(
+                VocabularyTestAttempt.id == test_attempt_id,
+                VocabularyTestAttempt.student_id == current_user.id
+            )
+        )
+    )
+    test_attempt = attempt_result.scalar_one_or_none()
+    
+    if not test_attempt:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Test attempt not found"
+        )
+    
+    if test_attempt.is_locked:
+        raise HTTPException(
+            status_code=status.HTTP_423_LOCKED,
+            detail="This test is locked due to security violations. Please contact your teacher."
+        )
     
     try:
         # Evaluate test attempt
@@ -2414,3 +2461,187 @@ async def get_vocabulary_test_results(
         completed_at=attempt.completed_at,
         detailed_results=detailed_results
     )
+
+
+# Vocabulary Test Security Endpoints
+@router.post("/vocabulary/test/{test_attempt_id}/security-incident")
+async def log_vocabulary_test_security_incident(
+    test_attempt_id: UUID,
+    incident_data: dict,
+    current_user: User = Depends(require_student_or_teacher),
+    db: AsyncSession = Depends(get_db)
+):
+    """Log a security incident during vocabulary test"""
+    from app.models.vocabulary_test import VocabularyTestAttempt, VocabularyTestSecurityIncident
+    
+    # Verify test attempt exists and belongs to user
+    result = await db.execute(
+        select(VocabularyTestAttempt)
+        .where(
+            and_(
+                VocabularyTestAttempt.id == test_attempt_id,
+                VocabularyTestAttempt.student_id == current_user.id,
+                VocabularyTestAttempt.status == "in_progress"
+            )
+        )
+    )
+    test_attempt = result.scalar_one_or_none()
+    
+    if not test_attempt:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Test attempt not found or not in progress"
+        )
+    
+    # Create security incident record
+    incident = VocabularyTestSecurityIncident(
+        test_attempt_id=test_attempt_id,
+        incident_type=incident_data.get("incident_type"),
+        incident_data=incident_data.get("incident_data")
+    )
+    db.add(incident)
+    
+    # Update violation count
+    violations = test_attempt.security_violations or []
+    violations.append({
+        "type": incident_data.get("incident_type"),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "data": incident_data.get("incident_data")
+    })
+    test_attempt.security_violations = violations
+    
+    # Check if we need to lock the test (2 violations = lock)
+    violation_count = len(violations)
+    warning_issued = False
+    test_locked = False
+    
+    if violation_count == 1:
+        warning_issued = True
+    elif violation_count >= 2:
+        test_locked = True
+        test_attempt.is_locked = True
+        test_attempt.locked_at = datetime.now(timezone.utc)
+        test_attempt.locked_reason = f"Security violation: {incident_data.get('incident_type')}"
+        incident.resulted_in_lock = True
+    
+    await db.commit()
+    
+    return {
+        "violation_count": violation_count,
+        "warning_issued": warning_issued,
+        "test_locked": test_locked
+    }
+
+
+@router.get("/vocabulary/test/{test_attempt_id}/security-status")
+async def get_vocabulary_test_security_status(
+    test_attempt_id: UUID,
+    current_user: User = Depends(require_student_or_teacher),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get security status of vocabulary test"""
+    from app.models.vocabulary_test import VocabularyTestAttempt
+    
+    result = await db.execute(
+        select(VocabularyTestAttempt)
+        .where(
+            and_(
+                VocabularyTestAttempt.id == test_attempt_id,
+                VocabularyTestAttempt.student_id == current_user.id
+            )
+        )
+    )
+    test_attempt = result.scalar_one_or_none()
+    
+    if not test_attempt:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Test attempt not found"
+        )
+    
+    return {
+        "violation_count": len(test_attempt.security_violations or []),
+        "is_locked": test_attempt.is_locked,
+        "locked_at": test_attempt.locked_at.isoformat() if test_attempt.locked_at else None,
+        "locked_reason": test_attempt.locked_reason
+    }
+
+
+@router.post("/vocabulary/test/{test_attempt_id}/unlock")
+async def unlock_vocabulary_test_with_bypass_code(
+    test_attempt_id: UUID,
+    unlock_data: dict,
+    current_user: User = Depends(require_student_or_teacher),
+    db: AsyncSession = Depends(get_db)
+):
+    """Unlock vocabulary test with teacher bypass code"""
+    from app.models.vocabulary_test import VocabularyTestAttempt, VocabularyTest
+    from app.models.vocabulary import VocabularyList
+    from app.models.tests import TeacherBypassCode
+    
+    # Get the locked test attempt
+    result = await db.execute(
+        select(VocabularyTestAttempt)
+        .where(
+            and_(
+                VocabularyTestAttempt.id == test_attempt_id,
+                VocabularyTestAttempt.student_id == current_user.id,
+                VocabularyTestAttempt.is_locked == True
+            )
+        )
+    )
+    test_attempt = result.scalar_one_or_none()
+    
+    if not test_attempt:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Locked test attempt not found"
+        )
+    
+    # Verify bypass code using the unified bypass validation system
+    from app.services.bypass_validation import validate_bypass_code
+    
+    unlock_code = unlock_data.get("unlock_code", "").strip()
+    
+    # For vocabulary tests, we pass the vocabulary_list_id as the assignment context
+    # since bypass_validation will use it to find the teacher
+    vocab_test_result = await db.execute(
+        select(VocabularyTest)
+        .join(VocabularyTestAttempt, VocabularyTestAttempt.test_id == VocabularyTest.id)
+        .where(VocabularyTestAttempt.id == test_attempt_id)
+    )
+    vocab_test = vocab_test_result.scalar_one_or_none()
+    
+    # Validate bypass code
+    bypass_valid, bypass_type, teacher_id = await validate_bypass_code(
+        db=db,
+        student_id=current_user.id,
+        answer_text=unlock_code,
+        context_type="vocabulary_test",
+        context_id=str(test_attempt_id),
+        assignment_id=str(vocab_test.vocabulary_list_id) if vocab_test else None
+    )
+    
+    if not bypass_valid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired bypass code"
+        )
+    
+    # Reset test attempt
+    test_attempt.is_locked = False
+    test_attempt.locked_at = None
+    test_attempt.locked_reason = None
+    test_attempt.security_violations = []
+    test_attempt.responses = {}
+    test_attempt.started_at = datetime.now(timezone.utc)
+    test_attempt.status = "in_progress"
+    
+    await db.commit()
+    
+    return {
+        "success": True,
+        "message": "Test unlocked successfully. You will restart from the beginning.",
+        "test_attempt_id": str(test_attempt_id),
+        "bypass_type": bypass_type or "general"
+    }

@@ -283,6 +283,41 @@ export const studentApi = {
   async getVocabularyTestResults(testAttemptId: string): Promise<VocabularyTestAttemptResponse> {
     const response = await api.get(`/v1/student/vocabulary/test/results/${testAttemptId}`)
     return response.data
+  },
+
+  // Vocabulary Test Security APIs
+  async logVocabularyTestSecurityIncident(testAttemptId: string, data: {
+    incident_type: string
+    incident_data: any
+  }): Promise<{
+    violation_count: number
+    warning_issued: boolean
+    test_locked: boolean
+  }> {
+    const response = await api.post(`/v1/student/vocabulary/test/${testAttemptId}/security-incident`, data)
+    return response.data
+  },
+
+  async getVocabularyTestSecurityStatus(testAttemptId: string): Promise<{
+    violation_count: number
+    is_locked: boolean
+    locked_at?: string
+    locked_reason?: string
+  }> {
+    const response = await api.get(`/v1/student/vocabulary/test/${testAttemptId}/security-status`)
+    return response.data
+  },
+
+  async unlockVocabularyTestWithBypassCode(testAttemptId: string, bypassCode: string): Promise<{
+    success: boolean
+    message: string
+    test_attempt_id: string
+    bypass_type: string
+  }> {
+    const response = await api.post(`/v1/student/vocabulary/test/${testAttemptId}/unlock`, {
+      unlock_code: bypassCode.trim()
+    })
+    return response.data
   }
 }
 

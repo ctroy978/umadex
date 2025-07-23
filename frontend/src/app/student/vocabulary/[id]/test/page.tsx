@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { studentApi, VocabularyTestStartResponse, VocabularyTestAttemptResponse } from '@/lib/studentApi'
 import VocabularyTestInterface from '@/components/student/vocabulary-test/VocabularyTestInterface'
+import VocabularyTestLockoutModal from '@/components/student/vocabulary-test/VocabularyTestLockoutModal'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -18,7 +19,7 @@ import {
   ArrowLeft 
 } from 'lucide-react'
 
-type PageState = 'loading' | 'eligibility' | 'instructions' | 'test' | 'results' | 'error' | 'override_required'
+type PageState = 'loading' | 'eligibility' | 'instructions' | 'test' | 'results' | 'error' | 'override_required' | 'locked'
 
 interface TestResults {
   score_percentage: number
@@ -87,6 +88,20 @@ export default function VocabularyTestPage() {
       setPageState('test')
     } catch (error: any) {
       console.error('Error starting test:', error)
+      
+      // Check if test is locked
+      if (error.response?.status === 423) {
+        const lockedAttemptId = error.response?.headers?.['x-locked-attempt-id']
+        const message = error.response?.data?.detail || 'Your test is locked due to security violations.'
+        
+        setError(message)
+        setPageState('locked')
+        // Store the locked attempt ID if needed
+        if (lockedAttemptId) {
+          setTestData({ test_attempt_id: lockedAttemptId } as any)
+        }
+        return
+      }
       
       // Check if it's a test schedule restriction error
       if (error.response?.status === 403 && error.response?.headers?.['x-override-required']) {
@@ -568,6 +583,20 @@ export default function VocabularyTestPage() {
           </Card>
         </div>
       </div>
+    )
+  }
+
+  // Locked state
+  if (pageState === 'locked') {
+    return (
+      <VocabularyTestLockoutModal
+        isOpen={true}
+        testAttemptId={testData?.test_attempt_id}
+        onUnlockSuccess={() => {
+          // Refresh the page to restart the flow
+          window.location.reload()
+        }}
+      />
     )
   }
 

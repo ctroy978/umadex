@@ -174,6 +174,7 @@ async def _find_teacher_for_context(
         # Fallback: Try to find teacher directly from the assignment
         # This handles cases where students access assignments directly without classroom context
         from app.models.reading import ReadingAssignment
+        from app.models.vocabulary import VocabularyList
         
         # Check if this is a reading assignment
         reading_assignment_result = await db.execute(
@@ -184,6 +185,16 @@ async def _find_teacher_for_context(
         if reading_assignment:
             print(f"DEBUG: Found reading assignment with teacher_id: {reading_assignment.teacher_id}")
             return str(reading_assignment.teacher_id)
+        
+        # Check if this is a vocabulary list (for vocabulary tests)
+        vocab_list_result = await db.execute(
+            select(VocabularyList).where(VocabularyList.id == assignment_id)
+        )
+        vocab_list = vocab_list_result.scalar_one_or_none()
+        
+        if vocab_list:
+            print(f"DEBUG: Found vocabulary list with teacher_id: {vocab_list.teacher_id}")
+            return str(vocab_list.teacher_id)
     
     # If no assignment context, try to find through student's classrooms
     # This might need to be more specific based on context
