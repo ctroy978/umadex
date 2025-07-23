@@ -15,6 +15,7 @@ import type {
   DebateAssignmentSummary, 
   DebateAssignmentListResponse
 } from '@/types/debate'
+import AntiCheatWrapper from '@/components/debate/AntiCheatWrapper'
 
 export default function UmaDebatePage() {
   const router = useRouter()
@@ -49,7 +50,6 @@ export default function UmaDebatePage() {
       setData(response)
     } catch (err) {
       setError('Failed to load debate assignments')
-      console.error('Error loading assignments:', err)
     } finally {
       setLoading(false)
     }
@@ -76,8 +76,6 @@ export default function UmaDebatePage() {
       await debateApi.archiveAssignment(id)
       await loadAssignments()
     } catch (err: any) {
-      console.error('Error archiving assignment:', err)
-      
       // Check for 400 error with specific message about classrooms
       if (err.response?.status === 400 && err.response?.data?.detail) {
         alert(err.response.data.detail)
@@ -98,7 +96,6 @@ export default function UmaDebatePage() {
       await debateApi.restoreAssignment(id)
       await loadAssignments()
     } catch (err) {
-      console.error('Error restoring assignment:', err)
       alert('Failed to restore assignment')
     } finally {
       setRestoringId(null)
@@ -131,7 +128,8 @@ export default function UmaDebatePage() {
   const totalPages = data ? Math.ceil(data.total / perPage) : 0
 
   return (
-    <div className="p-8">
+    <AntiCheatWrapper>
+      <div className="p-8">
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-900 mb-2">uMaDebate</h1>
         <p className="text-gray-600">Create engaging debate assignments where students argue with AI opponents</p>
@@ -338,5 +336,6 @@ export default function UmaDebatePage() {
           )}
       </div>
     </div>
+    </AntiCheatWrapper>
   )
 }

@@ -60,22 +60,17 @@ export const studentDebateApi = {
   // Get current debate state
   async getCurrentDebate(assignmentId: string): Promise<DebateProgress> {
     const response = await api.get(`/v1/student/debate/${assignmentId}/current`)
-    console.log('API Response:', response.data)
     const camelCased = toCamelCase(response.data)
-    console.log('Camel cased:', camelCased)
     return camelCased
   },
 
   // Submit a student post
   async submitPost(assignmentId: string, post: StudentPostCreate): Promise<DebatePost> {
     try {
-      console.log('Submitting post:', post)
       const snakeCasePost = toSnakeCase(post)
-      console.log('Snake case post:', snakeCasePost)
       const response = await api.post(`/v1/student/debate/${assignmentId}/post`, snakeCasePost)
       return toCamelCase(response.data)
     } catch (error: any) {
-      console.error('Post submission error:', error.response?.data || error.message)
       // Handle moderation pending case
       if (error.response?.status === 202) {
         throw new Error('Post submitted for review')

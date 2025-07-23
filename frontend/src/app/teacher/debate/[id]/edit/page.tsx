@@ -5,6 +5,7 @@ import { useRouter, useParams } from 'next/navigation'
 import { ArrowLeftIcon, CheckIcon } from '@heroicons/react/24/outline'
 import { debateApi } from '@/lib/debateApi'
 import type { DebateAssignment, DebateAssignmentUpdate, DifficultyLevel, FallacyFrequency } from '@/types/debate'
+import AntiCheatWrapper from '@/components/debate/AntiCheatWrapper'
 
 export default function DebateEditPage() {
   const router = useRouter()
@@ -62,7 +63,6 @@ export default function DebateEditPage() {
       }
       setFormData(initialFormData)
     } catch (error) {
-      console.error('Error loading assignment:', error)
       alert('Failed to load assignment')
       router.push('/teacher/debate')
     } finally {
@@ -118,8 +118,7 @@ export default function DebateEditPage() {
         setSuccessMessage('')
       }, 5000)
     } catch (error) {
-      console.error('Error updating assignment:', error)
-      alert('Failed to update assignment. Check console for details.')
+      alert('Failed to update assignment.')
     } finally {
       setSaving(false)
     }
@@ -143,7 +142,8 @@ export default function DebateEditPage() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-8">
+    <AntiCheatWrapper>
+      <div className="max-w-4xl mx-auto px-4 py-8">
       <div className="mb-8">
         <button
           onClick={() => router.push('/teacher/debate')}
@@ -435,6 +435,7 @@ export default function DebateEditPage() {
           </div>
         </div>
       </form>
-    </div>
+      </div>
+    </AntiCheatWrapper>
   )
 }

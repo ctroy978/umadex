@@ -13,6 +13,7 @@ import {
   ExclamationCircleIcon,
   CheckCircleIcon
 } from '@heroicons/react/24/outline'
+import AntiCheatWrapper from '@/components/debate/AntiCheatWrapper'
 
 export default function DebateAssignmentPage() {
   const params = useParams()
@@ -43,7 +44,6 @@ export default function DebateAssignmentPage() {
         setProgress(progressData)
       }
     } catch (err) {
-      console.error('Failed to fetch assignment:', err)
       setError('Failed to load assignment details')
     } finally {
       setLoading(false)
@@ -57,7 +57,6 @@ export default function DebateAssignmentPage() {
       // Navigate to debate interface
       router.push(`/student/debate/${assignmentId}/debate`)
     } catch (err) {
-      console.error('Failed to start assignment:', err)
       setError('Failed to start assignment. Please try again.')
       setStarting(false)
     }
@@ -107,8 +106,9 @@ export default function DebateAssignmentPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-4xl mx-auto p-6">
+    <AntiCheatWrapper>
+      <div className="min-h-screen bg-gray-50">
+        <div className="max-w-4xl mx-auto p-6">
         {/* Header */}
         <div className="mb-6">
           <button
@@ -345,7 +345,8 @@ export default function DebateAssignmentPage() {
             </div>
           </div>
         )}
+        </div>
       </div>
-    </div>
+    </AntiCheatWrapper>
   )
 }

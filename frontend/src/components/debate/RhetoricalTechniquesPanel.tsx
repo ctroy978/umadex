@@ -26,7 +26,6 @@ export default function RhetoricalTechniquesPanel() {
       setTechniques(data)
     } catch (err) {
       setError('Failed to load rhetorical techniques')
-      console.error('Error loading techniques:', err)
     } finally {
       setLoading(false)
     }

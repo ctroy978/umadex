@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeftIcon, ArrowRightIcon } from '@heroicons/react/24/outline'
 import type { DebateAssignmentMetadata } from '@/types/debate'
+import AntiCheatWrapper from '@/components/debate/AntiCheatWrapper'
 
 export default function DebateCreatePage() {
   const router = useRouter()
@@ -66,7 +67,8 @@ export default function DebateCreatePage() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-8">
+    <AntiCheatWrapper>
+      <div className="max-w-4xl mx-auto px-4 py-8">
       <div className="mb-8">
         <button
           onClick={() => router.push('/teacher/debate')}
@@ -244,6 +246,7 @@ export default function DebateCreatePage() {
           <li>• Consider current events or issues relevant to your curriculum</li>
         </ul>
       </div>
-    </div>
+      </div>
+    </AntiCheatWrapper>
   )
 }

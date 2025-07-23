@@ -13,6 +13,7 @@ import {
   XCircleIcon,
   MinusIcon
 } from '@heroicons/react/24/outline'
+import AntiCheatWrapper from '@/components/debate/AntiCheatWrapper'
 
 export default function DebateResultsPage() {
   const params = useParams()
@@ -38,7 +39,6 @@ export default function DebateResultsPage() {
       setAssignment(assignmentData)
       setScores(scoresData)
     } catch (err) {
-      console.error('Failed to fetch results:', err)
       setError('Failed to load results')
     } finally {
       setLoading(false)
@@ -90,7 +90,8 @@ export default function DebateResultsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <AntiCheatWrapper>
+      <div className="min-h-screen bg-gray-50">
       <div className="max-w-4xl mx-auto p-6">
         {/* Header */}
         <div className="mb-6">
@@ -275,5 +276,6 @@ export default function DebateResultsPage() {
         </div>
       </div>
     </div>
+    </AntiCheatWrapper>
   )
 }

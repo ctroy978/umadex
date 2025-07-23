@@ -22,7 +22,6 @@ export default function DebateAssignmentsSection() {
       const data = await studentDebateApi.getAssignments()
       setAssignments(data)
     } catch (err) {
-      console.error('Failed to fetch debate assignments:', err)
       setError('Failed to load debate assignments')
     } finally {
       setLoading(false)

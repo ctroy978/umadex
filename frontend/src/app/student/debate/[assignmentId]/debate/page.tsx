@@ -11,6 +11,7 @@ import PositionSelector from '@/components/debate/PositionSelector'
 import RoundComplete from '@/components/debate/RoundComplete'
 import RhetoricalTechniquesPanel from '@/components/debate/RhetoricalTechniquesPanel'
 import { ExclamationCircleIcon } from '@heroicons/react/24/outline'
+import AntiCheatWrapper from '@/components/debate/AntiCheatWrapper'
 
 export default function DebateInterfacePage() {
   const params = useParams()
@@ -62,7 +63,6 @@ export default function DebateInterfacePage() {
         setShowPositionSelector(true)
       }
     } catch (err) {
-      console.error('Failed to fetch initial data:', err)
       setError('Failed to load debate. Please try again.')
     } finally {
       setLoading(false)
@@ -73,7 +73,6 @@ export default function DebateInterfacePage() {
     try {
       setError(null)
       const data = await studentDebateApi.getCurrentDebate(assignmentId)
-      console.log('Fetched progress data:', data)
       
       // Ensure data has the expected structure
       if (!data || typeof data !== 'object') {
@@ -92,7 +91,6 @@ export default function DebateInterfacePage() {
         setShowPositionSelector(true)
       }
     } catch (err) {
-      console.error('Failed to fetch debate progress:', err)
       setError('Failed to load debate. Please try again.')
     } finally {
       setLoading(false)
@@ -117,7 +115,6 @@ export default function DebateInterfacePage() {
       
       // Post submitted successfully, AI is preparing response
     } catch (err: any) {
-      console.error('Failed to submit post:', err)
       
       if (err.message === 'Post submitted for review') {
         setError('Your post has been flagged for teacher review.')
@@ -139,7 +136,6 @@ export default function DebateInterfacePage() {
       
       // Position selected successfully
     } catch (err) {
-      console.error('Failed to select position:', err)
       setError('Failed to select position. Please try again.')
     }
   }
@@ -151,7 +147,6 @@ export default function DebateInterfacePage() {
       // Navigate directly back to UMADebate dashboard
       router.push(`/student/debate/${assignmentId}`)
     } catch (err) {
-      console.error('Failed to advance debate:', err)
       setError('Failed to continue to next debate. Please try again.')
     }
   }
@@ -198,7 +193,8 @@ export default function DebateInterfacePage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
+    <AntiCheatWrapper>
+      <div className="min-h-screen bg-gray-50 flex flex-col">
       {/* Header */}
       <DebateHeader progress={progress} />
 
@@ -226,22 +222,12 @@ export default function DebateInterfacePage() {
             
             // Access position fields directly based on current debate
             if (currentDebate === 1) {
-              position = studentDebate.debate1Position
+              position = studentDebate.debate_1Position
             } else if (currentDebate === 2) {
-              position = studentDebate.debate2Position
+              position = studentDebate.debate_2Position
             } else if (currentDebate === 3) {
-              position = studentDebate.debate3Position
+              position = studentDebate.debate_3Position
             }
-            
-            // Debug logging for topic box color
-            console.log('Topic Box Color Debug:', {
-              studentDebate,
-              currentDebate,
-              position,
-              debate1Position: studentDebate.debate1Position,
-              debate2Position: studentDebate.debate2Position,
-              debate3Position: studentDebate.debate3Position
-            })
             
             if (position === 'pro') {
               return "bg-green-50 border-b border-green-200"
@@ -259,11 +245,11 @@ export default function DebateInterfacePage() {
                 let position = null
                 
                 if (currentDebate === 1) {
-                  position = studentDebate.debate1Position
+                  position = studentDebate.debate_1Position
                 } else if (currentDebate === 2) {
-                  position = studentDebate.debate2Position
+                  position = studentDebate.debate_2Position
                 } else if (currentDebate === 3) {
-                  position = studentDebate.debate3Position
+                  position = studentDebate.debate_3Position
                 }
                 
                 if (position === 'pro') {
@@ -281,11 +267,11 @@ export default function DebateInterfacePage() {
                 let position = null
                 
                 if (currentDebate === 1) {
-                  position = studentDebate.debate1Position
+                  position = studentDebate.debate_1Position
                 } else if (currentDebate === 2) {
-                  position = studentDebate.debate2Position
+                  position = studentDebate.debate_2Position
                 } else if (currentDebate === 3) {
-                  position = studentDebate.debate3Position
+                  position = studentDebate.debate_3Position
                 }
                 
                 if (position === 'pro') {
@@ -305,24 +291,15 @@ export default function DebateInterfacePage() {
                 const currentDebate = studentDebate.currentDebate
                 let position = null
                 
-                // Debug logging
-                console.log('StudentDebate object:', studentDebate)
-                console.log('Current debate:', currentDebate)
-                console.log('debate1Position:', studentDebate.debate1Position)
-                console.log('debate2Position:', studentDebate.debate2Position)
-                console.log('debate3Position:', studentDebate.debate3Position)
-                
                 // Access position fields directly based on current debate
-                // The API returns them as debate1Position, debate2Position, etc.
+                // The API returns them as debate_1Position, debate_2Position, etc.
                 if (currentDebate === 1) {
-                  position = studentDebate.debate1Position
+                  position = studentDebate.debate_1Position
                 } else if (currentDebate === 2) {
-                  position = studentDebate.debate2Position
+                  position = studentDebate.debate_2Position
                 } else if (currentDebate === 3) {
-                  position = studentDebate.debate3Position
+                  position = studentDebate.debate_3Position
                 }
-                
-                console.log('Selected position:', position)
                 
                 if (!position) return null
                 
@@ -357,11 +334,11 @@ export default function DebateInterfacePage() {
                   let position = null
                   
                   if (currentDebate === 1) {
-                    position = studentDebate.debate1Position
+                    position = studentDebate.debate_1Position
                   } else if (currentDebate === 2) {
-                    position = studentDebate.debate2Position
+                    position = studentDebate.debate_2Position
                   } else if (currentDebate === 3) {
-                    position = studentDebate.debate3Position
+                    position = studentDebate.debate_3Position
                   }
                   
                   if (position) {
@@ -403,7 +380,6 @@ export default function DebateInterfacePage() {
                   // Refresh to update scores
                   await fetchDebateProgress()
                 } catch (err) {
-                  console.error('Failed to submit challenge:', err)
                   alert('Failed to submit challenge. Please try again.')
                 }
               }}
@@ -462,5 +438,6 @@ export default function DebateInterfacePage() {
         )}
       </div>
     </div>
+    </AntiCheatWrapper>
   )
 }

@@ -18,6 +18,7 @@ import type {
   DifficultyLevel,
   FallacyFrequency
 } from '@/types/debate'
+import AntiCheatWrapper from '@/components/debate/AntiCheatWrapper'
 
 export default function DebateConfigurePage() {
   const router = useRouter()
@@ -67,7 +68,6 @@ export default function DebateConfigurePage() {
       // Redirect to assignment detail or list page
       router.push('/teacher/debate')
     } catch (error) {
-      console.error('Failed to create assignment:', error)
       alert('Failed to create assignment. Please try again.')
     } finally {
       setLoading(false)
@@ -85,7 +85,8 @@ export default function DebateConfigurePage() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-8">
+    <AntiCheatWrapper>
+      <div className="max-w-4xl mx-auto px-4 py-8">
       <div className="mb-8">
         <button
           onClick={handleBack}
@@ -361,6 +362,7 @@ export default function DebateConfigurePage() {
           onClose={() => setShowPreview(false)}
         />
       )}
-    </div>
+      </div>
+    </AntiCheatWrapper>
   )
 }

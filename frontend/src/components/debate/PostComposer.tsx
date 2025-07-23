@@ -39,7 +39,7 @@ export default function PostComposer({
       const data = await studentDebateApi.getTechniques()
       setTechniques(data.proper)
     } catch (err) {
-      console.error('Failed to load techniques:', err)
+      // Failed to load techniques
     }
   }
 
