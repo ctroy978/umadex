@@ -7,7 +7,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from sqlalchemy import select, and_, func, or_, update, delete as sql_delete
+from sqlalchemy import select, and_, func, or_, update, delete as sql_delete, text as sql_text
 from datetime import datetime
 import json
 
@@ -673,4 +673,96 @@ async def explore_term(
     return {
         "is_on_topic": True,
         "response": response
+    }
+
+
+@router.post("/assignments/{assignment_id}/calculate-grade")
+async def calculate_lecture_grade(
+    assignment_id: int,
+    student: User = Depends(require_student),
+    db: AsyncSession = Depends(get_db)
+):
+    """Calculate and update student's grade for a lecture assignment"""
+    # Calculate grade
+    score = await lecture_service.calculate_lecture_grade(
+        db, student.id, assignment_id
+    )
+    
+    if score is None:
+        return {
+            "success": False,
+            "message": "No completed work found to grade"
+        }
+    
+    # Get lecture ID for gradebook entry
+    lecture_query = sql_text("""
+        SELECT ca.assignment_id as lecture_id
+        FROM classroom_assignments ca
+        WHERE ca.id = :assignment_id
+        AND ca.assignment_type = 'UMALecture'
+    """)
+    
+    result = await db.execute(
+        lecture_query,
+        {"assignment_id": assignment_id}
+    )
+    
+    lecture_data = result.mappings().first()
+    if not lecture_data:
+        raise HTTPException(status_code=404, detail="Lecture assignment not found")
+    
+    # Create or update gradebook entry
+    await lecture_service.create_or_update_gradebook_entry(
+        db, student.id, assignment_id, lecture_data["lecture_id"], score
+    )
+    
+    return {
+        "success": True,
+        "score": score,
+        "message": f"Grade calculated: {score}%"
+    }
+
+
+@router.post("/lectures/{lecture_id}/calculate-all-grades")
+async def calculate_all_grades_for_lecture(
+    lecture_id: UUID,
+    teacher: User = Depends(require_teacher),
+    db: AsyncSession = Depends(get_db)
+):
+    """Calculate grades for all students who have worked on this lecture"""
+    # Verify teacher owns this lecture
+    lecture = await lecture_service.get_lecture(db, lecture_id, teacher.id)
+    if not lecture:
+        raise HTTPException(status_code=404, detail="Lecture not found")
+    
+    # Get all students who have worked on this lecture
+    query = sql_text("""
+        SELECT DISTINCT sa.student_id, sa.classroom_assignment_id, ca.assignment_id
+        FROM student_assignments sa
+        JOIN classroom_assignments ca ON ca.id = sa.classroom_assignment_id
+        WHERE ca.assignment_id = :lecture_id
+        AND ca.assignment_type = 'UMALecture'
+        AND sa.progress_metadata IS NOT NULL
+    """)
+    
+    result = await db.execute(query, {"lecture_id": lecture_id})
+    students = result.mappings().all()
+    
+    grades_calculated = 0
+    for student in students:
+        score = await lecture_service.calculate_lecture_grade(
+            db, student["student_id"], student["classroom_assignment_id"]
+        )
+        
+        if score is not None:
+            await lecture_service.create_or_update_gradebook_entry(
+                db, student["student_id"], student["classroom_assignment_id"], 
+                lecture_id, score
+            )
+            grades_calculated += 1
+    
+    return {
+        "success": True,
+        "students_processed": len(students),
+        "grades_calculated": grades_calculated
     }

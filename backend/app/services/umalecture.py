@@ -1024,6 +1024,15 @@ class UMALectureService:
             )
             await db.commit()
         
+        # If this was the last question in a difficulty level and all were correct,
+        # update the student progress to trigger grade calculation
+        if is_correct and next_action in ["next_difficulty", "complete_topic"]:
+            # Call update_student_progress to trigger grade calculation
+            await self.update_student_progress(
+                db, student_id, assignment_id, topic_id, difficulty, 
+                question_index, is_correct
+            )
+        
         return {
             "is_correct": is_correct,
             "feedback": "Correct!" if is_correct else f"Not quite. The answer was: {question.get('correct_answer', 'N/A')}",
@@ -1356,6 +1365,31 @@ class UMALectureService:
         
         await db.commit()
         
+        # After updating progress, calculate and update grade if a difficulty level was completed
+        if question_index is not None and is_correct is not None and all(topic_progress["questions_correct"][tab]):
+            # Get lecture ID
+            lecture_query = sql_text("""
+                SELECT ca.assignment_id as lecture_id
+                FROM classroom_assignments ca
+                WHERE ca.id = :assignment_id
+                AND ca.assignment_type = 'UMALecture'
+            """)
+            
+            result = await db.execute(
+                lecture_query,
+                {"assignment_id": assignment_id}
+            )
+            
+            lecture_data = result.mappings().first()
+            if lecture_data:
+                # Calculate current grade
+                grade = await self.calculate_lecture_grade(db, student_id, assignment_id)
+                if grade is not None:
+                    # Update gradebook
+                    await self.create_or_update_gradebook_entry(
+                        db, student_id, assignment_id, lecture_data["lecture_id"], grade
+                    )
+        
         return progress_metadata
     
     async def evaluate_student_response(
@@ -1582,3 +1616,177 @@ class UMALectureService:
         )
         
         return await ai_service._generate_content_async(prompt)
+    
+    async def calculate_lecture_grade(
+        self,
+        db: AsyncSession,
+        student_id: UUID,
+        assignment_id: int
+    ) -> Optional[int]:
+        """Calculate student's grade based on highest difficulty level completed
+        
+        Grading scale:
+        - Basic completed: 70%
+        - Intermediate completed: 80%
+        - Advanced completed: 90%
+        - Expert completed: 100%
+        """
+        # Get student progress
+        progress_query = sql_text("""
+            SELECT sa.progress_metadata, la.lecture_structure
+            FROM student_assignments sa
+            JOIN classroom_assignments ca ON ca.id = sa.classroom_assignment_id
+            JOIN reading_assignments la ON la.id = ca.assignment_id
+            WHERE sa.classroom_assignment_id = :assignment_id
+            AND sa.student_id = :student_id
+            AND ca.assignment_type = 'UMALecture'
+        """)
+        
+        result = await db.execute(
+            progress_query,
+            {"assignment_id": assignment_id, "student_id": student_id}
+        )
+        
+        data = result.mappings().first()
+        if not data or not data["progress_metadata"]:
+            return None
+        
+        progress_metadata = data["progress_metadata"]
+        lecture_structure = json.loads(data["lecture_structure"]) if isinstance(data["lecture_structure"], str) else data["lecture_structure"]
+        
+        # Get topic completion data
+        topic_completion = progress_metadata.get("topic_completion", {})
+        if not topic_completion:
+            return None
+        
+        # Define difficulty levels and their scores
+        difficulty_scores = {
+            "basic": 70,
+            "intermediate": 80,
+            "advanced": 90,
+            "expert": 100
+        }
+        
+        # Find highest completed difficulty across all topics
+        highest_score = 0
+        
+        for topic_id, topic_progress in topic_completion.items():
+            completed_tabs = topic_progress.get("completed_tabs", [])
+            questions_correct = topic_progress.get("questions_correct", {})
+            
+            # Check each difficulty level
+            for difficulty in ["expert", "advanced", "intermediate", "basic"]:
+                if difficulty in completed_tabs:
+                    # For expert level, verify all questions were answered correctly
+                    if difficulty == "expert":
+                        expert_questions = questions_correct.get("expert", [])
+                        if expert_questions and all(expert_questions):
+                            highest_score = max(highest_score, difficulty_scores[difficulty])
+                            break
+                    else:
+                        # For other levels, being in completed_tabs means all questions were correct
+                        highest_score = max(highest_score, difficulty_scores[difficulty])
+                        break
+        
+        return highest_score if highest_score > 0 else None
+    
+    async def create_or_update_gradebook_entry(
+        self,
+        db: AsyncSession,
+        student_id: UUID,
+        assignment_id: int,
+        lecture_id: UUID,
+        score: int
+    ) -> None:
+        """Create or update gradebook entry for UMALecture"""
+        # Get classroom information
+        classroom_query = sql_text("""
+            SELECT ca.classroom_id, c.name as classroom_name,
+                   la.assignment_title as assignment_name
+            FROM classroom_assignments ca
+            JOIN classrooms c ON c.id = ca.classroom_id
+            JOIN reading_assignments la ON la.id = ca.assignment_id
+            WHERE ca.id = :assignment_id
+            AND ca.assignment_type = 'UMALecture'
+        """)
+        
+        result = await db.execute(
+            classroom_query,
+            {"assignment_id": assignment_id}
+        )
+        
+        classroom_data = result.mappings().first()
+        if not classroom_data:
+            return
+        
+        # Check if gradebook entry exists
+        existing_query = sql_text("""
+            SELECT id, score_percentage
+            FROM gradebook_entries
+            WHERE student_id = :student_id
+            AND classroom_id = :classroom_id
+            AND assignment_type = 'umalecture'
+            AND assignment_id = :lecture_id
+        """)
+        
+        existing_result = await db.execute(
+            existing_query,
+            {
+                "student_id": student_id,
+                "classroom_id": classroom_data["classroom_id"],
+                "lecture_id": lecture_id
+            }
+        )
+        
+        existing_entry = existing_result.mappings().first()
+        
+        if existing_entry:
+            # Update existing entry if new score is higher
+            if score > existing_entry["score_percentage"]:
+                update_query = sql_text("""
+                    UPDATE gradebook_entries
+                    SET score_percentage = :score,
+                        points_earned = :score,
+                        points_possible = 100,
+                        completed_at = NOW(),
+                        updated_at = NOW()
+                    WHERE id = :entry_id
+                """)
+                
+                await db.execute(
+                    update_query,
+                    {
+                        "score": score,
+                        "entry_id": existing_entry["id"]
+                    }
+                )
+        else:
+            # Create new gradebook entry
+            insert_query = sql_text("""
+                INSERT INTO gradebook_entries (
+                    student_id, classroom_id, assignment_type, assignment_id,
+                    score_percentage, points_earned, points_possible,
+                    completed_at, metadata
+                ) VALUES (
+                    :student_id, :classroom_id, 'umalecture', :lecture_id,
+                    :score, :score, 100, NOW(), :metadata
+                )
+            """)
+            
+            metadata = {
+                "assignment_name": classroom_data["assignment_name"],
+                "classroom_name": classroom_data["classroom_name"]
+            }
+            
+            await db.execute(
+                insert_query,
+                {
+                    "student_id": student_id,
+                    "classroom_id": classroom_data["classroom_id"],
+                    "lecture_id": lecture_id,
+                    "score": score,
+                    "metadata": json.dumps(metadata)
+                }
+            )
+        
+        await db.commit()
