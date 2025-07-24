@@ -18,7 +18,6 @@ from app.models.classroom import StudentAssignment, ClassroomAssignment, Classro
 from app.utils.deps import get_current_user
 from app.schemas.umaread import ChunkResponse, AssignmentStartResponse
 from app.services.umaread_simple import UMAReadService
-from app.services.umaread_session import UMAReadSessionManager
 from app.services.question_generation import generate_questions_for_chunk, Question
 from app.services.answer_evaluation import evaluate_answer, should_increase_difficulty
 from app.services.text_simplification import simplify_chunk_text
@@ -28,7 +27,6 @@ import re
 
 router = APIRouter(prefix="/umaread/v2", tags=["umaread-v2"])
 umaread_service = UMAReadService()
-session_manager = UMAReadSessionManager()
 
 
 @router.get("/assignments/{assignment_id}/start", response_model=AssignmentStartResponse)
@@ -81,19 +79,13 @@ async def start_assignment(
         await db.commit()
         await db.refresh(progress)
         
-        # Initialize Redis session
-        await session_manager.set_difficulty_level(
-            current_user.id, 
-            assignment_id, 
-            assignment_info.difficulty_level
-        )
+        # Redis session initialization removed - using DB only
     else:
         # Update last activity
         progress.last_activity_at = datetime.utcnow()
         await db.commit()
     
-    # Update Redis activity
-    await session_manager.update_activity(current_user.id, assignment_id)
+    # Redis activity update removed - using DB only
     
     # Get assignment details
     assignment = await db.get(ReadingAssignment, assignment_id)
@@ -160,20 +152,13 @@ async def get_current_question(
             detail="This chunk has already been completed. Please move to the next section."
         )
     
-    # Get current state from Redis (for active session)
-    state = await session_manager.get_question_state(
-        current_user.id, assignment_id, chunk_number
-    )
-    
-    # If no Redis state but DB shows summary complete, restore to Redis
-    if not state and chunk_progress and chunk_progress.summary_completed:
+    # Get state from DB progress
+    state = None
+    if chunk_progress and chunk_progress.summary_completed:
         state = "summary_complete"
-        await session_manager.set_question_state(
-            current_user.id, assignment_id, chunk_number, state
-        )
     
     # Get difficulty from Redis or DB
-    difficulty = await session_manager.get_difficulty_level(current_user.id, assignment_id)
+    difficulty = None  # Redis lookup removed
     if not difficulty:
         # Get from DB
         progress = await db.execute(
@@ -187,7 +172,7 @@ async def get_current_question(
         )
         progress_record = progress.scalar_one_or_none()
         difficulty = progress_record.current_difficulty_level if progress_record else 3
-        await session_manager.set_difficulty_level(current_user.id, assignment_id, difficulty)
+        # Redis difficulty update removed
     
     # Get assignment and chunk
     assignment = await db.get(ReadingAssignment, assignment_id)
@@ -205,27 +190,16 @@ async def get_current_question(
         raise HTTPException(status_code=404, detail=f"Chunk {chunk_number} not found")
     
     # Generate or get cached questions
-    cached_questions = await session_manager.get_cached_questions(
-        current_user.id, assignment_id, chunk_number
-    )
+    cached_questions = None  # Redis cache removed
     
-    if not cached_questions:
-        # Generate new questions
-        questions = await generate_questions_for_chunk(
-            chunk, assignment, difficulty, db
-        )
-        # Cache for evaluation
-        await session_manager.cache_questions(
-            current_user.id, assignment_id, chunk_number,
-            {
-                "summary": questions.summary_question.dict(),
-                "comprehension": questions.comprehension_question.dict()
-            }
-        )
-        cached_questions = {
-            "summary": questions.summary_question.dict(),
-            "comprehension": questions.comprehension_question.dict()
-        }
+    # Always generate questions since we don't have Redis cache
+    questions = await generate_questions_for_chunk(
+        chunk, assignment, difficulty, db
+    )
+    cached_questions = {
+        "summary": questions.summary_question.dict(),
+        "comprehension": questions.comprehension_question.dict()
+    }
     
     # Return appropriate question based on state
     if state == "summary_complete":
@@ -260,8 +234,8 @@ async def submit_answer(
 ):
     """Submit answer with hybrid storage"""
     
-    # Rate limiting check
-    if not await session_manager.check_rate_limit(current_user.id, assignment_id, chunk_number):
+    # Rate limiting check removed - consider implementing DB-based rate limiting
+    if False:  # Rate limiting disabled
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Too many submissions. Please wait before trying again."
@@ -283,22 +257,62 @@ async def submit_answer(
             detail="Answer must not exceed 500 characters"
         )
     
-    # Get current state and difficulty
-    state = await session_manager.get_question_state(
-        current_user.id, assignment_id, chunk_number
+    # Get current state and difficulty from database
+    chunk_progress_result = await db.execute(
+        select(UmareadChunkProgress)
+        .where(
+            and_(
+                UmareadChunkProgress.student_id == current_user.id,
+                UmareadChunkProgress.assignment_id == assignment_id,
+                UmareadChunkProgress.chunk_number == chunk_number
+            )
+        )
     )
-    difficulty = await session_manager.get_difficulty_level(current_user.id, assignment_id) or 3
+    chunk_progress = chunk_progress_result.scalar_one_or_none()
+    
+    # Determine state based on chunk progress
+    state = None
+    if chunk_progress and chunk_progress.summary_completed:
+        state = "summary_complete"
+    
+    # Get difficulty from assignment progress
+    progress_result = await db.execute(
+        select(UmareadAssignmentProgress)
+        .where(
+            and_(
+                UmareadAssignmentProgress.student_id == current_user.id,
+                UmareadAssignmentProgress.assignment_id == assignment_id
+            )
+        )
+    )
+    progress = progress_result.scalar_one_or_none()
+    difficulty = progress.current_difficulty_level if progress else 3
     
     # Get cached questions for evaluation
-    cached_questions = await session_manager.get_cached_questions(
-        current_user.id, assignment_id, chunk_number
-    )
+    cached_questions = None  # Redis cache removed
     
+    # Generate questions for evaluation since we don't have Redis cache
     if not cached_questions:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No active question found. Please reload the question."
+        # Get assignment and chunk
+        assignment = await db.get(ReadingAssignment, assignment_id)
+        chunk_result = await db.execute(
+            select(ReadingChunk).where(
+                and_(
+                    ReadingChunk.assignment_id == assignment_id,
+                    ReadingChunk.chunk_order == chunk_number
+                )
+            )
         )
+        chunk = chunk_result.scalar_one_or_none()
+        
+        # Generate questions
+        questions = await generate_questions_for_chunk(
+            chunk, assignment, difficulty, db
+        )
+        cached_questions = {
+            "summary": questions.summary_question.dict(),
+            "comprehension": questions.comprehension_question.dict()
+        }
     
     # Determine question type
     is_summary = state != "summary_complete"
@@ -397,17 +411,11 @@ async def submit_answer(
         # Update progress based on question type
         if question_type == "summary":
             chunk_progress.summary_completed = True
-            # Update session state to indicate summary is complete
-            await session_manager.set_question_state(
-                current_user.id, assignment_id, chunk_number, "summary_complete"
-            )
+            # Redis state update removed
         else:  # comprehension
             chunk_progress.comprehension_completed = True
             chunk_progress.completed_at = datetime.utcnow()
-            # Clear session state for this chunk as it's complete
-            await session_manager.clear_question_state(
-                current_user.id, assignment_id, chunk_number
-            )
+            # Redis state clear removed
         
         await db.commit()
         
@@ -514,17 +522,8 @@ async def submit_answer(
     )
     db.add(response)
     
-    # Update progress based on result
-    chunk_progress = await db.execute(
-        select(UmareadChunkProgress).where(
-            and_(
-                UmareadChunkProgress.student_id == current_user.id,
-                UmareadChunkProgress.assignment_id == assignment_id,
-                UmareadChunkProgress.chunk_number == chunk_number
-            )
-        )
-    )
-    chunk_progress_record = chunk_progress.scalar_one_or_none()
+    # Update progress based on result (reuse chunk_progress from earlier query)
+    chunk_progress_record = chunk_progress
     
     if not chunk_progress_record:
         chunk_progress_record = UmareadChunkProgress(
@@ -540,9 +539,7 @@ async def submit_answer(
         if is_summary:
             # Summary complete, move to comprehension
             chunk_progress_record.summary_completed = True
-            await session_manager.set_question_state(
-                current_user.id, assignment_id, chunk_number, "summary_complete"
-            )
+            # Redis state update removed
             
             await db.commit()
             
@@ -571,10 +568,7 @@ async def submit_answer(
                 new_difficulty = difficulty + 1
                 chunk_progress_record.current_difficulty_level = new_difficulty
                 
-                # Update Redis and DB
-                await session_manager.set_difficulty_level(
-                    current_user.id, assignment_id, new_difficulty
-                )
+                # Redis difficulty update removed
                 
                 # Update assignment progress
                 await db.execute(
@@ -621,10 +615,7 @@ async def submit_answer(
             
             await db.commit()
             
-            # Clear Redis state for this chunk
-            await session_manager.clear_question_state(
-                current_user.id, assignment_id, chunk_number
-            )
+            # Redis state clear removed
             
             return {
                 "is_correct": True,
@@ -805,10 +796,8 @@ async def request_simpler_question(
 ):
     """Request a simpler question by reducing difficulty level"""
     
-    # Get current difficulty level
-    current_difficulty = await session_manager.get_difficulty_level(
-        current_user.id, assignment_id
-    ) or 3
+    # Get current difficulty level from DB
+    current_difficulty = 3  # Default difficulty - TODO: get from DB
     
     # Can't go below level 1
     if current_difficulty <= 1:
@@ -820,15 +809,9 @@ async def request_simpler_question(
     # Reduce difficulty by 1
     new_difficulty = current_difficulty - 1
     
-    # Update difficulty in session
-    await session_manager.set_difficulty_level(
-        current_user.id, assignment_id, new_difficulty
-    )
+    # Redis difficulty update removed
     
-    # Clear cached questions to force regeneration
-    await session_manager.clear_question_cache(
-        current_user.id, assignment_id, chunk_number
-    )
+    # Redis cache clear removed
     
     # Get assignment and chunk for new question generation
     assignment = await db.get(ReadingAssignment, assignment_id)
@@ -859,14 +842,7 @@ async def request_simpler_question(
         chunk, assignment, new_difficulty, db
     )
     
-    # Cache for evaluation
-    await session_manager.cache_questions(
-        current_user.id, assignment_id, chunk_number,
-        {
-            "summary": questions.summary_question.dict(),
-            "comprehension": questions.comprehension_question.dict()
-        }
-    )
+    # Redis caching removed
     
     # Return the comprehension question (since this is only for comprehension questions)
     return {
