@@ -54,3 +54,6 @@ coverage/
 
 # Uploads
 backend/uploads/
+
+# MCP Configuration
+.mcp.json
