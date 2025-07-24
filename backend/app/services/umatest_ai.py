@@ -9,13 +9,14 @@ import hashlib
 import json
 from datetime import datetime
 import asyncio
-from pydantic import BaseModel, Field
-from pydantic_ai import Agent, RunContext
+import google.generativeai as genai
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
 import logging
+import os
 
 from app.config.ai_models import QUESTION_GENERATION_MODEL
+from app.config.ai_config import get_gemini_config
 from app.models.umatest import TestAssignment, TestQuestionCache, TestGenerationLog
 from app.models.reading import ReadingAssignment, AssignmentImage
 
@@ -27,32 +28,27 @@ BASIC_INTERMEDIATE_QUESTIONS = 7  # 70%
 ADVANCED_QUESTIONS = 2  # 20%
 EXPERT_QUESTIONS = 1  # 10%
 
-class QuestionWithAnswer(BaseModel):
-    """Model for a generated question with answer key"""
-    question_text: str = Field(description="The question text")
-    correct_answer: str = Field(description="The correct answer to the question")
-    explanation: str = Field(description="Explanation of why this is the correct answer")
-    evaluation_rubric: str = Field(description="Rubric for evaluating student answers")
-    source_excerpt: str = Field(description="Relevant excerpt from source content")
-
-class QuestionSet(BaseModel):
-    """Model for a set of questions for a topic/difficulty level"""
-    questions: List[QuestionWithAnswer] = Field(
-        description="List of questions for this difficulty level"
-    )
+# Pydantic models removed - using direct JSON parsing with Gemini instead
 
 class UMATestAIService:
     """Service for generating test questions from UMALecture content"""
     
     def __init__(self):
-        self.question_agent = Agent(
-            QUESTION_GENERATION_MODEL,
-            result_type=QuestionSet,
-            system_prompt="""You are an expert educational assessment creator. 
-            Generate thoughtful, comprehension-based questions that test understanding 
-            of the provided content. Questions should be clear, unambiguous, and 
-            appropriate for the specified grade level and difficulty."""
-        )
+        # Get configuration
+        config = get_gemini_config()
+        
+        # Configure Gemini API
+        genai.configure(api_key=config.api_key)
+        
+        # Use configured model
+        self.model = genai.GenerativeModel(QUESTION_GENERATION_MODEL)
+        
+        self.system_prompt = """You are an expert educational assessment creator. 
+        Generate thoughtful, comprehension-based questions that test understanding 
+        of the provided content. Questions should be clear, unambiguous, and 
+        appropriate for the specified grade level and difficulty."""
+        
+        logger.info(f"UMATestAIService initialized with model: {QUESTION_GENERATION_MODEL}")
     
     async def generate_test_questions(
         self,
@@ -373,7 +369,9 @@ class UMATestAIService:
         num_questions: int
     ) -> List[Dict[str, Any]]:
         """Call AI to generate questions"""
-        prompt = f"""Generate {num_questions} short-answer questions for the following content.
+        prompt = f"""{self.system_prompt}
+
+Generate {num_questions} short-answer questions for the following content.
 
 Topic: {topic_title}
 Grade Level: {grade_level}
@@ -394,23 +392,48 @@ For {difficulty_level} level:
 - Basic/Intermediate: Focus on fundamental concepts and direct comprehension
 - Advanced: Include analysis, synthesis, and application questions
 - Expert: Include evaluation, critical thinking, and extension questions
+
+Return the response as a JSON object with the following structure:
+{{
+  "questions": [
+    {{
+      "question_text": "The question text",
+      "correct_answer": "The correct answer",
+      "explanation": "Explanation of why this is correct",
+      "evaluation_rubric": "How to evaluate student answers",
+      "source_excerpt": "Relevant excerpt from the content"
+    }}
+  ]
+}}
 """
         
         try:
-            result = await self.question_agent.run(prompt)
+            # Generate content using Gemini
+            response = await asyncio.to_thread(
+                self.model.generate_content,
+                prompt,
+                generation_config=genai.types.GenerationConfig(
+                    temperature=0.7,
+                    max_output_tokens=2048,
+                    response_mime_type="application/json"
+                )
+            )
+            
+            # Parse the JSON response
+            result_data = json.loads(response.text)
             
             # Convert to our format
             questions = []
-            for q in result.data.questions[:num_questions]:
+            for q in result_data.get('questions', [])[:num_questions]:
                 questions.append({
                     'id': str(uuid4()),
-                    'question_text': q.question_text,
+                    'question_text': q['question_text'],
                     'difficulty_level': difficulty_level,
-                    'source_content': q.source_excerpt,
+                    'source_content': q['source_excerpt'],
                     'answer_key': {
-                        'correct_answer': q.correct_answer,
-                        'explanation': q.explanation,
-                        'evaluation_rubric': q.evaluation_rubric
+                        'correct_answer': q['correct_answer'],
+                        'explanation': q['explanation'],
+                        'evaluation_rubric': q['evaluation_rubric']
                     }
                 })
             
