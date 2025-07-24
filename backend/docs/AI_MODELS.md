@@ -74,11 +74,17 @@ Environment variables for model names and API keys.
 - **Purpose**: Provides writing feedback and suggestions
 - **Module**: UMAWrite
 
-### Lecture Generation (GPT-4)
-- **Planned Model**: `gpt-4-turbo`
+### Lecture Generation (Gemini)
+- **Current Model**: `gemini-2.0-flash`
 - **Environment Variable**: `LECTURE_GENERATION_MODEL`
 - **Purpose**: Creates interactive lecture content
 - **Module**: UMALecture
+- **Used By**: `services/umalecture_ai.py`
+- **Features**:
+  - Generates multi-level difficulty content for each topic
+  - Creates comprehension questions for each difficulty level
+  - Evaluates student answers with educational feedback
+  - Processes educational images for enhanced learning
 
 ## Switching Models
 

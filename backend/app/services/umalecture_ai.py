@@ -16,15 +16,20 @@ from concurrent.futures import ThreadPoolExecutor
 from app.core.database import get_db
 from app.services.image_processing import ImageProcessor
 from app.services.umalecture_prompts import UMALecturePromptManager
+from app.config.ai_config import get_gemini_config
+from app.config.ai_models import LECTURE_GENERATION_MODEL
 
 
 class UMALectureAIService:
     """AI service for UMALecture content generation and processing"""
     
     def __init__(self):
-        # Configure Google Generative AI
-        genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-        self.model = genai.GenerativeModel('gemini-1.5-flash')
+        # Configure Google Generative AI using centralized config
+        self.config = get_gemini_config()
+        genai.configure(api_key=self.config.api_key)
+        # Use the centralized model configuration
+        model_name = LECTURE_GENERATION_MODEL or 'gemini-2.0-flash'
+        self.model = genai.GenerativeModel(model_name)
         self.prompt_manager = UMALecturePromptManager()
         self.executor = ThreadPoolExecutor(max_workers=3)
     

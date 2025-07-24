@@ -45,7 +45,7 @@ WRITING_ASSISTANCE_MODEL = os.getenv("WRITING_ASSISTANCE_MODEL", "claude-3-5-son
 # Lecture Generation AI
 # Used in: UMALecture module - creates interactive lecture content
 # from source materials
-LECTURE_GENERATION_MODEL = os.getenv("LECTURE_GENERATION_MODEL", "gpt-4-turbo")  # placeholder for future
+LECTURE_GENERATION_MODEL = os.getenv("LECTURE_GENERATION_MODEL", "gemini-2.0-flash")
 
 
 def get_model_config(model_type: str) -> Optional[str]:
