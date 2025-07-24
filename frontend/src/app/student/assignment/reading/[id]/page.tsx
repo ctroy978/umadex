@@ -31,6 +31,42 @@ export default function UMAReadAssignmentPage({ params }: { params: { id: string
   const [retryCount, setRetryCount] = useState(0);
   const [hasTest, setHasTest] = useState(false);
 
+  // Disable copy/paste for assignment section
+  useEffect(() => {
+    const handleCopy = (e: ClipboardEvent) => {
+      e.preventDefault();
+      return false;
+    };
+
+    const handlePaste = (e: ClipboardEvent) => {
+      e.preventDefault();
+      return false;
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Prevent Ctrl+C, Ctrl+V
+      if (e.ctrlKey && ['c', 'v'].includes(e.key.toLowerCase())) {
+        e.preventDefault();
+        return false;
+      }
+      // Prevent Cmd+C, Cmd+V on Mac
+      if (e.metaKey && ['c', 'v'].includes(e.key.toLowerCase())) {
+        e.preventDefault();
+        return false;
+      }
+    };
+
+    document.addEventListener('copy', handleCopy);
+    document.addEventListener('paste', handlePaste);
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.removeEventListener('copy', handleCopy);
+      document.removeEventListener('paste', handlePaste);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
+
   // Initialize assignment
   useEffect(() => {
     loadAssignment();
@@ -320,7 +356,11 @@ export default function UMAReadAssignmentPage({ params }: { params: { id: string
   }
 
   return (
-      <div className="min-h-screen bg-gray-50">
+      <div 
+        className="min-h-screen bg-gray-50"
+        onCopy={(e) => e.preventDefault()}
+        onPaste={(e) => e.preventDefault()}
+      >
         {/* Header */}
         <div className="bg-white shadow-sm">
           <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
