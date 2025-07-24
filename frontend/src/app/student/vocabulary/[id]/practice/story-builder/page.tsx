@@ -94,6 +94,57 @@ export default function StoryBuilderPage() {
   const startTimeRef = useRef<number>(Date.now())
   const [wordCount, setWordCount] = useState(0)
 
+  // Disable copy/paste for story builder challenge
+  useEffect(() => {
+    const handleCopy = (e: ClipboardEvent) => {
+      e.preventDefault();
+      return false;
+    };
+
+    const handlePaste = (e: ClipboardEvent) => {
+      e.preventDefault();
+      return false;
+    };
+
+    const handleCut = (e: ClipboardEvent) => {
+      e.preventDefault();
+      return false;
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Prevent Ctrl+C, Ctrl+V, Ctrl+X
+      if (e.ctrlKey && ['c', 'v', 'x'].includes(e.key.toLowerCase())) {
+        e.preventDefault();
+        return false;
+      }
+      // Prevent Cmd+C, Cmd+V, Cmd+X on Mac
+      if (e.metaKey && ['c', 'v', 'x'].includes(e.key.toLowerCase())) {
+        e.preventDefault();
+        return false;
+      }
+    };
+
+    const handleContextMenu = (e: MouseEvent) => {
+      // Prevent right-click context menu
+      e.preventDefault();
+      return false;
+    };
+
+    document.addEventListener('copy', handleCopy);
+    document.addEventListener('paste', handlePaste);
+    document.addEventListener('cut', handleCut);
+    document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('contextmenu', handleContextMenu);
+
+    return () => {
+      document.removeEventListener('copy', handleCopy);
+      document.removeEventListener('paste', handlePaste);
+      document.removeEventListener('cut', handleCut);
+      document.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('contextmenu', handleContextMenu);
+    };
+  }, []);
+
   useEffect(() => {
     startNewChallenge()
   }, [vocabularyId])
@@ -410,6 +461,12 @@ export default function StoryBuilderPage() {
               <textarea
                 value={currentStory}
                 onChange={(e) => setCurrentStory(e.target.value)}
+                onCopy={(e) => e.preventDefault()}
+                onPaste={(e) => e.preventDefault()}
+                onCut={(e) => e.preventDefault()}
+                onDrop={(e) => e.preventDefault()}
+                onDragStart={(e) => e.preventDefault()}
+                onContextMenu={(e) => e.preventDefault()}
                 placeholder="Write your creative story here using all the required words..."
                 className="w-full h-40 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 resize-none"
                 autoFocus
