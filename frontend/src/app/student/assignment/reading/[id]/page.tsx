@@ -102,14 +102,13 @@ export default function UMAReadAssignmentPage({ params }: { params: { id: string
           const testStatus = await studentApi.getAssignmentTestStatus(id);
           setHasTest(testStatus.has_test);
         } catch (err) {
-          console.error('Failed to check test status:', err);
+          // Silently ignore test status check errors
         }
         // Show completion screen instead of trying to load chunks
         setLoading(false);
         return;
       }
     } catch (err: any) {
-      console.error('Failed to load assignment:', err);
       const errorMessage = err.response?.data?.detail || 'Failed to load assignment';
       setError(errorMessage);
       
@@ -155,7 +154,6 @@ export default function UMAReadAssignmentPage({ params }: { params: { id: string
       const data = await umareadApi.getCurrentQuestion(id, chunk.chunk_number);
       setQuestion(data);
     } catch (err: any) {
-      console.error('Error loading question:', err.response?.data);
       if (err.response?.status === 400 && err.response?.data?.detail?.includes('already been completed')) {
         // Both questions in chunk are complete
         if (chunk && chunk.has_next) {
@@ -263,7 +261,6 @@ export default function UMAReadAssignmentPage({ params }: { params: { id: string
       const simplerQuestion = await umareadApi.requestSimplerQuestion(id, chunk.chunk_number);
       setQuestion(simplerQuestion);
     } catch (err: any) {
-      console.error('Failed to get simpler question:', err);
       // Don't set global error - just retry the current question
       // This prevents showing the error page
       loadQuestion();
