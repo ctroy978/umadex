@@ -102,7 +102,7 @@ export default function TestDetailPage() {
   }, [testId])
 
   useEffect(() => {
-    if (test && !test.test_structure) {
+    if (test && (!test.test_structure || Object.keys(test.test_structure?.topics || {}).length === 0)) {
       // Check generation status if no questions yet
       checkGenerationStatus()
       const interval = setInterval(checkGenerationStatus, 3000)
@@ -160,15 +160,27 @@ export default function TestDetailPage() {
       
       // Start checking generation status immediately and set up polling
       checkGenerationStatus()
-      const interval = setInterval(checkGenerationStatus, 3000)
-      
-      // Store interval ID to clear it when generation completes
-      const checkInterval = setInterval(() => {
-        if (generationStatus?.status === 'completed' || generationStatus?.status === 'failed') {
-          clearInterval(interval)
-          clearInterval(checkInterval)
+      const pollInterval = setInterval(async () => {
+        try {
+          const response = await api.get<GenerationStatus>(`/v1/teacher/umatest/tests/${testId}/generation-status`)
+          setGenerationStatus(response.data)
+          
+          if (response.data.status === 'completed') {
+            clearInterval(pollInterval)
+            setRegenerating(false)
+            fetchTestDetail()
+            toast.success('Questions generated successfully!')
+          } else if (response.data.status === 'failed') {
+            clearInterval(pollInterval)
+            setRegenerating(false)
+            toast.error('Question generation failed. Please try again.')
+          }
+        } catch (error) {
+          if ((error as any)?.response?.status !== 404) {
+            console.error('Error checking generation status:', error)
+          }
         }
-      }, 1000)
+      }, 3000)
     } catch (error) {
       console.error('Error regenerating questions:', error)
       toast.error('Failed to regenerate questions')
