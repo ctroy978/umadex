@@ -1633,7 +1633,7 @@ class UMALectureService:
         """
         # Get student progress
         progress_query = sql_text("""
-            SELECT sa.progress_metadata, la.lecture_structure
+            SELECT sa.progress_metadata, la.raw_content
             FROM student_assignments sa
             JOIN classroom_assignments ca ON ca.id = sa.classroom_assignment_id
             JOIN reading_assignments la ON la.id = ca.assignment_id
@@ -1652,7 +1652,9 @@ class UMALectureService:
             return None
         
         progress_metadata = data["progress_metadata"]
-        lecture_structure = json.loads(data["lecture_structure"]) if isinstance(data["lecture_structure"], str) else data["lecture_structure"]
+        # Parse lecture structure from raw_content
+        raw_content = json.loads(data["raw_content"]) if isinstance(data["raw_content"], str) else data["raw_content"]
+        lecture_structure = raw_content.get("lecture_structure", {}) if raw_content else {}
         
         # Get topic completion data
         topic_completion = progress_metadata.get("topic_completion", {})
