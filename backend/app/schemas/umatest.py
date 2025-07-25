@@ -114,6 +114,7 @@ class TestAssignmentResponse(TestAssignmentBase):
     """Test assignment response with structure"""
     test_structure: Optional[Dict[str, Any]] = None
     total_questions: Optional[int] = None
+    is_archived: Optional[bool] = False
     
     @validator('total_questions', always=True)
     def calculate_total_questions(cls, v, values):

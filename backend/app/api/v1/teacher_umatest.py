@@ -122,14 +122,16 @@ async def list_tests(
     
     # Build query
     query = select(TestAssignment).where(
-        and_(
-            TestAssignment.teacher_id == current_user.id,
-            TestAssignment.deleted_at.is_(None)
-        )
+        TestAssignment.teacher_id == current_user.id
     )
     
-    if status:
-        query = query.where(TestAssignment.status == status)
+    # Handle archived status (soft-deleted tests)
+    if status == 'archived':
+        query = query.where(TestAssignment.deleted_at.is_not(None))
+    else:
+        query = query.where(TestAssignment.deleted_at.is_(None))
+        if status:
+            query = query.where(TestAssignment.status == status)
     
     if search:
         query = query.where(
@@ -151,8 +153,15 @@ async def list_tests(
     result = await db.execute(query)
     tests = result.scalars().all()
     
+    # Build response with is_archived flag
+    test_responses = []
+    for test in tests:
+        response = TestAssignmentResponse.from_orm(test)
+        response.is_archived = test.deleted_at is not None
+        test_responses.append(response)
+    
     return TestListResponse(
-        tests=[TestAssignmentResponse.from_orm(test) for test in tests],
+        tests=test_responses,
         total_count=total_count,
         page=page,
         page_size=page_size
@@ -321,6 +330,25 @@ async def soft_delete_test(
     test = await db.get(TestAssignment, test_id)
     if not test or test.teacher_id != current_user.id or test.deleted_at:
         raise HTTPException(status_code=404, detail="Test not found")
+    
+    # Check if test is attached to any classrooms
+    from app.models.classroom import ClassroomAssignment
+    count_result = await db.execute(
+        select(func.count(ClassroomAssignment.id))
+        .where(
+            and_(
+                ClassroomAssignment.assignment_id == test.id,
+                ClassroomAssignment.assignment_type == "test"
+            )
+        )
+    )
+    classroom_count = count_result.scalar() or 0
+    
+    if classroom_count > 0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot archive test attached to {classroom_count} classroom(s). Remove from classrooms first."
+        )
     
     # Soft delete
     test.deleted_at = func.now()

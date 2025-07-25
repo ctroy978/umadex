@@ -203,9 +203,9 @@ export default function TestDetailPage() {
     if (!confirm('Archive this test? It will no longer be available to students.')) return
 
     try {
-      await api.put(`/v1/teacher/umatest/tests/${testId}`, { status: 'archived' })
+      await api.delete(`/v1/teacher/umatest/tests/${testId}`)
       toast.success('Test archived successfully!')
-      fetchTestDetail()
+      router.push('/teacher/uma-test')
     } catch (error) {
       console.error('Error archiving test:', error)
       toast.error('Failed to archive test')

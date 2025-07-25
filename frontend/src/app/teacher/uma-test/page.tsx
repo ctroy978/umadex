@@ -30,6 +30,7 @@ interface TestAssignment {
   total_questions: number
   created_at: string
   updated_at: string
+  is_archived?: boolean
 }
 
 interface TestListResponse {
@@ -87,15 +88,35 @@ export default function UMATestPage() {
   }
 
   const handleDelete = async (testId: string) => {
-    if (!confirm('Are you sure you want to delete this test?')) return
+    if (!confirm('Are you sure you want to archive this test?')) return
 
     try {
       await api.delete(`/v1/teacher/umatest/tests/${testId}`)
-      toast.success('Test deleted successfully')
+      toast.success('Test archived successfully')
       fetchTests()
-    } catch (error) {
-      console.error('Error deleting test:', error)
-      toast.error('Failed to delete test')
+    } catch (error: any) {
+      console.error('Error archiving test:', error)
+      console.log('Full error response data:', JSON.stringify(error.response?.data))
+      
+      // Handle different error response structures
+      let errorMessage = 'Failed to archive test'
+      
+      if (error.response?.data) {
+        // FastAPI typically returns errors in {detail: "message"} format
+        if (error.response.data.detail) {
+          errorMessage = error.response.data.detail
+        } else if (error.response.data.message) {
+          errorMessage = error.response.data.message
+        } else if (typeof error.response.data === 'string') {
+          errorMessage = error.response.data
+        }
+      } else if (error.message) {
+        errorMessage = error.message
+      }
+      
+      // Log what we're about to show
+      console.log('Showing error message:', errorMessage)
+      toast.error(errorMessage)
     }
   }
 
@@ -103,23 +124,30 @@ export default function UMATestPage() {
     try {
       await api.post(`/v1/teacher/umatest/tests/${testId}/restore`)
       toast.success('Test restored successfully')
-      fetchTests()
+      // If we're viewing archived tests, switch to all tests after restore
+      if (statusFilter === 'archived') {
+        setStatusFilter('all')
+      } else {
+        fetchTests()
+      }
     } catch (error) {
       console.error('Error restoring test:', error)
       toast.error('Failed to restore test')
     }
   }
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (test: TestAssignment) => {
     const statusStyles = {
       draft: 'bg-gray-100 text-gray-800',
       published: 'bg-green-100 text-green-800',
       archived: 'bg-yellow-100 text-yellow-800'
     }
 
+    const displayStatus = test.is_archived ? 'archived' : (test.status || 'draft')
+    
     return (
-      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusStyles[status as keyof typeof statusStyles]}`}>
-        {status.charAt(0).toUpperCase() + status.slice(1)}
+      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusStyles[displayStatus as keyof typeof statusStyles] || statusStyles.draft}`}>
+        {displayStatus.charAt(0).toUpperCase() + displayStatus.slice(1)}
       </span>
     )
   }
@@ -251,7 +279,7 @@ export default function UMATestPage() {
                           {test.time_limit_minutes ? `${test.time_limit_minutes} min` : 'No limit'}
                         </td>
                         <td className="whitespace-nowrap px-3 py-4 text-sm">
-                          {getStatusBadge(test.status)}
+                          {getStatusBadge(test)}
                         </td>
                         <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                           {format(new Date(test.created_at), 'MMM d, yyyy')}
@@ -272,7 +300,7 @@ export default function UMATestPage() {
                             >
                               <PencilIcon className="h-5 w-5" />
                             </Link>
-                            {test.status === 'archived' ? (
+                            {test.is_archived || statusFilter === 'archived' ? (
                               <button
                                 onClick={() => handleRestore(test.id)}
                                 className="text-yellow-600 hover:text-yellow-900"
@@ -284,9 +312,9 @@ export default function UMATestPage() {
                               <button
                                 onClick={() => handleDelete(test.id)}
                                 className="text-red-600 hover:text-red-900"
-                                title="Delete"
+                                title="Archive"
                               >
-                                <TrashIcon className="h-5 w-5" />
+                                <ArchiveBoxIcon className="h-5 w-5" />
                               </button>
                             )}
                           </div>
