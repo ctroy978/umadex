@@ -5,7 +5,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { studentClassroomApi } from '@/lib/classroomApi'
-import { AcademicCapIcon, PlusIcon, ClipboardDocumentListIcon } from '@heroicons/react/24/outline'
+import { AcademicCapIcon, PlusIcon, ClipboardDocumentListIcon, ArrowRightOnRectangleIcon } from '@heroicons/react/24/outline'
 import type { Classroom } from '@/types/classroom'
 
 export default function DashboardPage() {
@@ -58,7 +58,7 @@ export default function DashboardPage() {
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex justify-between h-16">
               <div className="flex items-center">
-                <h1 className="text-xl font-semibold text-gray-900">UmaDex</h1>
+                <h1 className="text-xl font-semibold text-gray-900">uMaDex</h1>
               </div>
               <div className="flex items-center space-x-4">
                 <span className="text-sm text-gray-500">
@@ -66,8 +66,9 @@ export default function DashboardPage() {
                 </span>
                 <button
                   onClick={handleLogout}
-                  className="text-sm text-gray-700 hover:text-gray-900"
+                  className="flex items-center px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
                 >
+                  <ArrowRightOnRectangleIcon className="h-5 w-5 mr-2" />
                   Logout
                 </button>
               </div>
