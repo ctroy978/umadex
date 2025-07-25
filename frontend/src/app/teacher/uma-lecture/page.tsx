@@ -73,8 +73,42 @@ export default function UMALecturePage() {
     
     // Client-side validation like writing module
     if (lecture && lecture.classroom_count > 0) {
-      alert(`Cannot archive lecture attached to ${lecture.classroom_count} classroom(s). Remove from classrooms first.`)
-      return
+      const forceUnlink = confirm(
+        `This lecture appears to be attached to ${lecture.classroom_count} classroom(s).\n\n` +
+        'Would you like to force unlink this lecture from all classrooms and archive it?'
+      )
+      
+      if (!forceUnlink) {
+        return
+      }
+      
+      // Force unlink flow
+      try {
+        const assignments = await umalectureApi.getClassroomAssignments(lectureId)
+        console.log('Current classroom assignments:', assignments)
+        
+        if (assignments.total_assignments > 0) {
+          const confirmUnlink = confirm(
+            `This lecture is actually attached to ${assignments.total_assignments} classroom(s):\n` +
+            assignments.classrooms.map((c: any) => `- ${c.classroom_name}`).join('\n') +
+            '\n\nAre you sure you want to unlink from all classrooms and archive?'
+          )
+          
+          if (confirmUnlink) {
+            await umalectureApi.unlinkAllClassrooms(lectureId)
+            await umalectureApi.deleteLecture(lectureId)
+            await loadLectures()
+            alert('Lecture unlinked from all classrooms and archived successfully')
+            return
+          } else {
+            return
+          }
+        }
+      } catch (unlinkErr) {
+        console.error('Error checking/unlinking lecture:', unlinkErr)
+        alert('Failed to check classroom assignments')
+        return
+      }
     }
     
     if (!confirm('Are you sure you want to archive this lecture?')) return
@@ -84,12 +118,40 @@ export default function UMALecturePage() {
       await loadLectures()
     } catch (err: any) {
       console.error('Error deleting lecture:', err)
+      console.error('Error response data:', err.response?.data)
       
       // Check for 400 error with specific message about classrooms
-      if (err.response?.status === 400 && err.response?.data?.detail) {
-        alert(err.response.data.detail)
+      if (err.response?.status === 400 && err.response?.data?.detail?.includes('classroom')) {
+        const checkAssignments = confirm(
+          err.response.data.detail + '\n\n' +
+          'The server detected classroom assignments. Would you like to force unlink this lecture from all classrooms?'
+        )
+        
+        if (checkAssignments) {
+          try {
+            const assignments = await umalectureApi.getClassroomAssignments(lectureId)
+            console.log('Server-side classroom assignments:', assignments)
+            
+            if (assignments.total_assignments > 0) {
+              const confirmUnlink = confirm(
+                `Server found ${assignments.total_assignments} classroom assignment(s):\n` +
+                assignments.classrooms.map((c: any) => `- ${c.classroom_name}`).join('\n') +
+                '\n\nForce unlink and archive?'
+              )
+              
+              if (confirmUnlink) {
+                await umalectureApi.unlinkAllClassrooms(lectureId)
+                await umalectureApi.deleteLecture(lectureId)
+                await loadLectures()
+                alert('Lecture unlinked from all classrooms and archived successfully')
+              }
+            }
+          } catch (unlinkErr) {
+            console.error('Error unlinking lecture:', unlinkErr)
+            alert('Failed to unlink lecture from classrooms')
+          }
+        }
       } else if (err.response?.data?.message) {
-        // Some error responses might use 'message' instead of 'detail'
         alert(err.response.data.message)
       } else {
         alert('Failed to archive lecture')

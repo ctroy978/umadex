@@ -190,6 +190,14 @@ export const umalectureApi = {
       method: 'DELETE',
     }),
 
+  getClassroomAssignments: (lectureId: string) =>
+    apiRequest(`/v1/umalecture/lectures/${lectureId}/classroom-assignments`),
+
+  unlinkAllClassrooms: (lectureId: string) =>
+    apiRequest(`/v1/umalecture/lectures/${lectureId}/unlink-all-classrooms`, {
+      method: 'DELETE',
+    }),
+
   restoreLecture: (lectureId: string) =>
     apiRequest(`/v1/umalecture/lectures/${lectureId}/restore`, {
       method: 'POST',
