@@ -859,6 +859,17 @@ async def get_gradebook(
         lecture_filters = [f"ge.classroom_id IN ({quoted_classroom_ids})"]
         lecture_filters.append("ge.assignment_type = 'umalecture'")
         
+        if assignment_ids:
+            quoted_assignment_ids = ','.join([f"'{str(aid)}'" for aid in assignment_ids])
+            lecture_filters.append(f"ge.assignment_id IN ({quoted_assignment_ids})")
+        if assigned_after:
+            lecture_filters.append(f"ca.assigned_at >= '{assigned_after.isoformat()}'")
+        if assigned_before:
+            lecture_filters.append(f"ca.assigned_at <= '{assigned_before.isoformat()}'")
+        if completed_after:
+            lecture_filters.append(f"ge.completed_at >= '{completed_after.isoformat()}'")
+        if completed_before:
+            lecture_filters.append(f"ge.completed_at <= '{completed_before.isoformat()}'")
         if student_search:
             lecture_filters.append(f"(LOWER(u.first_name) LIKE LOWER('%{student_search}%') OR LOWER(u.last_name) LIKE LOWER('%{student_search}%'))")
         if completion_status == 'completed':
