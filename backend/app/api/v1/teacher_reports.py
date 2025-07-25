@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query, Response
 from pydantic import BaseModel
 import csv
 import io
+import json
 
 from app.core.database import get_db
 from app.utils.deps import get_current_user
@@ -23,6 +24,11 @@ from app.models.vocabulary import VocabularyList
 from app.models.debate import DebateAssignment, StudentDebate
 from app.models.writing import WritingAssignment, StudentWritingSubmission
 from app.models.umatest import TestAssignment
+from app.models.vocabulary_test import VocabularyTestAttempt
+from app.models.vocabulary_practice import VocabularyPracticeProgress, VocabularyStoryResponse, VocabularyConceptMap
+from app.models.umaread import UmareadStudentResponse
+from app.models.debate import DebatePost, DebateChallenge
+from app.models.tests import TestQuestionEvaluation
 
 router = APIRouter()
 
@@ -1160,3 +1166,667 @@ async def get_student_gradebook_details(
         })
     
     return {"student_id": student_id, "details": details}
+
+
+@router.get("/students")
+async def get_teacher_students(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get all students in teacher's classrooms"""
+    if current_user.role != UserRole.TEACHER:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only teachers can access this endpoint"
+        )
+    
+    # Get all students in teacher's classrooms
+    query = select(
+        User.id,
+        User.first_name,
+        User.last_name,
+        User.email
+    ).distinct().join(
+        ClassroomStudent, User.id == ClassroomStudent.student_id
+    ).join(
+        Classroom, ClassroomStudent.classroom_id == Classroom.id
+    ).where(
+        and_(
+            Classroom.teacher_id == current_user.id,
+            ClassroomStudent.removed_at.is_(None),
+            User.deleted_at.is_(None)
+        )
+    ).order_by(User.last_name, User.first_name)
+    
+    result = await db.execute(query)
+    students = result.all()
+    
+    return [
+        {
+            "id": student.id,
+            "first_name": student.first_name,
+            "last_name": student.last_name,
+            "email": student.email
+        }
+        for student in students
+    ]
+
+
+@router.get("/student-analytics/{student_id}")
+async def get_student_analytics(
+    student_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get comprehensive analytics data for a specific student"""
+    if current_user.role != UserRole.TEACHER:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only teachers can access this endpoint"
+        )
+    
+    # Verify teacher has access to this student
+    student_access = await db.execute(
+        select(ClassroomStudent).join(
+            Classroom, ClassroomStudent.classroom_id == Classroom.id
+        ).where(
+            and_(
+                Classroom.teacher_id == current_user.id,
+                ClassroomStudent.student_id == student_id,
+                ClassroomStudent.removed_at.is_(None)
+            )
+        )
+    )
+    
+    if not student_access.scalar():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied to this student's data"
+        )
+    
+    # Get student info
+    student = await db.get(User, student_id)
+    if not student:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Student not found"
+        )
+    
+    try:
+        # Fetch UMARead analytics
+        umaread_data = await get_umaread_analytics(db, student_id)
+        
+        # Fetch UMAVocab analytics
+        umavocab_data = await get_umavocab_analytics(db, student_id)
+        
+        # Fetch UMADebate analytics
+        umadebate_data = await get_umadebate_analytics(db, student_id)
+        
+        # Fetch UMAWrite analytics
+        umawrite_data = await get_umawrite_analytics(db, student_id)
+        
+        # Fetch UMATest analytics
+        umatest_data = await get_umatest_analytics(db, student_id)
+        
+        # Check if student has any meaningful data
+        has_data = (
+            (umaread_data.get("assignmentsCompleted", 0) > 0) or
+            (umavocab_data.get("listsCompleted", 0) > 0) or
+            (umadebate_data.get("debatesCompleted", 0) > 0) or
+            (umawrite_data.get("assignmentsCompleted", 0) > 0) or
+            (umatest_data.get("testsCompleted", 0) > 0)
+        )
+        
+        if not has_data:
+            return {
+                "student": {
+                    "id": student.id,
+                    "first_name": student.first_name,
+                    "last_name": student.last_name,
+                    "email": student.email
+                },
+                "insufficient_data": True,
+                "message": "This student does not have enough activity data to generate a meaningful analysis report. The student needs to complete at least one assignment or assessment."
+            }
+        
+        return {
+            "student": {
+                "id": student.id,
+                "first_name": student.first_name,
+                "last_name": student.last_name,
+                "email": student.email
+            },
+            "umaread": umaread_data,
+            "umavocab": umavocab_data,
+            "umadebate": umadebate_data,
+            "umawrite": umawrite_data,
+            "umatest": umatest_data
+        }
+    except (ZeroDivisionError, ValueError, AttributeError) as e:
+        # Handle cases where calculations fail due to insufficient data
+        return {
+            "student": {
+                "id": student.id,
+                "first_name": student.first_name,
+                "last_name": student.last_name,
+                "email": student.email
+            },
+            "insufficient_data": True,
+            "message": "Unable to generate analytics due to insufficient or incomplete data for this student."
+        }
+
+
+async def get_umaread_analytics(db: AsyncSession, student_id: UUID) -> Dict[Any, Any]:
+    """Get UMARead analytics for a student"""
+    # Get assignments completed
+    assignments_result = await db.execute(
+        select(StudentAssignment).where(
+            and_(
+                StudentAssignment.student_id == student_id,
+                StudentAssignment.assignment_type == 'reading',
+                StudentAssignment.status.in_(['completed', 'test_completed'])
+            )
+        )
+    )
+    assignments = assignments_result.scalars().all()
+    
+    # Get detailed responses
+    responses_result = await db.execute(
+        select(UmareadStudentResponse).where(
+            UmareadStudentResponse.student_id == student_id
+        ).order_by(UmareadStudentResponse.created_at.desc())
+    )
+    responses = responses_result.scalars().all()
+    
+    # Get test attempts
+    test_attempts_result = await db.execute(
+        select(
+            StudentTestAttempt,
+            TestQuestionEvaluation
+        ).outerjoin(
+            TestQuestionEvaluation,
+            TestQuestionEvaluation.test_attempt_id == StudentTestAttempt.id
+        ).where(
+            and_(
+                StudentTestAttempt.student_id == student_id,
+                StudentTestAttempt.assignment_id.is_not(None)
+            )
+        )
+    )
+    test_data = test_attempts_result.all()
+    
+    # Calculate aggregated metrics
+    total_responses = len(responses)
+    correct_responses = sum(1 for r in responses if r.is_correct)
+    average_comprehension = round((correct_responses / total_responses * 100) if total_responses > 0 else 0)
+    total_time_spent = round(sum(r.time_spent_seconds or 0 for r in responses) / 60)
+    current_difficulty = max((r.difficulty_level or 3 for r in responses), default=3)
+    
+    # Analyze error patterns
+    error_patterns = {}
+    for response in responses:
+        if not response.is_correct:
+            key = f"{response.question_type}_level_{response.difficulty_level}"
+            error_patterns[key] = error_patterns.get(key, 0) + 1
+    
+    # Analyze progression
+    progression_data = []
+    date_stats = {}
+    for response in responses:
+        date = response.created_at.date().isoformat()
+        if date not in date_stats:
+            date_stats[date] = {'total': 0, 'correct': 0}
+        date_stats[date]['total'] += 1
+        if response.is_correct:
+            date_stats[date]['correct'] += 1
+    
+    for date, stats in date_stats.items():
+        progression_data.append({
+            'date': date,
+            'accuracy': round((stats['correct'] / stats['total']) * 100)
+        })
+    
+    return {
+        "assignmentsCompleted": len(assignments),
+        "averageComprehension": average_comprehension,
+        "totalTimeSpent": total_time_spent,
+        "currentDifficulty": current_difficulty,
+        "responses": [
+            {
+                "assignment_id": r.assignment_id,
+                "chunk_number": r.chunk_number,
+                "question_type": r.question_type,
+                "difficulty_level": r.difficulty_level,
+                "is_correct": r.is_correct,
+                "attempt_number": r.attempt_number,
+                "time_spent_seconds": r.time_spent_seconds,
+                "ai_feedback": r.ai_feedback,
+                "occurred_at": r.created_at.isoformat()
+            }
+            for r in responses[:100]  # Limit to most recent 100
+        ],
+        "testAttempts": [
+            {
+                "assignment_id": ta.StudentTestAttempt.assignment_id,
+                "score": float(ta.StudentTestAttempt.score) if ta.StudentTestAttempt.score else None,
+                "time_spent_seconds": ta.StudentTestAttempt.time_spent_seconds,
+                "completed_at": ta.StudentTestAttempt.submitted_at.isoformat() if ta.StudentTestAttempt.submitted_at else None,
+                "question_number": ta.TestQuestionEvaluation.question_number if ta.TestQuestionEvaluation else None,
+                "rubric_score": ta.TestQuestionEvaluation.rubric_score if ta.TestQuestionEvaluation else None,
+                "scoring_rationale": ta.TestQuestionEvaluation.scoring_rationale if ta.TestQuestionEvaluation else None,
+                "key_concepts_identified": ta.TestQuestionEvaluation.key_concepts_identified if ta.TestQuestionEvaluation else None,
+                "misconceptions_detected": ta.TestQuestionEvaluation.misconceptions_detected if ta.TestQuestionEvaluation else None
+            }
+            for ta in test_data
+        ],
+        "errorPatterns": error_patterns,
+        "progressionData": progression_data
+    }
+
+
+async def get_umavocab_analytics(db: AsyncSession, student_id: UUID) -> Dict[Any, Any]:
+    """Get UMAVocab analytics for a student"""
+    # Get vocabulary test attempts
+    test_attempts_result = await db.execute(
+        select(VocabularyTestAttempt).where(
+            VocabularyTestAttempt.student_id == student_id
+        )
+    )
+    test_attempts = test_attempts_result.scalars().all()
+    
+    # Get practice progress
+    practice_result = await db.execute(
+        select(VocabularyPracticeProgress).where(
+            VocabularyPracticeProgress.student_id == student_id
+        )
+    )
+    practice_progress = practice_result.scalars().all()
+    
+    # Get story responses
+    story_result = await db.execute(
+        select(VocabularyStoryResponse).where(
+            VocabularyStoryResponse.student_id == student_id
+        )
+    )
+    story_responses = story_result.scalars().all()
+    
+    # Get concept maps
+    concept_result = await db.execute(
+        select(VocabularyConceptMap).where(
+            VocabularyConceptMap.student_id == student_id
+        )
+    )
+    concept_maps = concept_result.scalars().all()
+    
+    # Calculate metrics
+    lists_completed = len(set(t.test_id for t in test_attempts))
+    average_test_score = round(sum(t.score_percentage for t in test_attempts) / len(test_attempts)) if test_attempts else 0
+    
+    # Count practice activities completed
+    practice_activities_completed = 0
+    for progress in practice_progress:
+        if progress.practice_status:
+            # Handle both dict and string types
+            if isinstance(progress.practice_status, str):
+                try:
+                    practice_data = json.loads(progress.practice_status)
+                except:
+                    continue
+            else:
+                practice_data = progress.practice_status
+            
+            assignments = practice_data.get('assignments', {})
+            practice_activities_completed += sum(
+                1 for a in assignments.values() 
+                if isinstance(a, dict) and a.get('status') == 'completed'
+            )
+    
+    words_mastered = sum(1 for c in concept_maps if c.word_score >= 3.5)
+    
+    # Identify problem words
+    problem_words = {}
+    for attempt in test_attempts:
+        if attempt.responses:
+            # Handle both dict and string types
+            if isinstance(attempt.responses, str):
+                try:
+                    responses_data = json.loads(attempt.responses)
+                except:
+                    continue
+            else:
+                responses_data = attempt.responses
+                
+            for word_id, response in responses_data.items():
+                if isinstance(response, dict) and not response.get('correct'):
+                    problem_words[word_id] = problem_words.get(word_id, 0) + 1
+    
+    problem_words_list = sorted(
+        [{'wordId': k, 'errorCount': v} for k, v in problem_words.items()],
+        key=lambda x: x['errorCount'],
+        reverse=True
+    )[:10]
+    
+    return {
+        "listsCompleted": lists_completed,
+        "averageTestScore": average_test_score,
+        "practiceActivitiesCompleted": practice_activities_completed,
+        "wordsMastered": words_mastered,
+        "testAttempts": [
+            {
+                "test_id": t.test_id,
+                "score_percentage": float(t.score_percentage),
+                "questions_correct": t.questions_correct,
+                "total_questions": t.total_questions,
+                "time_spent_seconds": t.time_spent_seconds,
+                "completed_at": t.completed_at.isoformat() if t.completed_at else None,
+                "responses": t.responses
+            }
+            for t in test_attempts[:50]
+        ],
+        "practiceProgress": [
+            {
+                "vocabulary_list_id": p.vocabulary_list_id,
+                "practice_status": p.practice_status,
+                "updated_at": p.updated_at.isoformat()
+            }
+            for p in practice_progress
+        ],
+        "storyResponses": [
+            {
+                "vocabulary_list_id": s.vocabulary_list_id,
+                "total_score": s.total_score,
+                "ai_evaluation": s.ai_evaluation,
+                "submitted_at": s.submitted_at.isoformat()
+            }
+            for s in story_responses
+        ],
+        "conceptMaps": [
+            {
+                "word_id": c.word_id,
+                "word_score": float(c.word_score),
+                "ai_evaluation": c.ai_evaluation,
+                "completed_at": c.completed_at.isoformat()
+            }
+            for c in concept_maps
+        ],
+        "problemWords": problem_words_list
+    }
+
+
+async def get_umadebate_analytics(db: AsyncSession, student_id: UUID) -> Dict[Any, Any]:
+    """Get UMADebate analytics for a student"""
+    # Get debate participation
+    debates_result = await db.execute(
+        select(StudentDebate).where(
+            StudentDebate.student_id == student_id
+        )
+    )
+    debates = debates_result.scalars().all()
+    
+    # Get debate posts
+    posts_result = await db.execute(
+        select(DebatePost).join(
+            StudentDebate, DebatePost.student_debate_id == StudentDebate.id
+        ).where(
+            and_(
+                StudentDebate.student_id == student_id,
+                DebatePost.post_type == 'student'
+            )
+        )
+    )
+    posts = posts_result.scalars().all()
+    
+    # Get challenges
+    challenges_result = await db.execute(
+        select(DebateChallenge).where(
+            DebateChallenge.student_id == student_id
+        )
+    )
+    challenges = challenges_result.scalars().all()
+    
+    # Calculate metrics
+    debates_completed = sum(1 for d in debates if d.status == 'completed')
+    average_score = round(
+        sum(d.final_percentage or 0 for d in debates if d.final_percentage) / 
+        sum(1 for d in debates if d.final_percentage)
+    ) if any(d.final_percentage for d in debates) else 0
+    
+    techniques_used = len(set(p.selected_technique for p in posts if p.selected_technique))
+    fallacies_identified = sum(1 for c in challenges if c.challenge_type == 'fallacy' and c.is_correct)
+    
+    # Analyze score breakdown
+    score_dimensions = ['clarity', 'evidence', 'logic', 'persuasiveness', 'rebuttal']
+    score_breakdown = []
+    for dimension in score_dimensions:
+        scores = [getattr(p, f"{dimension}_score") for p in posts if getattr(p, f"{dimension}_score") is not None]
+        if scores:
+            score_breakdown.append({
+                'dimension': dimension,
+                'average': round(sum(scores) / len(scores), 1)
+            })
+    
+    return {
+        "debatesCompleted": debates_completed,
+        "averageScore": average_score,
+        "techniquesUsed": techniques_used,
+        "fallaciesIdentified": fallacies_identified,
+        "debates": [
+            {
+                "assignment_id": d.assignment_id,
+                "status": d.status,
+                "debate_1_percentage": float(d.debate_1_percentage) if d.debate_1_percentage else None,
+                "debate_2_percentage": float(d.debate_2_percentage) if d.debate_2_percentage else None,
+                "debate_3_percentage": float(d.debate_3_percentage) if d.debate_3_percentage else None,
+                "final_percentage": float(d.final_percentage) if d.final_percentage else None,
+                "fallacy_counter": d.fallacy_counter,
+                "created_at": d.created_at.isoformat(),
+                "updated_at": d.updated_at.isoformat()
+            }
+            for d in debates
+        ],
+        "posts": [
+            {
+                "debate_number": p.debate_number,
+                "round_number": p.round_number,
+                "clarity_score": float(p.clarity_score) if p.clarity_score else None,
+                "evidence_score": float(p.evidence_score) if p.evidence_score else None,
+                "logic_score": float(p.logic_score) if p.logic_score else None,
+                "persuasiveness_score": float(p.persuasiveness_score) if p.persuasiveness_score else None,
+                "rebuttal_score": float(p.rebuttal_score) if p.rebuttal_score else None,
+                "final_percentage": float(p.final_percentage) if p.final_percentage else None,
+                "selected_technique": p.selected_technique,
+                "technique_bonus_awarded": float(p.technique_bonus_awarded) if p.technique_bonus_awarded else None,
+                "ai_feedback": p.ai_feedback
+            }
+            for p in posts[:100]
+        ],
+        "challenges": [
+            {
+                "challenge_type": c.challenge_type,
+                "is_correct": c.is_correct,
+                "points_awarded": float(c.points_awarded)
+            }
+            for c in challenges
+        ],
+        "scoreBreakdown": score_breakdown
+    }
+
+
+async def get_umawrite_analytics(db: AsyncSession, student_id: UUID) -> Dict[Any, Any]:
+    """Get UMAWrite analytics for a student"""
+    # Get writing submissions
+    submissions_result = await db.execute(
+        select(StudentWritingSubmission).where(
+            StudentWritingSubmission.student_id == student_id
+        ).order_by(StudentWritingSubmission.submitted_at.desc())
+    )
+    submissions = submissions_result.scalars().all()
+    
+    # Calculate metrics
+    assignments_completed = len(set(s.writing_assignment_id for s in submissions))
+    scored_submissions = [s for s in submissions if s.score is not None]
+    average_score = sum(s.score for s in scored_submissions) / len(scored_submissions) if scored_submissions else 0
+    average_word_count = round(sum(s.word_count for s in submissions) / len(submissions)) if submissions else 0
+    
+    # Calculate improvement rate
+    improvement_rate = 0
+    assignments_by_id = {}
+    for submission in submissions:
+        if submission.writing_assignment_id not in assignments_by_id:
+            assignments_by_id[submission.writing_assignment_id] = []
+        assignments_by_id[submission.writing_assignment_id].append(submission)
+    
+    improvements = []
+    for assignment_id, attempts in assignments_by_id.items():
+        if len(attempts) >= 2:
+            sorted_attempts = sorted(attempts, key=lambda x: x.submission_attempt)
+            first_score = sorted_attempts[0].score or 0
+            last_score = sorted_attempts[-1].score or 0
+            if first_score > 0:
+                improvement = ((last_score - first_score) / first_score) * 100
+                improvements.append(improvement)
+    
+    if improvements:
+        improvement_rate = round(sum(improvements) / len(improvements))
+    
+    # Analyze technique usage
+    technique_usage = {}
+    for submission in submissions:
+        for technique in (submission.selected_techniques or []):
+            technique_usage[technique] = technique_usage.get(technique, 0) + 1
+    
+    # Analyze feedback patterns
+    feedback_patterns = []
+    for submission in submissions:
+        if submission.ai_feedback:
+            if isinstance(submission.ai_feedback, dict):
+                areas = submission.ai_feedback.get('areas_for_improvement', [])
+                feedback_patterns.extend(areas)
+    
+    return {
+        "assignmentsCompleted": assignments_completed,
+        "averageScore": round(average_score, 1),
+        "averageWordCount": average_word_count,
+        "improvementRate": improvement_rate,
+        "submissions": [
+            {
+                "writing_assignment_id": s.writing_assignment_id,
+                "response_text": s.response_text,
+                "selected_techniques": s.selected_techniques,
+                "word_count": s.word_count,
+                "submission_attempt": s.submission_attempt,
+                "score": float(s.score) if s.score else None,
+                "ai_feedback": s.ai_feedback,
+                "submitted_at": s.submitted_at.isoformat()
+            }
+            for s in submissions[:50]
+        ],
+        "techniqueAnalysis": technique_usage,
+        "feedbackPatterns": feedback_patterns[:20]  # Limit to 20 most recent
+    }
+
+
+async def get_umatest_analytics(db: AsyncSession, student_id: UUID) -> Dict[Any, Any]:
+    """Get UMATest analytics for a student"""
+    # Get test attempts
+    test_attempts_result = await db.execute(
+        select(
+            StudentTestAttempt,
+            TestQuestionEvaluation
+        ).outerjoin(
+            TestQuestionEvaluation,
+            TestQuestionEvaluation.test_attempt_id == StudentTestAttempt.id
+        ).where(
+            and_(
+                StudentTestAttempt.student_id == student_id,
+                StudentTestAttempt.test_id.is_not(None)
+            )
+        )
+    )
+    test_data = test_attempts_result.all()
+    
+    # Group by test attempt
+    attempts_dict = {}
+    for row in test_data:
+        attempt = row.StudentTestAttempt
+        evaluation = row.TestQuestionEvaluation
+        
+        if attempt.id not in attempts_dict:
+            attempts_dict[attempt.id] = {
+                'attempt': attempt,
+                'evaluations': []
+            }
+        
+        if evaluation:
+            attempts_dict[attempt.id]['evaluations'].append(evaluation)
+    
+    # Calculate metrics
+    tests_completed = len(set(a['attempt'].test_id for a in attempts_dict.values()))
+    scored_attempts = [a['attempt'] for a in attempts_dict.values() if a['attempt'].score is not None]
+    average_score = round(sum(a.score for a in scored_attempts) / len(scored_attempts)) if scored_attempts else 0
+    pass_rate = round((sum(1 for a in scored_attempts if a.score >= 70) / len(scored_attempts)) * 100) if scored_attempts else 0
+    
+    # Calculate average time per question
+    total_time = 0
+    total_questions = 0
+    for data in attempts_dict.values():
+        if data['attempt'].time_spent_seconds and data['evaluations']:
+            total_time += data['attempt'].time_spent_seconds
+            total_questions += len(data['evaluations'])
+    
+    avg_time_per_question = round(total_time / total_questions) if total_questions > 0 else 0
+    
+    # Analyze concept mastery
+    concept_stats = {}
+    all_misconceptions = []
+    
+    for data in attempts_dict.values():
+        for evaluation in data['evaluations']:
+            if evaluation.key_concepts_identified:
+                for concept in evaluation.key_concepts_identified:
+                    if concept not in concept_stats:
+                        concept_stats[concept] = {'correct': 0, 'total': 0}
+                    concept_stats[concept]['total'] += 1
+                    if evaluation.rubric_score >= 3:
+                        concept_stats[concept]['correct'] += 1
+            
+            if evaluation.misconceptions_detected:
+                all_misconceptions.extend(evaluation.misconceptions_detected)
+    
+    concept_mastery = [
+        {
+            'concept': concept,
+            'mastery': round((stats['correct'] / stats['total']) * 100)
+        }
+        for concept, stats in concept_stats.items()
+    ]
+    
+    return {
+        "testsCompleted": tests_completed,
+        "averageScore": average_score,
+        "passRate": pass_rate,
+        "avgTimePerQuestion": avg_time_per_question,
+        "testAttempts": [
+            {
+                "test_id": data['attempt'].test_id,
+                "score": float(data['attempt'].score) if data['attempt'].score else None,
+                "time_spent_seconds": data['attempt'].time_spent_seconds,
+                "completed_at": data['attempt'].submitted_at.isoformat() if data['attempt'].submitted_at else None,
+                "evaluations": [
+                    {
+                        "question_number": e.question_number,
+                        "rubric_score": e.rubric_score,
+                        "points_earned": float(e.points_earned),
+                        "max_points": float(e.max_points),
+                        "key_concepts_identified": e.key_concepts_identified,
+                        "misconceptions_detected": e.misconceptions_detected,
+                        "scoring_rationale": e.scoring_rationale
+                    }
+                    for e in data['evaluations']
+                ]
+            }
+            for data in list(attempts_dict.values())[:20]  # Limit to 20 most recent
+        ],
+        "conceptMastery": concept_mastery,
+        "misconceptions": list(set(all_misconceptions))[:50]  # Unique misconceptions, limited to 50
+    }

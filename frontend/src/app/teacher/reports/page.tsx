@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { ChartBarIcon, KeyIcon, UserGroupIcon, DocumentTextIcon } from '@heroicons/react/24/outline';
 import BypassCodeUsageReport from '@/components/teacher/reports/BypassCodeUsageReport';
 import Gradebook from '@/components/teacher/reports/Gradebook';
+import StudentAnalysis from '@/components/teacher/reports/StudentAnalysis';
 
 type ReportType = 'overview' | 'bypass-code' | 'student-progress' | 'assignment-stats';
 
@@ -19,10 +20,9 @@ export default function ReportsPage() {
     },
     {
       id: 'student-progress' as ReportType,
-      name: 'Student Progress',
+      name: 'Student Analysis',
       icon: UserGroupIcon,
-      description: 'Monitor individual student performance and engagement',
-      comingSoon: true
+      description: 'Export comprehensive student performance data for AI analysis'
     },
     {
       id: 'assignment-stats' as ReportType,
@@ -87,16 +87,7 @@ export default function ReportsPage() {
           <BypassCodeUsageReport />
         )}
 
-        {activeReport === 'student-progress' && (
-          <div className="text-center py-12">
-            <UserGroupIcon className="h-12 w-12 mx-auto mb-4 text-gray-400" />
-            <h2 className="text-xl font-semibold text-gray-900 mb-2">Student Progress Reports</h2>
-            <p className="text-gray-600">
-              Detailed student progress tracking is coming soon. You'll be able to monitor individual
-              student performance, engagement levels, and identify students who may need additional support.
-            </p>
-          </div>
-        )}
+        {activeReport === 'student-progress' && <StudentAnalysis />}
 
         {activeReport === 'assignment-stats' && (
           <div className="text-center py-12">
