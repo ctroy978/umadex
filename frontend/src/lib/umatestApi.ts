@@ -83,5 +83,34 @@ export const umatestApi = {
   getTestResults: async (testAttemptId: string): Promise<UMATestResultsResponse> => {
     const response = await api.get(`/v1/student/umatest/test/results/${testAttemptId}`)
     return response.data
+  },
+
+  // Log security incident
+  logSecurityIncident: async (testAttemptId: string, data: {
+    incident_type: 'focus_loss' | 'tab_switch' | 'navigation_attempt' | 'window_blur' | 'app_switch' | 'orientation_cheat';
+    incident_data?: any;
+  }): Promise<{ violation_count: number; warning_issued: boolean; test_locked: boolean }> => {
+    const response = await api.post(`/v1/student/umatest/test/${testAttemptId}/security-incident`, data)
+    return response.data
+  },
+
+  // Get security status
+  getSecurityStatus: async (testAttemptId: string): Promise<{
+    violation_count: number;
+    is_locked: boolean;
+    locked_at?: string;
+    locked_reason?: string;
+    warnings_given: number;
+  }> => {
+    const response = await api.get(`/v1/student/umatest/test/${testAttemptId}/security-status`)
+    return response.data
+  },
+
+  // Unlock test with override code
+  unlockTest: async (testAttemptId: string, unlockCode: string): Promise<{ success: boolean; message: string }> => {
+    const response = await api.post(`/v1/student/umatest/test/${testAttemptId}/unlock`, {
+      unlock_code: unlockCode
+    })
+    return response.data
   }
 }

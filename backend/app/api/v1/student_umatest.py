@@ -5,6 +5,7 @@ from typing import List, Optional, Dict, Any
 from uuid import UUID
 from datetime import datetime, timezone
 import logging
+import re
 from sqlalchemy import select, and_, or_, func, exists
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -15,10 +16,11 @@ from app.core.database import get_db
 from app.models.user import User, UserRole
 from app.models.classroom import Classroom, ClassroomAssignment, StudentAssignment, ClassroomStudent
 from app.models.umatest import TestAssignment
-from app.models.tests import StudentTestAttempt, TestQuestionEvaluation
+from app.models.tests import StudentTestAttempt, TestQuestionEvaluation, TestSecurityIncident
 from app.utils.deps import get_current_user
 from app.services.test_schedule import TestScheduleService
 from app.services.umatest_evaluation import UMATestEvaluationService
+from app.services.bypass_validation import validate_bypass_code
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -60,6 +62,26 @@ class UMATestResultsResponse(BaseModel):
     evaluated_at: Optional[datetime]
     question_evaluations: List[Dict[str, Any]]
     feedback: Optional[str]
+
+
+class SecurityIncidentRequest(BaseModel):
+    """Request to log a security incident"""
+    incident_type: str = Field(..., pattern="^(focus_loss|tab_switch|navigation_attempt|window_blur|app_switch|orientation_cheat)$")
+    incident_data: Optional[Dict[str, Any]] = None
+
+
+class SecurityStatusResponse(BaseModel):
+    """Security status for a test attempt"""
+    violation_count: int
+    is_locked: bool
+    locked_at: Optional[datetime]
+    locked_reason: Optional[str]
+    warnings_given: int
+
+
+class UnlockRequest(BaseModel):
+    """Request to unlock a test"""
+    unlock_code: str = Field(..., description="Bypass code (either !BYPASS-XXXX or 8-char code)")
 
 
 @router.post("/test/{assignment_id}/start", response_model=UMATestStartResponse)
@@ -474,3 +496,232 @@ async def get_umatest_results(
         question_evaluations=question_evaluations,
         feedback=overall_feedback
     )
+
+
+@router.post("/test/{test_attempt_id}/security-incident")
+async def log_security_incident(
+    test_attempt_id: UUID,
+    incident_data: SecurityIncidentRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Log a security violation (focus loss, tab switch, etc.)"""
+    
+    # Get the active test attempt
+    attempt_query = await db.execute(
+        select(StudentTestAttempt)
+        .where(
+            and_(
+                StudentTestAttempt.id == test_attempt_id,
+                StudentTestAttempt.student_id == current_user.id,
+                StudentTestAttempt.status == "in_progress",
+                StudentTestAttempt.is_locked == False
+            )
+        )
+    )
+    test_attempt = attempt_query.scalar_one_or_none()
+    
+    if not test_attempt:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Active test attempt not found"
+        )
+    
+    # Create security incident record
+    incident = TestSecurityIncident(
+        test_attempt_id=test_attempt.id,
+        student_id=current_user.id,
+        incident_type=incident_data.incident_type,
+        incident_data=incident_data.incident_data or {}
+    )
+    db.add(incident)
+    
+    # Update violation count
+    violations = test_attempt.security_violations or []
+    violations.append({
+        "type": incident_data.incident_type,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "data": incident_data.incident_data
+    })
+    test_attempt.security_violations = violations
+    
+    # Check if this should result in a lock (2+ violations)
+    violation_count = len(violations)
+    should_lock = violation_count >= 2
+    
+    if should_lock:
+        test_attempt.is_locked = True
+        test_attempt.locked_at = datetime.now(timezone.utc)
+        test_attempt.locked_reason = f"Security violation: {incident_data.incident_type}"
+        incident.resulted_in_lock = True
+    
+    await db.commit()
+    
+    return {
+        "violation_count": violation_count,
+        "warning_issued": violation_count == 1,
+        "test_locked": should_lock
+    }
+
+
+@router.get("/test/{test_attempt_id}/security-status", response_model=SecurityStatusResponse)
+async def get_security_status(
+    test_attempt_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get current security violation count and lock status"""
+    
+    # Get the test attempt
+    attempt_query = await db.execute(
+        select(StudentTestAttempt)
+        .where(
+            and_(
+                StudentTestAttempt.id == test_attempt_id,
+                StudentTestAttempt.student_id == current_user.id
+            )
+        )
+    )
+    test_attempt = attempt_query.scalar_one_or_none()
+    
+    if not test_attempt:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Test attempt not found"
+        )
+    
+    violations = test_attempt.security_violations or []
+    
+    return SecurityStatusResponse(
+        violation_count=len(violations),
+        is_locked=test_attempt.is_locked,
+        locked_at=test_attempt.locked_at,
+        locked_reason=test_attempt.locked_reason,
+        warnings_given=1 if len(violations) >= 1 else 0
+    )
+
+
+@router.post("/test/{test_attempt_id}/unlock")
+async def unlock_test(
+    test_attempt_id: UUID,
+    unlock_data: UnlockRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Unlock a test with override code"""
+    
+    # Get the test attempt
+    attempt_query = await db.execute(
+        select(StudentTestAttempt)
+        .where(
+            and_(
+                StudentTestAttempt.id == test_attempt_id,
+                StudentTestAttempt.student_id == current_user.id,
+                StudentTestAttempt.is_locked == True
+            )
+        )
+    )
+    test_attempt = attempt_query.scalar_one_or_none()
+    
+    if not test_attempt:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Locked test attempt not found"
+        )
+    
+    # For UMATest, we need to get the test assignment to pass as context
+    if not test_attempt.classroom_assignment_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Could not find classroom assignment for this test"
+        )
+    
+    # Get the classroom assignment to find the classroom
+    classroom_assignment_result = await db.execute(
+        select(ClassroomAssignment)
+        .where(ClassroomAssignment.id == test_attempt.classroom_assignment_id)
+    )
+    classroom_assignment = classroom_assignment_result.scalar_one_or_none()
+    
+    if not classroom_assignment:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Could not find classroom assignment"
+        )
+    
+    # Get the classroom to find the teacher
+    classroom_result = await db.execute(
+        select(Classroom)
+        .where(Classroom.id == classroom_assignment.classroom_id)
+    )
+    classroom = classroom_result.scalar_one_or_none()
+    
+    if not classroom:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Could not find classroom"
+        )
+    
+    # Check if it's a permanent bypass code first
+    unlock_code = unlock_data.unlock_code.strip()
+    bypass_pattern = r'^!BYPASS-(\d{4})$'
+    bypass_match = re.match(bypass_pattern, unlock_code.upper())
+    
+    bypass_valid = False
+    bypass_type = None
+    teacher_id = str(classroom.teacher_id)
+    
+    if bypass_match:
+        # Permanent bypass code - check against teacher's code
+        provided_code = bypass_match.group(1)
+        teacher_result = await db.execute(
+            select(User).where(User.id == classroom.teacher_id)
+        )
+        teacher = teacher_result.scalar_one_or_none()
+        
+        if teacher and teacher.bypass_code:
+            # Bypass codes are hashed with bcrypt
+            import bcrypt
+            try:
+                if bcrypt.checkpw(provided_code.encode('utf-8'), teacher.bypass_code.encode('utf-8')):
+                    bypass_valid = True
+                    bypass_type = "permanent"
+            except Exception:
+                # If bcrypt check fails, bypass is invalid
+                pass
+    else:
+        # Try as a one-time code through the unified system
+        bypass_valid, bypass_type, _ = await validate_bypass_code(
+            db=db,
+            student_id=str(current_user.id),
+            answer_text=unlock_code,
+            context_type="test",
+            context_id=str(test_attempt_id),
+            assignment_id=None
+        )
+    
+    if not bypass_valid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired bypass code"
+        )
+    
+    # Reset the test attempt completely
+    test_attempt.is_locked = False
+    test_attempt.locked_at = None
+    test_attempt.locked_reason = None
+    test_attempt.security_violations = []
+    test_attempt.current_question = 1
+    test_attempt.answers_data = {}
+    test_attempt.time_spent_seconds = 0
+    test_attempt.started_at = datetime.now(timezone.utc)
+    test_attempt.last_activity_at = datetime.now(timezone.utc)
+    
+    await db.commit()
+    
+    return {
+        "success": True,
+        "message": "Test unlocked and reset successfully",
+        "test_attempt_id": str(test_attempt_id),
+        "bypass_type": bypass_type
+    }

@@ -8,8 +8,9 @@ import TestProgress from '../test/TestProgress'
 import TestNavigation from '../test/TestNavigation'
 import SubmissionModal from '../test/SubmissionModal'
 import SecurityWarningModal from '../test/SecurityWarningModal'
-import TestLockoutModal from '../test/TestLockoutModal'
+import UMATestLockoutModal from './UMATestLockoutModal'
 import { useRouter } from 'next/navigation'
+import { useUMATestSecurity } from '@/hooks/useUMATestSecurity'
 
 interface UMATestInterfaceProps {
   testData: UMATestStartResponse
@@ -29,12 +30,17 @@ export default function UMATestInterface({ testData, onComplete }: UMATestInterf
   const [questionStartTime, setQuestionStartTime] = useState(Date.now())
   const [isTestActive, setIsTestActive] = useState(true)
   
-  // Security features are disabled for UMATest
-  // TODO: Implement UMATest-specific security if needed
-  const violationCount = 0
-  const isLocked = false
-  const showWarning = false
-  const acknowledgeWarning = () => {}
+  // Security features
+  const { violationCount, isLocked, showWarning, acknowledgeWarning } = useUMATestSecurity({
+    testAttemptId: testData.test_attempt_id,
+    isActive: isTestActive,
+    onWarning: () => {
+      setIsTestActive(false)
+    },
+    onLock: () => {
+      setIsTestActive(false)
+    }
+  })
 
   // Disable copy/paste and right-click
   useEffect(() => {
@@ -298,7 +304,7 @@ export default function UMATestInterface({ testData, onComplete }: UMATestInterf
       />
 
       {/* Test Lockout Modal */}
-      <TestLockoutModal
+      <UMATestLockoutModal
         isOpen={isLocked}
         testAttemptId={testData.test_attempt_id}
         onUnlockSuccess={() => {
