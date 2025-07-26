@@ -63,47 +63,49 @@ class UMAReadService:
         )
         total_chunks = total_result.scalar()
         
-        # First, find the classroom assignment for this reading assignment
+        # First, find all classroom assignments for this reading assignment
+        # where the student is enrolled in the classroom
+        from ..models.classroom import ClassroomStudent
+        
         classroom_assignment_result = await db.execute(
-            select(ClassroomAssignment).where(
-                ClassroomAssignment.assignment_id == assignment_id
-            )
+            select(ClassroomAssignment)
+            .join(ClassroomStudent, 
+                  and_(ClassroomStudent.classroom_id == ClassroomAssignment.classroom_id,
+                       ClassroomStudent.student_id == student_id,
+                       ClassroomStudent.removed_at.is_(None)))
+            .where(ClassroomAssignment.assignment_id == assignment_id)
         )
-        classroom_assignment = classroom_assignment_result.scalar_one_or_none()
+        classroom_assignments = classroom_assignment_result.scalars().all()
         
-        if not classroom_assignment:
-            raise ValueError("This assignment hasn't been assigned to any classroom yet.")
+        if not classroom_assignments:
+            raise ValueError("This assignment hasn't been assigned to any classroom you're enrolled in.")
         
-        # Check if student assignment exists for this specific classroom assignment
-        student_assignment_result = await db.execute(
-            select(StudentAssignment).where(
-                and_(
-                    StudentAssignment.student_id == student_id,
-                    StudentAssignment.assignment_id == assignment_id,
-                    StudentAssignment.classroom_assignment_id == classroom_assignment.id
-                )
-            )
-        )
-        student_assignment = student_assignment_result.scalar_one_or_none()
+        # Check if student assignment exists for any of these classroom assignments
+        student_assignment = None
+        classroom_assignment = None
         
-        if not student_assignment:
-            # Check if student is in the classroom
-            from ..models.classroom import ClassroomStudent
-            
-            student_in_classroom = await db.execute(
-                select(ClassroomStudent).where(
+        for ca in classroom_assignments:
+            student_assignment_result = await db.execute(
+                select(StudentAssignment).where(
                     and_(
-                        ClassroomStudent.student_id == student_id,
-                        ClassroomStudent.classroom_id == classroom_assignment.classroom_id,
-                        ClassroomStudent.removed_at.is_(None)
+                        StudentAssignment.student_id == student_id,
+                        StudentAssignment.assignment_id == assignment_id,
+                        StudentAssignment.classroom_assignment_id == ca.id
                     )
                 )
             )
-            
-            if not student_in_classroom.scalar_one_or_none():
-                raise ValueError("You need to join the classroom first to access this assignment.")
-            
-            # Create new student assignment
+            sa = student_assignment_result.scalar_one_or_none()
+            if sa:
+                student_assignment = sa
+                classroom_assignment = ca
+                break
+        
+        # If no existing student assignment, use the first available classroom assignment
+        if not student_assignment and classroom_assignments:
+            classroom_assignment = classroom_assignments[0]
+        
+        if not student_assignment:
+            # Create new student assignment since we already verified the student is in the classroom
             student_assignment = StudentAssignment(
                 student_id=student_id,
                 assignment_id=assignment_id,
