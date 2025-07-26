@@ -5,7 +5,8 @@ import logging
 from sqlalchemy import select, and_, or_, func, exists, case
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi import status as http_status
 from pydantic import BaseModel, Field
 
 from app.core.database import get_db
@@ -105,7 +106,7 @@ def require_student_or_teacher(current_user: User = Depends(get_current_user)) -
     """Allow both students and teachers (teachers can view student experience)"""
     if current_user.role not in [UserRole.STUDENT, UserRole.TEACHER]:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
+            status_code=http_status.HTTP_403_FORBIDDEN,
             detail="Access denied"
         )
     return current_user
@@ -304,7 +305,7 @@ async def leave_classroom(
     
     if not enrollment:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=http_status.HTTP_404_NOT_FOUND,
             detail="You are not enrolled in this classroom"
         )
     
@@ -345,12 +346,23 @@ async def get_vocabulary_assignment(
         )
     )
     
-    result = vocab_result.one_or_none()
-    if not result:
+    results = vocab_result.all()
+    
+    if not results:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=http_http_status.HTTP_404_NOT_FOUND,
             detail="Vocabulary assignment not found or you don't have access"
         )
+    
+    if len(results) > 1:
+        # Student is enrolled in multiple classes with this assignment
+        classrooms = [r[2].name for r in results]  # Get classroom names
+        raise HTTPException(
+            status_code=http_http_status.HTTP_403_FORBIDDEN,
+            detail=f"Access denied: You are enrolled in multiple classes with this assignment ({', '.join(classrooms)}). Please access the assignment through your specific classroom."
+        )
+    
+    result = results[0]
     
     vocab_list, classroom_assignment, classroom, teacher = result
     
@@ -358,7 +370,7 @@ async def get_vocabulary_assignment(
     status = calculate_assignment_status(classroom_assignment.start_date, classroom_assignment.end_date)
     if status != "active":
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
+            status_code=http_status.HTTP_403_FORBIDDEN,
             detail="This assignment is not currently active"
         )
     
@@ -461,7 +473,7 @@ async def get_classroom_detail(
     
     if not enrollment:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
+            status_code=http_status.HTTP_403_FORBIDDEN,
             detail="You are not enrolled in this classroom"
         )
     
@@ -480,7 +492,7 @@ async def get_classroom_detail(
     
     if not result:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=http_status.HTTP_404_NOT_FOUND,
             detail="Classroom not found"
         )
     
@@ -879,7 +891,7 @@ async def _validate_assignment_access_helper(
     # Check assignment type
     if assignment_type not in ["reading", "vocabulary", "debate"]:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=http_status.HTTP_400_BAD_REQUEST,
             detail="Invalid assignment type"
         )
     
@@ -914,7 +926,7 @@ async def _validate_assignment_access_helper(
     
     if not ca_result:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=http_status.HTTP_404_NOT_FOUND,
             detail="Assignment not found"
         )
     
@@ -934,7 +946,7 @@ async def _validate_assignment_access_helper(
     
     if not enrollment.scalar_one_or_none():
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
+            status_code=http_status.HTTP_403_FORBIDDEN,
             detail="You are not enrolled in this classroom"
         )
     
@@ -943,12 +955,12 @@ async def _validate_assignment_access_helper(
     
     if status == "not_started":
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
+            status_code=http_status.HTTP_403_FORBIDDEN,
             detail=f"Assignment not available yet. Starts on {classroom_assignment.start_date.strftime('%B %d, %Y')}"
         )
     elif status == "expired":
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
+            status_code=http_status.HTTP_403_FORBIDDEN,
             detail=f"Assignment has ended. Ended on {classroom_assignment.end_date.strftime('%B %d, %Y')}"
         )
     
@@ -966,7 +978,7 @@ async def _validate_assignment_access_helper(
         )
         if not assignment_check.scalar_one_or_none():
             raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
+                status_code=http_status.HTTP_403_FORBIDDEN,
                 detail="Assignment is not available"
             )
     elif assignment_type == "vocabulary":
@@ -981,7 +993,7 @@ async def _validate_assignment_access_helper(
         )
         if not vocab_check.scalar_one_or_none():
             raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
+                status_code=http_status.HTTP_403_FORBIDDEN,
                 detail="Assignment is not available"
             )
     else:  # debate
@@ -996,7 +1008,7 @@ async def _validate_assignment_access_helper(
         )
         if not debate_check.scalar_one_or_none():
             raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
+                status_code=http_status.HTTP_403_FORBIDDEN,
                 detail="Assignment is not available"
             )
     
@@ -1048,7 +1060,7 @@ async def get_assignment_test_status(
     
     if not ca_result:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=http_status.HTTP_404_NOT_FOUND,
             detail="Assignment not found"
         )
     
@@ -1068,7 +1080,7 @@ async def get_assignment_test_status(
     
     if not enrollment.scalar_one_or_none():
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
+            status_code=http_status.HTTP_403_FORBIDDEN,
             detail="You are not enrolled in this classroom"
         )
     
@@ -1593,7 +1605,7 @@ async def submit_puzzle_answer(
             puzzle_id = UUID(request.puzzle_id)
         except ValueError:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=http_status.HTTP_400_BAD_REQUEST,
                 detail=f"Invalid puzzle_id format: {request.puzzle_id}"
             )
         
@@ -1606,13 +1618,13 @@ async def submit_puzzle_answer(
         
         if not puzzle_attempt:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
+                status_code=http_status.HTTP_404_NOT_FOUND,
                 detail="Puzzle attempt not found"
             )
         
         if puzzle_attempt.status != 'in_progress':
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=http_status.HTTP_400_BAD_REQUEST,
                 detail="Puzzle attempt is not in progress"
             )
         
@@ -1631,7 +1643,7 @@ async def submit_puzzle_answer(
             # If the result doesn't have 'valid' key or it's False, return error
             if not result.get('valid', True):
                 raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
+                    status_code=http_status.HTTP_400_BAD_REQUEST,
                     detail=result.get('errors', {'answer': 'Invalid answer'})
                 )
             
@@ -1664,7 +1676,7 @@ async def submit_puzzle_answer(
             # Handle specific ValueError from service
             logger.error(f"ValueError in puzzle answer submission: {e}")
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=http_status.HTTP_400_BAD_REQUEST,
                 detail=str(e)
             )
         except HTTPException:
@@ -1676,7 +1688,7 @@ async def submit_puzzle_answer(
             
             # If service call fails, handle it gracefully
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to evaluate answer: {str(e)}"
             )
         
@@ -1687,7 +1699,7 @@ async def submit_puzzle_answer(
         import traceback
         logger.error(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to submit answer: {str(e)}"
         )
 
@@ -1976,7 +1988,7 @@ async def submit_fill_in_blank_answer(
             sentence_id = UUID(request.sentence_id)
         except ValueError:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=http_status.HTTP_400_BAD_REQUEST,
                 detail=f"Invalid sentence_id format: {request.sentence_id}"
             )
         
@@ -1989,13 +2001,13 @@ async def submit_fill_in_blank_answer(
         
         if not fill_in_blank_attempt:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
+                status_code=http_status.HTTP_404_NOT_FOUND,
                 detail="Fill-in-blank attempt not found"
             )
         
         if fill_in_blank_attempt.student_id != current_user.id:
             raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
+                status_code=http_status.HTTP_403_FORBIDDEN,
                 detail="Not authorized to submit answer for this attempt"
             )
         
@@ -2017,7 +2029,7 @@ async def submit_fill_in_blank_answer(
         import traceback
         logger.error(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to submit answer: {str(e)}"
         )
 
@@ -2128,7 +2140,7 @@ async def check_vocabulary_test_eligibility(
     
     if not classroom_assignment:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=http_status.HTTP_404_NOT_FOUND,
             detail="Vocabulary assignment not found"
         )
     
@@ -2171,7 +2183,7 @@ async def update_vocabulary_assignment_progress(
     
     if not classroom_assignment:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=http_status.HTTP_404_NOT_FOUND,
             detail="Vocabulary assignment not found"
         )
     
@@ -2215,7 +2227,7 @@ async def start_vocabulary_test(
     
     if not classroom_assignment:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=http_status.HTTP_404_NOT_FOUND,
             detail="Vocabulary assignment not found"
         )
     
@@ -2256,7 +2268,7 @@ async def start_vocabulary_test(
                 if not validation["valid"]:
                     # IMPORTANT: Don't create test attempt if validation fails
                     raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
+                        status_code=http_status.HTTP_403_FORBIDDEN,
                         detail=f"Testing not available: {availability.message}. Override code invalid: {validation['message']}",
                         headers={
                             "X-Next-Window": str(availability.next_window) if availability.next_window else "",
@@ -2274,13 +2286,13 @@ async def start_vocabulary_test(
             except Exception as validation_error:
                 print(f"Error validating override code: {validation_error}")
                 raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail=f"Error validating override code: {str(validation_error)}"
                 )
         else:
             # No override code provided - don't create test attempt
             raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
+                status_code=http_status.HTTP_403_FORBIDDEN,
                 detail=availability.message,
                 headers={
                     "X-Next-Window": str(availability.next_window) if availability.next_window else "",
@@ -2303,7 +2315,7 @@ async def start_vocabulary_test(
     
     if not eligibility["eligible"]:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
+            status_code=http_status.HTTP_403_FORBIDDEN,
             detail=eligibility["reason"]
         )
     
@@ -2324,7 +2336,7 @@ async def start_vocabulary_test(
     
     if locked_attempt:
         raise HTTPException(
-            status_code=status.HTTP_423_LOCKED,
+            status_code=http_status.HTTP_423_LOCKED,
             detail="You have a locked test attempt. Please contact your teacher to unlock it.",
             headers={"X-Locked-Attempt-Id": str(locked_attempt.id)}
         )
@@ -2360,7 +2372,7 @@ async def start_vocabulary_test(
         
     except ValueError as e:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=http_status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
 
@@ -2389,13 +2401,13 @@ async def submit_vocabulary_test(
     
     if not test_attempt:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=http_status.HTTP_404_NOT_FOUND,
             detail="Test attempt not found"
         )
     
     if test_attempt.is_locked:
         raise HTTPException(
-            status_code=status.HTTP_423_LOCKED,
+            status_code=http_status.HTTP_423_LOCKED,
             detail="This test is locked due to security violations. Please contact your teacher."
         )
     
@@ -2409,7 +2421,7 @@ async def submit_vocabulary_test(
         
     except ValueError as e:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=http_status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
 
@@ -2442,7 +2454,7 @@ async def get_vocabulary_test_results(
     
     if not attempt:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=http_status.HTTP_404_NOT_FOUND,
             detail="Test attempt not found or not completed"
         )
     
@@ -2489,7 +2501,7 @@ async def log_vocabulary_test_security_incident(
     
     if not test_attempt:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=http_status.HTTP_404_NOT_FOUND,
             detail="Test attempt not found or not in progress"
         )
     
@@ -2555,7 +2567,7 @@ async def get_vocabulary_test_security_status(
     
     if not test_attempt:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=http_status.HTTP_404_NOT_FOUND,
             detail="Test attempt not found"
         )
     
@@ -2594,7 +2606,7 @@ async def unlock_vocabulary_test_with_bypass_code(
     
     if not test_attempt:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=http_status.HTTP_404_NOT_FOUND,
             detail="Locked test attempt not found"
         )
     
@@ -2624,7 +2636,7 @@ async def unlock_vocabulary_test_with_bypass_code(
     
     if not bypass_valid:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=http_status.HTTP_400_BAD_REQUEST,
             detail="Invalid or expired bypass code"
         )
     
