@@ -111,6 +111,12 @@ export const vocabularyApi = {
     return response.data
   },
 
+  // Export vocabulary list as PDF
+  async exportPDF(listId: string): Promise<VocabularyList> {
+    const response = await api.get(`/v1/teacher/vocabulary/${listId}`)
+    return response.data
+  },
+
   // Test Configuration Methods
   async getTestConfig(listId: string): Promise<VocabularyTestConfig> {
     const response = await api.get(`/v1/teacher/vocabulary/${listId}/test/config`)

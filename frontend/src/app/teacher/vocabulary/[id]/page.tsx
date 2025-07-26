@@ -13,6 +13,7 @@ import {
 } from '@heroicons/react/24/outline'
 import type { VocabularyList, VocabularyWord } from '@/types/vocabulary'
 import VocabularyTestConfigModal from '@/components/teacher/VocabularyTestConfigModal'
+import jsPDF from 'jspdf'
 
 export default function VocabularyViewPage({ params }: { params: { id: string } }) {
   const router = useRouter()
@@ -43,13 +44,131 @@ export default function VocabularyViewPage({ params }: { params: { id: string } 
   const handleExport = async (format: 'pdf' | 'csv') => {
     try {
       setIsExporting(true)
-      // Note: exportList method needs to be implemented in vocabularyApi
-      alert(`Export as ${format.toUpperCase()} is not yet implemented`)
+      
+      if (format === 'pdf') {
+        // Check if list is loaded
+        if (!list) {
+          alert('Vocabulary list not loaded')
+          return
+        }
+
+        // Create new PDF document
+        const doc = new jsPDF()
+        
+        // Set font styles
+        const pageWidth = doc.internal.pageSize.getWidth()
+        const pageHeight = doc.internal.pageSize.getHeight()
+        const margin = 20
+        const lineHeight = 7
+        let yPosition = margin
+        
+        // Title
+        doc.setFontSize(20)
+        doc.setFont(undefined, 'bold')
+        doc.text(list.title, pageWidth / 2, yPosition, { align: 'center' })
+        yPosition += lineHeight * 2
+        
+        // Metadata
+        doc.setFontSize(12)
+        doc.setFont(undefined, 'normal')
+        doc.text(`Grade: ${list.grade_level} | Subject: ${list.subject_area}`, pageWidth / 2, yPosition, { align: 'center' })
+        yPosition += lineHeight
+        doc.text(`Context: ${list.context_description}`, pageWidth / 2, yPosition, { align: 'center' })
+        yPosition += lineHeight * 2
+        
+        // Sort words by position
+        const sortedWords = list.words?.sort((a, b) => a.position - b.position) || []
+        
+        // Add words
+        sortedWords.forEach((word, index) => {
+          // Check if we need a new page
+          if (yPosition > pageHeight - margin * 3) {
+            doc.addPage()
+            yPosition = margin
+          }
+          
+          // Word number and term
+          doc.setFontSize(14)
+          doc.setFont(undefined, 'bold')
+          doc.text(`${index + 1}. ${word.word}`, margin, yPosition)
+          yPosition += lineHeight
+          
+          // Definition
+          doc.setFontSize(11)
+          doc.setFont(undefined, 'normal')
+          const definition = word.definition_source === 'teacher' 
+            ? word.teacher_definition 
+            : word.ai_definition
+          
+          // Wrap long text
+          const definitionLines = doc.splitTextToSize(`Definition: ${definition}`, pageWidth - margin * 2)
+          definitionLines.forEach((line: string) => {
+            if (yPosition > pageHeight - margin) {
+              doc.addPage()
+              yPosition = margin
+            }
+            doc.text(line, margin + 10, yPosition)
+            yPosition += lineHeight
+          })
+          
+          // Example sentences
+          doc.setFont(undefined, 'normal')
+          const example1 = word.examples_source === 'teacher'
+            ? word.teacher_example_1
+            : word.ai_example_1
+          const example2 = word.examples_source === 'teacher'
+            ? word.teacher_example_2
+            : word.ai_example_2
+            
+          const example1Lines = doc.splitTextToSize(`Example 1: ${example1}`, pageWidth - margin * 2 - 10)
+          example1Lines.forEach((line: string) => {
+            if (yPosition > pageHeight - margin) {
+              doc.addPage()
+              yPosition = margin
+            }
+            doc.text(line, margin + 10, yPosition)
+            yPosition += lineHeight
+          })
+          
+          const example2Lines = doc.splitTextToSize(`Example 2: ${example2}`, pageWidth - margin * 2 - 10)
+          example2Lines.forEach((line: string) => {
+            if (yPosition > pageHeight - margin) {
+              doc.addPage()
+              yPosition = margin
+            }
+            doc.text(line, margin + 10, yPosition)
+            yPosition += lineHeight
+          })
+          
+          yPosition += lineHeight // Extra space between words
+        })
+        
+        // Add footer with creation date
+        doc.setFontSize(10)
+        doc.setFont(undefined, 'italic')
+        const currentPage = doc.internal.getCurrentPageInfo().pageNumber
+        const totalPages = doc.internal.getNumberOfPages()
+        for (let i = 1; i <= totalPages; i++) {
+          doc.setPage(i)
+          doc.text(
+            `Generated on ${new Date().toLocaleDateString()} - Page ${i} of ${totalPages}`,
+            pageWidth / 2,
+            pageHeight - 10,
+            { align: 'center' }
+          )
+        }
+        
+        // Save the PDF
+        const safeName = list.title.replace(/[^a-zA-Z0-9 -_]/g, '').replace(/ /g, '_').substring(0, 50)
+        doc.save(`vocabulary-${safeName}-${new Date().toISOString().split('T')[0]}.pdf`)
+      }
     } catch (error) {
       console.error('Failed to export list:', error)
       alert('Failed to export vocabulary list')
     } finally {
       setIsExporting(false)
+      // Hide the dropdown
+      document.getElementById('export-dropdown')?.classList.add('hidden')
     }
   }
 
@@ -166,15 +285,6 @@ export default function VocabularyViewPage({ params }: { params: { id: string } 
                     className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
                   >
                     Export as PDF
-                  </button>
-                  <button
-                    onClick={() => {
-                      handleExport('csv')
-                      document.getElementById('export-dropdown')?.classList.add('hidden')
-                    }}
-                    className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                  >
-                    Export as CSV
                   </button>
                   <div className="border-t border-gray-100"></div>
                   <button
