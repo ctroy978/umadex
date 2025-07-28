@@ -1,24 +1,4 @@
 services:
-  postgres:
-    image: postgres:16-alpine
-    container_name: umadex_db
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-umadex}
-      POSTGRES_USER: ${POSTGRES_USER:-umadex_user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-umadex_password}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./database/migrations:/docker-entrypoint-initdb.d
-    ports:
-      - "5432:5432"
-    networks:
-      - umadex_network
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-umadex_user} -d ${POSTGRES_DB:-umadex}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   redis:
     image: redis:7-alpine
     container_name: umadex_redis
@@ -48,23 +28,29 @@ services:
       dockerfile: Dockerfile
     container_name: umadex_backend
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-umadex_user}:${POSTGRES_PASSWORD:-umadex_password}@postgres:5432/${POSTGRES_DB:-umadex}
+      DATABASE_URL: ${DATABASE_URL}
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
       REDIS_URL: redis://redis:6379
-      SMTP_HOST: mailhog
-      SMTP_PORT: 1025
-      SMTP_USER: ""
-      SMTP_PASSWORD: ""
+      SMTP_HOST: ${SMTP_HOST:-mailhog}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SECRET_KEY: ${SECRET_KEY:-your-secret-key-here}
       ENVIRONMENT: ${ENVIRONMENT:-development}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-10080}
+      REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-7}
+      OTP_EXPIRY_MINUTES: ${OTP_EXPIRY_MINUTES:-10}
+      OTP_LENGTH: ${OTP_LENGTH:-6}
+      EMAIL_FROM: ${EMAIL_FROM:-noreply@umadex.local}
     volumes:
       - ./backend:/app
     ports:
       - "8000:8000"
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
       mailhog:
@@ -106,7 +92,7 @@ services:
       - umadex_network
 
 volumes:
-  postgres_data:
+  # postgres_data volume removed - using Supabase cloud database
 
 networks:
   umadex_network:

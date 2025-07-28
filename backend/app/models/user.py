@@ -30,6 +30,9 @@ class User(Base):
     bypass_code = Column(String(255), nullable=True)  # Hashed 4-digit code for teachers
     bypass_code_updated_at = Column(DateTime(timezone=True), nullable=True)
     
+    # Supabase Auth integration
+    supabase_auth_id = Column(UUID(as_uuid=True), nullable=True, unique=True, index=True)
+    
     # Soft delete fields
     deleted_at = Column(DateTime(timezone=True), nullable=True)
     deleted_by = Column(UUID(as_uuid=True), ForeignKey('users.id'), nullable=True)

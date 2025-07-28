@@ -70,4 +70,44 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy"}
+    """Basic health check endpoint"""
+    return {"status": "healthy", "service": "umadex-api"}
+
+@app.get("/health/detailed")
+async def detailed_health_check():
+    """Detailed health check including database and redis connectivity"""
+    from sqlalchemy import text
+    from app.core.database import AsyncSessionLocal
+    
+    health_status = {
+        "status": "healthy",
+        "service": "umadex-api",
+        "environment": settings.ENVIRONMENT,
+        "checks": {}
+    }
+    
+    # Check database connectivity
+    try:
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(text("SELECT 1"))
+            await session.commit()
+        health_status["checks"]["database"] = "ok"
+    except Exception as e:
+        health_status["status"] = "unhealthy"
+        health_status["checks"]["database"] = f"error: {str(e)}"
+    
+    # Check Redis connectivity
+    try:
+        await redis_client.redis.ping()
+        health_status["checks"]["redis"] = "ok"
+    except Exception as e:
+        health_status["status"] = "unhealthy"
+        health_status["checks"]["redis"] = f"error: {str(e)}"
+    
+    # Check Supabase config
+    if settings.SUPABASE_URL:
+        health_status["checks"]["supabase_config"] = "configured"
+    else:
+        health_status["checks"]["supabase_config"] = "not configured"
+    
+    return health_status
