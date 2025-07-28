@@ -6,7 +6,7 @@ from datetime import datetime
 import logging
 
 from app.core.database import get_db
-from app.utils.deps import require_admin
+from app.utils.supabase_deps import require_admin_supabase as require_admin
 from app.models.user import User
 from app.models.classroom import Classroom, ClassroomStudent
 from app.models.reading import ReadingAssignment

@@ -9,7 +9,7 @@ from sqlalchemy.orm import selectinload
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.deps import get_db
-from app.utils.deps import require_teacher
+from app.utils.supabase_deps import require_teacher_supabase as require_teacher
 from app.models.user import User
 from app.models.classroom import Classroom, ClassroomAssignment
 from app.models.vocabulary import VocabularyList

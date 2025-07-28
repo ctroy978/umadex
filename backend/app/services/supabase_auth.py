@@ -4,8 +4,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.models.user import User, UserRole
 from app.core.supabase import get_supabase_admin, get_supabase_anon
-from app.schemas.auth import UserCreate
-from app.models.whitelist import Whitelist
+from app.schemas.user import UserCreate
+from app.models.auth import EmailWhitelist as Whitelist
 import logging
 
 logger = logging.getLogger(__name__)
@@ -17,8 +17,8 @@ class SupabaseAuthService:
         # Check exact email match
         exact_result = await db.execute(
             select(Whitelist).where(
-                Whitelist.email == email,
-                Whitelist.deleted_at.is_(None)
+                Whitelist.email_pattern == email,
+                Whitelist.is_domain == False
             )
         )
         if exact_result.scalar_one_or_none():
@@ -29,8 +29,8 @@ class SupabaseAuthService:
         if domain:
             domain_result = await db.execute(
                 select(Whitelist).where(
-                    Whitelist.domain == domain,
-                    Whitelist.deleted_at.is_(None)
+                    Whitelist.email_pattern == domain,
+                    Whitelist.is_domain == True
                 )
             )
             if domain_result.scalar_one_or_none():
@@ -47,14 +47,24 @@ class SupabaseAuthService:
         if not await SupabaseAuthService.check_whitelist(db, email):
             raise ValueError("Email not in whitelist")
         
-        # Check if user exists
+        # Check if user exists in our database
         result = await db.execute(
             select(User).where(User.email == email, User.deleted_at.is_(None))
         )
         existing_user = result.scalar_one_or_none()
         
-        # If new user and no user data provided, error
-        if not existing_user and not user_data:
+        # Check if user exists in Supabase Auth
+        supabase_admin = get_supabase_admin()
+        try:
+            auth_users = supabase_admin.auth.admin.list_users()
+            supabase_user = next((u for u in auth_users if u.email == email), None)
+        except:
+            supabase_user = None
+        
+        # If user exists in Supabase but not in our DB, and no user data provided
+        if not existing_user and supabase_user and not user_data:
+            # For existing Supabase users without local user record, 
+            # we still need user data to create the local record
             raise ValueError("User data required for new users")
         
         try:
@@ -63,12 +73,13 @@ class SupabaseAuthService:
                 "email": email,
                 "options": {
                     "should_create_user": not existing_user,
+                    "email_redirect_to": None,  # Disable magic link
                     "data": {
-                        "first_name": user_data.first_name if user_data else existing_user.first_name,
-                        "last_name": user_data.last_name if user_data else existing_user.last_name,
-                        "role": user_data.role if user_data else existing_user.role,
+                        "first_name": user_data.first_name if user_data else "",
+                        "last_name": user_data.last_name if user_data else "",
+                        "role": user_data.role if user_data else "student",
                         "is_admin": False  # Never set admin on signup
-                    } if not existing_user else None
+                    } if not existing_user and user_data else None
                 }
             })
             
@@ -146,13 +157,16 @@ class SupabaseAuthService:
                 "access_token": session.access_token,
                 "refresh_token": session.refresh_token,
                 "token_type": "bearer",
+                "expires_in": 3600,  # Default to 1 hour
                 "user": {
                     "id": str(user.id),
                     "email": user.email,
                     "first_name": user.first_name,
                     "last_name": user.last_name,
+                    "username": user.username,
                     "role": user.role,
-                    "is_admin": user.is_admin
+                    "is_admin": user.is_admin,
+                    "created_at": user.created_at
                 }
             }
             

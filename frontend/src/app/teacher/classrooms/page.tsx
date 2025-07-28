@@ -2,13 +2,13 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { useAuth } from '@/hooks/useAuth'
+import { useAuthSupabase } from '@/hooks/useAuthSupabase'
 import { teacherClassroomApi } from '@/lib/classroomApi'
 import { UserGroupIcon, PlusIcon, AcademicCapIcon, ClipboardDocumentListIcon } from '@heroicons/react/24/outline'
 import type { Classroom, ClassroomCreateRequest } from '@/types/classroom'
 
 export default function ClassroomsPage() {
-  const { user } = useAuth()
+  const { user } = useAuthSupabase()
   const router = useRouter()
   const [classrooms, setClassrooms] = useState<Classroom[]>([])
   const [loading, setLoading] = useState(true)

@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { useAuth } from '@/hooks/useAuth'
+import { useAuthSupabase } from '@/hooks/useAuthSupabase'
 
 /**
  * SECURITY COMPONENT: Teacher Route Guard
@@ -30,7 +30,7 @@ interface TeacherGuardProps {
 
 export default function TeacherGuard({ children }: TeacherGuardProps) {
   const router = useRouter()
-  const { user, isLoading, loadUser } = useAuth()
+  const { user, isLoading, loadUser } = useAuthSupabase()
 
   useEffect(() => {
     loadUser()

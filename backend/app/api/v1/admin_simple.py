@@ -4,7 +4,7 @@ from sqlalchemy import select, func, and_, or_
 from typing import Dict, Any, Optional
 
 from app.core.database import get_db
-from app.utils.deps import require_admin
+from app.utils.supabase_deps import require_admin_supabase as require_admin
 from app.models.user import User
 
 router = APIRouter(tags=["admin"])

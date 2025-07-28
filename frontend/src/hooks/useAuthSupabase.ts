@@ -41,16 +41,26 @@ export const useAuthSupabase = create<AuthState>((set) => ({
 
 // Initialize auth state and listen for changes
 if (typeof window !== 'undefined') {
-  // Load initial user
-  useAuthSupabase.getState().loadUser()
+  // Add a flag to prevent multiple initializations
+  let isInitialized = false
   
-  // Listen for auth state changes
-  supabase.auth.onAuthStateChange((event, session) => {
-    if (event === 'SIGNED_OUT') {
-      useAuthSupabase.getState().setUser(null)
-    } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-      // Reload user data when signed in or token refreshed
-      useAuthSupabase.getState().loadUser()
-    }
-  })
+  const initAuth = async () => {
+    if (isInitialized) return
+    isInitialized = true
+    
+    // Load initial user
+    await useAuthSupabase.getState().loadUser()
+    
+    // Listen for auth state changes
+    supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT') {
+        useAuthSupabase.getState().setUser(null)
+      } else if (event === 'SIGNED_IN') {
+        // Only reload on sign in, not on token refresh to prevent loops
+        useAuthSupabase.getState().loadUser()
+      }
+    })
+  }
+  
+  initAuth()
 }

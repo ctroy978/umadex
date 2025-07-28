@@ -20,7 +20,7 @@ from app.models.vocabulary_practice import VocabularyPuzzleAttempt, VocabularyFi
 from app.models.umaread import UmareadAssignmentProgress
 from app.models.tests import AssignmentTest, StudentTestAttempt
 from app.models.umatest import TestAssignment
-from app.utils.deps import get_current_user
+from app.utils.supabase_deps import get_current_user_supabase as get_current_user
 from app.schemas.classroom import ClassroomResponse
 from app.services.vocabulary_practice import VocabularyPracticeService
 from app.services.vocabulary_test import VocabularyTestService

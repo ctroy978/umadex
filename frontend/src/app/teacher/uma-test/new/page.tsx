@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { useAuth } from '@/hooks/useAuth'
+import { useAuthSupabase } from '@/hooks/useAuthSupabase'
 import { api } from '@/lib/api'
 import { toast } from 'react-hot-toast'
 import { 
@@ -35,7 +35,7 @@ interface CreateTestForm {
 
 export default function NewTestPage() {
   const router = useRouter()
-  const { user } = useAuth()
+  const { user } = useAuthSupabase()
   const [loading, setLoading] = useState(false)
   const [lectures, setLectures] = useState<LectureInfo[]>([])
   const [loadingLectures, setLoadingLectures] = useState(true)

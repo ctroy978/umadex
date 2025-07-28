@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { useAuth } from '@/hooks/useAuth'
+import { useAuthSupabase } from '@/hooks/useAuthSupabase'
 import AssignmentEditor from '@/components/AssignmentEditor'
 import AssignmentMetadataEditor from '@/components/AssignmentMetadataEditor'
 import { readingApi } from '@/lib/readingApi'
@@ -10,7 +10,7 @@ import { ReadingAssignment, ReadingAssignmentUpdate } from '@/types/reading'
 
 export default function EditAssignmentPage({ params }: { params: { id: string } }) {
   const router = useRouter()
-  const { user } = useAuth()
+  const { user } = useAuthSupabase()
   const [assignment, setAssignment] = useState<ReadingAssignment | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)

@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { useAuth } from '@/hooks/useAuth'
+import { useAuthSupabase } from '@/hooks/useAuthSupabase'
 import TokenExpiryWarning from '@/components/TokenExpiryWarning'
 import { 
   HomeIcon,
@@ -40,7 +40,7 @@ const utilities = [
 export default function TeacherLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
-  const { user, logout } = useAuth()
+  const { user, logout } = useAuthSupabase()
 
   const handleLogout = async () => {
     await logout()

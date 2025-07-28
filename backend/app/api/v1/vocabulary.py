@@ -9,7 +9,7 @@ from sqlalchemy import select, func, and_
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
-from app.utils.deps import get_current_user, require_admin
+from app.utils.supabase_deps import get_current_user_supabase as get_current_user, require_admin_supabase as require_admin
 from app.models import User
 from app.models.vocabulary import VocabularyStatus, VocabularyWord, VocabularyList
 from app.schemas.vocabulary import (

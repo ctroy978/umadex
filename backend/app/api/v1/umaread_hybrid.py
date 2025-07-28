@@ -15,7 +15,7 @@ from app.models.user import User
 from app.models.reading import ReadingAssignment, ReadingChunk, AssignmentImage
 from app.models.umaread import UmareadStudentResponse, UmareadChunkProgress, UmareadAssignmentProgress
 from app.models.classroom import StudentAssignment, ClassroomAssignment, Classroom, StudentEvent
-from app.utils.deps import get_current_user
+from app.utils.supabase_deps import get_current_user_supabase as get_current_user
 from app.schemas.umaread import ChunkResponse, AssignmentStartResponse
 from app.services.umaread_simple import UMAReadService
 from app.services.question_generation import generate_questions_for_chunk, Question

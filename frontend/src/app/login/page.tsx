@@ -3,8 +3,8 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useForm } from 'react-hook-form'
-import { authService } from '@/lib/auth'
-import { useAuth } from '@/hooks/useAuth'
+import { authSupabase } from '@/lib/authSupabase'
+import { useAuthSupabase } from '@/hooks/useAuthSupabase'
 
 interface LoginForm {
   email: string
@@ -18,7 +18,7 @@ interface VerifyForm {
 
 export default function LoginPage() {
   const router = useRouter()
-  const { setUser } = useAuth()
+  const { setUser } = useAuthSupabase()
   const [step, setStep] = useState<'email' | 'otp'>('email')
   const [email, setEmail] = useState('')
   const [isNewUser, setIsNewUser] = useState(false)
@@ -34,7 +34,12 @@ export default function LoginPage() {
     setError('')
     
     try {
-      const response = await authService.requestOTP(data)
+      // Always include role, defaulting to 'student'
+      const requestData = {
+        ...data,
+        role: 'student' as const
+      }
+      const response = await authSupabase.requestOTP(requestData)
       setEmail(data.email)
       setIsNewUser(response.is_new_user)
       setStep('otp')
@@ -42,8 +47,8 @@ export default function LoginPage() {
       const errorMessage = err.response?.data?.detail || 'Failed to send OTP'
       setError(errorMessage)
       
-      // If the error is about missing first/last name, show the registration fields
-      if (errorMessage.includes('First name and last name required')) {
+      // If the error is about missing user data, show the registration fields
+      if (errorMessage.includes('User data required')) {
         setShowRegistrationFields(true)
       }
     } finally {
@@ -56,9 +61,9 @@ export default function LoginPage() {
     setError('')
     
     try {
-      const response = await authService.verifyOTP({
+      const response = await authSupabase.verifyOTP({
         email,
-        otp_code: data.otp_code
+        otp: data.otp_code
       })
       setUser(response.user)
       

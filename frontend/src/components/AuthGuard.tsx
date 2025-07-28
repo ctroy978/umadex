@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { useAuth } from '@/hooks/useAuth'
+import { useAuthSupabase } from '@/hooks/useAuthSupabase'
 
 interface AuthGuardProps {
   children: React.ReactNode
@@ -18,7 +18,7 @@ export default function AuthGuard({
   requireTeacher = false
 }: AuthGuardProps) {
   const router = useRouter()
-  const { user, isLoading, loadUser } = useAuth()
+  const { user, isLoading, loadUser } = useAuthSupabase()
 
   useEffect(() => {
     loadUser()

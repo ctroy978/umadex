@@ -67,6 +67,8 @@ services:
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost/api}
       NODE_ENV: ${NODE_ENV:-development}
+      NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
     volumes:
       - ./frontend:/app
       - /app/.next
@@ -93,6 +95,7 @@ services:
 
 volumes:
   # postgres_data volume removed - using Supabase cloud database
+  frontend_node_modules:
 
 networks:
   umadex_network:

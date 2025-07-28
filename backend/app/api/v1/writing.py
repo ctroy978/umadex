@@ -8,7 +8,7 @@ from datetime import datetime
 import logging
 
 from app.core.database import get_db
-from app.utils.deps import get_current_user
+from app.utils.supabase_deps import get_current_user_supabase as get_current_user
 from app.models import WritingAssignment, StudentWritingSubmission, ClassroomAssignment, Classroom
 from app.models.classroom import StudentAssignment, ClassroomStudent
 from app.models.user import User, UserRole

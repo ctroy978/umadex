@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
-import { useAuth } from '@/hooks/useAuth'
+import { useAuthSupabase } from '@/hooks/useAuthSupabase'
 import { studentApi, type StudentClassroomDetail } from '@/lib/studentApi'
 import AssignmentCard from '@/components/student/AssignmentCard'
 import LeaveClassroomDialog from '@/components/student/LeaveClassroomDialog'
@@ -22,7 +22,7 @@ export default function StudentClassroomPage() {
   const params = useParams()
   const router = useRouter()
   const searchParams = useSearchParams()
-  const { user, logout } = useAuth()
+  const { user, logout } = useAuthSupabase()
   const classroomId = params.id as string
 
   const [classroom, setClassroom] = useState<StudentClassroomDetail | null>(null)

@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
 
 from app.core.database import get_db
-from app.utils.deps import get_current_user
+from app.utils.supabase_deps import get_current_user_supabase as get_current_user
 from app.models.user import User, UserRole
 from app.models.test_schedule import ClassroomTestSchedule, ClassroomTestOverride
 from app.models.classroom import Classroom, ClassroomStudent

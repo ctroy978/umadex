@@ -11,7 +11,7 @@ from sqlalchemy.orm import selectinload
 import logging
 
 from app.core.database import get_db, AsyncSessionLocal
-from app.utils.deps import get_current_user
+from app.utils.supabase_deps import get_current_user_supabase as get_current_user
 from app.models.user import User
 from app.models.umatest import TestAssignment, TestGenerationLog
 from app.models.reading import ReadingAssignment

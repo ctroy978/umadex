@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { useAuth } from '@/hooks/useAuth'
+import { useAuthSupabase } from '@/hooks/useAuthSupabase'
 
 /**
  * SECURITY COMPONENT: Student Route Guard
@@ -29,7 +29,7 @@ interface StudentGuardProps {
 }
 
 export default function StudentGuard({ children }: StudentGuardProps) {
-  const { user, isLoading, loadUser } = useAuth()
+  const { user, isLoading, loadUser } = useAuthSupabase()
   const router = useRouter()
 
   useEffect(() => {

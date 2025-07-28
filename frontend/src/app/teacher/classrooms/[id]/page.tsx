@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { useAuth } from '@/hooks/useAuth'
+import { useAuthSupabase } from '@/hooks/useAuthSupabase'
 import { teacherClassroomApi } from '@/lib/classroomApi'
 import { teacherApi } from '@/lib/teacherApi'
 import {
@@ -26,7 +26,7 @@ import TestScheduleManager from '@/components/teacher/TestScheduleManager'
 export default function ClassroomDetailPage() {
   const params = useParams()
   const router = useRouter()
-  const { user } = useAuth()
+  const { user } = useAuthSupabase()
   const classroomId = params.id as string
 
   const [classroom, setClassroom] = useState<ClassroomDetail | null>(null)

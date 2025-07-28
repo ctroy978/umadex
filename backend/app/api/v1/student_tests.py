@@ -15,7 +15,7 @@ from app.models.user import User
 from app.models.tests import AssignmentTest, StudentTestAttempt, TestSecurityIncident
 from app.models.reading import ReadingAssignment, ReadingChunk
 from app.models.classroom import ClassroomAssignment, ClassroomStudent
-from app.utils.deps import get_current_user
+from app.utils.supabase_deps import get_current_user_supabase as get_current_user
 from app.services.bypass_validation import validate_bypass_code
 from app.services.test_schedule import TestScheduleService
 from app.schemas.test_schedule import ValidateOverrideRequest

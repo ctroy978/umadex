@@ -9,7 +9,7 @@ from sqlalchemy import select, and_, func
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
-from app.utils.deps import get_current_user
+from app.utils.supabase_deps import get_current_user_supabase as get_current_user
 from app.models.user import User
 from app.models.reading import ReadingAssignment
 from app.models.tests import AssignmentTest, TestResult

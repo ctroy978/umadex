@@ -1,7 +1,7 @@
 'use client'
 
 import AuthGuard from '@/components/AuthGuard'
-import { useAuth } from '@/hooks/useAuth'
+import { useAuthSupabase } from '@/hooks/useAuthSupabase'
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { studentClassroomApi } from '@/lib/classroomApi'
@@ -9,7 +9,7 @@ import { AcademicCapIcon, PlusIcon, ClipboardDocumentListIcon, ArrowRightOnRecta
 import type { Classroom } from '@/types/classroom'
 
 export default function DashboardPage() {
-  const { user, logout } = useAuth()
+  const { user, logout } = useAuthSupabase()
   const router = useRouter()
   const [classrooms, setClassrooms] = useState<Classroom[]>([])
   const [loadingClassrooms, setLoadingClassrooms] = useState(true)

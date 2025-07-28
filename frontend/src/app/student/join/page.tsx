@@ -2,13 +2,13 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { useAuth } from '@/hooks/useAuth'
+import { useAuthSupabase } from '@/hooks/useAuthSupabase'
 import { studentApi } from '@/lib/studentApi'
 import { AcademicCapIcon, CheckCircleIcon } from '@heroicons/react/24/outline'
 
 export default function JoinClassroomPage() {
   const router = useRouter()
-  const { user } = useAuth()
+  const { user } = useAuthSupabase()
   const [classCode, setClassCode] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')

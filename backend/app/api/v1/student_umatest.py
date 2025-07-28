@@ -17,7 +17,7 @@ from app.models.user import User, UserRole
 from app.models.classroom import Classroom, ClassroomAssignment, StudentAssignment, ClassroomStudent
 from app.models.umatest import TestAssignment
 from app.models.tests import StudentTestAttempt, TestQuestionEvaluation, TestSecurityIncident
-from app.utils.deps import get_current_user
+from app.utils.supabase_deps import get_current_user_supabase as get_current_user
 from app.services.test_schedule import TestScheduleService
 from app.services.umatest_evaluation import UMATestEvaluationService
 from app.services.bypass_validation import validate_bypass_code

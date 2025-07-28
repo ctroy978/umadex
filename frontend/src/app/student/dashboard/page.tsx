@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { studentApi, type StudentClassroom } from '@/lib/studentApi'
-import { useAuth } from '@/hooks/useAuth'
+import { useAuthSupabase } from '@/hooks/useAuthSupabase'
 import { 
   PlusIcon, 
   BookOpenIcon, 
@@ -17,7 +17,7 @@ import {
 export default function StudentDashboard() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const { logout, user } = useAuth()
+  const { logout, user } = useAuthSupabase()
   const [classrooms, setClassrooms] = useState<StudentClassroom[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)

@@ -1,6 +1,6 @@
 'use client'
 
-import { useAuth } from '@/hooks/useAuth'
+import { useAuthSupabase } from '@/hooks/useAuthSupabase'
 import Link from 'next/link'
 import { 
   BookOpenIcon,
@@ -92,7 +92,7 @@ const utilities = [
 ]
 
 export default function TeacherDashboard() {
-  const { user } = useAuth()
+  const { user } = useAuthSupabase()
 
   return (
     <div className="p-8">

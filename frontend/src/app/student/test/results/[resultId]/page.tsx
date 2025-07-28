@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAuth } from '@/hooks/useAuth';
+import { useAuthSupabase } from '@/hooks/useAuthSupabase';
 import { tokenStorage } from '@/lib/tokenStorage';
 import { 
   CheckCircleIcon, 
@@ -45,7 +45,7 @@ interface TestResultDetail {
 
 export default function TestResultsPage({ params }: { params: { resultId: string } }) {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user } = useAuthSupabase();
   const [testResult, setTestResult] = useState<TestResultDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');

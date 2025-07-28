@@ -1,10 +1,10 @@
 'use client'
 
-import { useAuth } from '@/hooks/useAuth'
+import { useAuthSupabase } from '@/hooks/useAuthSupabase'
 import { authService } from '@/lib/auth'
 
 export default function TokenExpiryWarning() {
-  const { tokenExpirySeconds } = useAuth()
+  const { tokenExpirySeconds } = useAuthSupabase()
   
   // Only show in development
   if (process.env.NODE_ENV !== 'development') {

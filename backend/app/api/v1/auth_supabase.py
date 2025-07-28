@@ -1,9 +1,9 @@
 """Authentication endpoints using Supabase Auth"""
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.core.database import get_async_db
+from app.core.database import get_db
 from app.schemas.auth import (
-    OTPRequest, OTPVerify, TokenResponse, 
+    OTPRequestSchema, OTPVerifySchema, TokenResponse, 
     UserResponse, RefreshTokenRequest
 )
 from app.services.supabase_auth import SupabaseAuthService
@@ -17,8 +17,8 @@ router = APIRouter()
 
 @router.post("/request-otp", response_model=dict)
 async def request_otp(
-    request: OTPRequest,
-    db: AsyncSession = Depends(get_async_db)
+    request: OTPRequestSchema,
+    db: AsyncSession = Depends(get_db)
 ):
     """Request OTP for login/registration"""
     try:
@@ -42,8 +42,8 @@ async def request_otp(
 
 @router.post("/verify-otp", response_model=TokenResponse)
 async def verify_otp(
-    request: OTPVerify,
-    db: AsyncSession = Depends(get_async_db)
+    request: OTPVerifySchema,
+    db: AsyncSession = Depends(get_db)
 ):
     """Verify OTP and get tokens"""
     try:

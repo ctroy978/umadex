@@ -1,66 +1,31 @@
-import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios'
-import { tokenStorage } from './tokenStorage'
+import axios from 'axios'
+import { supabase } from './supabase'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost/api'
 
 const api = axios.create({
   baseURL: API_URL,
-  timeout: 30000, // 30 second timeout
+  timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
   },
 })
 
-// Queue to hold requests while refreshing token
-let isRefreshing = false
-let refreshSubscribers: ((token: string) => void)[] = []
-
-// Helper to add request to queue
-function subscribeTokenRefresh(cb: (token: string) => void) {
-  refreshSubscribers.push(cb)
-}
-
-// Helper to process queued requests after refresh
-function onTokenRefreshed(token: string) {
-  refreshSubscribers.forEach(cb => cb(token))
-  refreshSubscribers = []
-}
-
-// Request interceptor
+// Request interceptor to add auth token
 api.interceptors.request.use(
-  async (config: InternalAxiosRequestConfig) => {
+  async (config) => {
     // Skip token for auth endpoints except /auth/me
-    if (config.url?.includes('/auth/') && !config.url?.includes('/auth/me') && !config.url?.includes('/auth/sessions')) {
+    if (config.url?.includes('/auth/') && 
+        !config.url?.includes('/auth/me') && 
+        !config.url?.includes('/auth/sessions')) {
       return config
     }
 
-    // Check if token needs refresh before sending request
-    if (tokenStorage.isAccessTokenNearExpiry() && !isRefreshing) {
-      isRefreshing = true
-      
-      try {
-        const { authService } = await import('./auth')
-        const newToken = await authService.refreshAccessToken()
-        
-        if (newToken) {
-          onTokenRefreshed(newToken)
-        } else {
-          // Refresh failed, redirect to login
-          window.location.href = '/login'
-          return Promise.reject(new Error('Token refresh failed'))
-        }
-      } catch (error) {
-        window.location.href = '/login'
-        return Promise.reject(error)
-      } finally {
-        isRefreshing = false
-      }
-    }
-
-    // Add current token to request
-    const token = tokenStorage.getAccessToken()
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`
+    // Get the current session from Supabase
+    const { data: { session } } = await supabase.auth.getSession()
+    
+    if (session?.access_token) {
+      config.headers.Authorization = `Bearer ${session.access_token}`
     }
     
     return config
@@ -68,49 +33,48 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 )
 
-// Response interceptor
+// Response interceptor to handle 401s
 api.interceptors.response.use(
   (response) => response,
-  async (error: AxiosError) => {
-    const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean }
+  async (error) => {
+    const originalRequest = error.config
     
-    // Skip retry for auth endpoints
+    // Skip retry for auth endpoints to prevent loops
     if (originalRequest?.url?.includes('/auth/')) {
       return Promise.reject(error)
     }
     
+    // If we get a 401 and haven't already tried to refresh
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true
       
-      if (!isRefreshing) {
-        isRefreshing = true
+      try {
+        // Check if we have a valid session first
+        const { data: { session } } = await supabase.auth.getSession()
         
-        try {
-          const { authService } = await import('./auth')
-          const newToken = await authService.refreshAccessToken()
-          
-          if (newToken) {
-            onTokenRefreshed(newToken)
-            originalRequest.headers.Authorization = `Bearer ${newToken}`
-            return api(originalRequest)
-          }
-        } catch (refreshError) {
-          // Refresh failed
-          tokenStorage.clearTokens()
+        if (!session) {
+          // No session, redirect to login
           window.location.href = '/login'
-          return Promise.reject(refreshError)
-        } finally {
-          isRefreshing = false
+          return Promise.reject(new Error('No session'))
         }
+        
+        // Try to refresh the session
+        const { data, error: refreshError } = await supabase.auth.refreshSession()
+        
+        if (refreshError || !data.session) {
+          // Refresh failed, redirect to login
+          await supabase.auth.signOut()
+          window.location.href = '/login'
+          return Promise.reject(refreshError || new Error('Session refresh failed'))
+        }
+        
+        // Retry the original request with new token
+        originalRequest.headers.Authorization = `Bearer ${data.session.access_token}`
+        return api(originalRequest)
+      } catch (refreshError) {
+        // Don't sign out on error - just reject
+        return Promise.reject(refreshError)
       }
-      
-      // Token is being refreshed, queue this request
-      return new Promise((resolve) => {
-        subscribeTokenRefresh((token: string) => {
-          originalRequest.headers.Authorization = `Bearer ${token}`
-          resolve(api(originalRequest))
-        })
-      })
     }
     
     return Promise.reject(error)

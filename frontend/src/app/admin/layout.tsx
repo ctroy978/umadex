@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAuth } from '@/hooks/useAuth';
+import { useAuthSupabase } from '@/hooks/useAuthSupabase';
 import AdminGuard from '@/components/AdminGuard';
 
 export default function AdminLayout({
@@ -10,7 +10,7 @@ export default function AdminLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { user, isLoading: loading, logout } = useAuth();
+  const { user, isLoading: loading, logout } = useAuthSupabase();
   const router = useRouter();
 
   useEffect(() => {

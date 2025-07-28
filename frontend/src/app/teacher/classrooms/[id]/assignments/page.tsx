@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, Fragment } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { useAuth } from '@/hooks/useAuth'
+import { useAuthSupabase } from '@/hooks/useAuthSupabase'
 import { teacherClassroomApi } from '@/lib/classroomApi'
 import { Dialog, Transition } from '@headlessui/react'
 import { ExclamationTriangleIcon } from '@heroicons/react/24/outline'
@@ -61,7 +61,7 @@ const STATUS_OPTIONS = [
 export default function AssignmentManagementPage() {
   const params = useParams()
   const router = useRouter()
-  const { user } = useAuth()
+  const { user } = useAuthSupabase()
   const classroomId = params.id as string
 
   const [classroom, setClassroom] = useState<ClassroomDetail | null>(null)

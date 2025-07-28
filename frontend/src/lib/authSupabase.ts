@@ -35,13 +35,13 @@ export interface AuthResponse {
 class AuthSupabaseService {
   async requestOTP(data: LoginData) {
     // For new users, we need to go through our backend to check whitelist
-    const response = await api.post('/auth/request-otp', data)
+    const response = await api.post('/v1/auth/request-otp', data)
     return response.data
   }
 
   async verifyOTP(data: VerifyOTPData): Promise<AuthResponse> {
     // Verify OTP through our backend which will create/update user
-    const response = await api.post<AuthResponse>('/auth/verify-otp', data)
+    const response = await api.post<AuthResponse>('/v1/auth/verify-otp', data)
     
     // Store tokens in Supabase client
     const { access_token, refresh_token } = response.data
@@ -82,11 +82,11 @@ class AuthSupabaseService {
     
     try {
       // Get user data from our backend
-      const response = await api.get<User>('/auth/me')
+      const response = await api.get<User>('/v1/auth/me')
       return response.data
     } catch (error) {
-      // If backend fails, session might be invalid
-      await this.logout()
+      console.error('Failed to get current user:', error)
+      // Don't automatically logout - let the auth guard handle it
       return null
     }
   }

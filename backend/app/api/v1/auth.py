@@ -11,7 +11,7 @@ from app.schemas.user import UserCreate
 from app.services.auth import AuthService
 from app.services.email import EmailService
 from app.services.user import UserService
-from app.utils.deps import get_current_user
+from app.utils.supabase_deps import get_current_user_supabase as get_current_user
 from app.models import User
 
 router = APIRouter()

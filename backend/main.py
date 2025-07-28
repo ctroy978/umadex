@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 
 from app.core.config import settings
 from app.core.database import engine, Base
-from app.api.v1 import auth, admin_simple as admin, teacher, student, umaread_simple as umaread, tests, umaread_hybrid, student_tests, teacher_settings, test_schedule, student_debate, writing, umalecture, teacher_umatest, student_umatest
+from app.api.v1 import auth_supabase as auth, admin_simple as admin, teacher, student, umaread_simple as umaread, tests, umaread_hybrid, student_tests, teacher_settings, test_schedule, student_debate, writing, umalecture, teacher_umatest, student_umatest
 from app.core.redis import redis_client
 
 load_dotenv()

@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Clear Session</title>
+</head>
+<body>
+    <h1>Clearing Session...</h1>
+    <p>Rate limit detected. Clearing all authentication data...</p>
+    <script>
+        // Clear everything
+        localStorage.clear();
+        sessionStorage.clear();
+        
+        // Clear all cookies
+        document.cookie.split(";").forEach(function(c) { 
+            document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/"); 
+        });
+        
+        // Wait a bit then redirect
+        setTimeout(() => {
+            document.body.innerHTML = '<h1>Session Cleared</h1><p>Wait 30 seconds for rate limit to reset, then <a href="/login">click here to login</a></p>';
+        }, 1000);
+    </script>
+</body>
+</html>

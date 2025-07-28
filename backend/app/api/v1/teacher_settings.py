@@ -12,7 +12,7 @@ import secrets
 import string
 
 from app.core.database import get_db
-from app.utils.deps import get_current_user
+from app.utils.supabase_deps import get_current_user_supabase as get_current_user
 from app.models.user import User, UserRole
 from app.models.tests import TeacherBypassCode
 

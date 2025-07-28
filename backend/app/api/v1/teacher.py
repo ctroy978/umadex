@@ -27,7 +27,7 @@ from app.services.reading_async import ReadingAssignmentAsyncService
 from app.services.reading import MarkupParser
 from app.services.image_processing import ImageProcessor
 from app.services import classroom as classroom_service
-from app.utils.deps import get_current_user
+from app.utils.supabase_deps import get_current_user_supabase as get_current_user
 
 # Import vocabulary router
 from . import vocabulary

@@ -3,7 +3,7 @@ from typing import Optional
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.core.database import get_async_db
+from app.core.database import get_db
 from app.models.user import User
 from app.services.supabase_auth import SupabaseAuthService
 import logging
@@ -15,7 +15,7 @@ security = HTTPBearer(auto_error=False)
 
 async def get_current_user_supabase(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_db)
 ) -> User:
     """Get current user from Supabase JWT token"""
     if not credentials:
@@ -38,13 +38,14 @@ async def get_current_user_supabase(
         )
     
     # Set RLS context for Supabase
-    await db.execute(f"SET LOCAL app.current_user_id = '{user.id}'")
+    from sqlalchemy import text
+    await db.execute(text(f"SET LOCAL app.current_user_id = '{user.id}'"))
     
     return user
 
 async def get_current_user_optional_supabase(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_db)
 ) -> Optional[User]:
     """Get current user if authenticated, otherwise None"""
     if not credentials:

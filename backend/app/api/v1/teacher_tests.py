@@ -15,7 +15,7 @@ from app.models.user import User
 from app.models.tests import AssignmentTest, StudentTestAttempt
 from app.models.reading import ReadingAssignment
 from app.models.classroom import ClassroomAssignment, ClassroomStudent
-from app.utils.deps import get_current_user
+from app.utils.supabase_deps import get_current_user_supabase as get_current_user
 from app.services.test_evaluation_v2 import TestEvaluationServiceV2
 
 logger = logging.getLogger(__name__)

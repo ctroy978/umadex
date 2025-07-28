@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAuth } from '@/hooks/useAuth';
+import { useAuthSupabase } from '@/hooks/useAuthSupabase';
 import { tokenStorage } from '@/lib/tokenStorage';
 
 interface TestQuestion {
@@ -30,7 +30,7 @@ interface TestData {
 
 export default function TestReviewPage({ params }: { params: { id: string } }) {
   const router = useRouter();
-  const { user, isLoading } = useAuth();
+  const { user, isLoading } = useAuthSupabase();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [test, setTest] = useState<TestData | null>(null);

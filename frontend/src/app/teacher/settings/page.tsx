@@ -1,13 +1,13 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useAuth } from '@/hooks/useAuth';
+import { useAuthSupabase } from '@/hooks/useAuthSupabase';
 import { teacherApi, TeacherSettings as TeacherSettingsType } from '@/lib/teacherApi';
 import BypassCodeManager from '@/components/teacher/BypassCodeManager';
 import { UserIcon, KeyIcon } from '@heroicons/react/24/outline';
 
 export default function SettingsPage() {
-  const { user } = useAuth();
+  const { user } = useAuthSupabase();
   const [settings, setSettings] = useState<TeacherSettingsType | null>(null);
   const [loading, setLoading] = useState(true);
 

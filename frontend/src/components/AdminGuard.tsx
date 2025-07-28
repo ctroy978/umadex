@@ -2,14 +2,14 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAuth } from '@/hooks/useAuth';
+import { useAuthSupabase } from '@/hooks/useAuthSupabase';
 
 interface AdminGuardProps {
   children: React.ReactNode;
 }
 
 export default function AdminGuard({ children }: AdminGuardProps) {
-  const { user, isLoading: loading, loadUser } = useAuth();
+  const { user, isLoading: loading, loadUser } = useAuthSupabase();
   const router = useRouter();
 
   useEffect(() => {
@@ -17,7 +17,9 @@ export default function AdminGuard({ children }: AdminGuardProps) {
   }, [loadUser]);
 
   useEffect(() => {
+    console.log('AdminGuard - loading:', loading, 'user:', user);
     if (!loading && (!user || !user.is_admin)) {
+      console.log('AdminGuard - Redirecting: user not admin');
       router.push('/dashboard');
     }
   }, [user, loading, router]);

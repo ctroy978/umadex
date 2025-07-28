@@ -14,7 +14,7 @@ import {
   ArchiveBoxIcon,
   ArrowPathIcon
 } from '@heroicons/react/24/outline'
-import { useAuth } from '@/hooks/useAuth'
+import { useAuthSupabase } from '@/hooks/useAuthSupabase'
 import { api } from '@/lib/api'
 import { toast } from 'react-hot-toast'
 import { format } from 'date-fns'
@@ -41,7 +41,7 @@ interface TestListResponse {
 }
 
 export default function UMATestPage() {
-  const { user } = useAuth()
+  const { user } = useAuthSupabase()
   const router = useRouter()
   const [tests, setTests] = useState<TestAssignment[]>([])
   const [loading, setLoading] = useState(true)

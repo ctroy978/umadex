@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 from app.core.database import get_db
 from app.models.user import User
 from app.models.reading import ReadingAssignment, ReadingChunk, AssignmentImage
-from app.utils.deps import get_current_user
+from app.utils.supabase_deps import get_current_user_supabase as get_current_user
 from app.schemas.umaread import (
     ChunkResponse,
     AssignmentStartResponse

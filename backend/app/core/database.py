@@ -2,12 +2,36 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy import event, text
 from typing import AsyncGenerator
+from urllib.parse import urlparse, quote, urlunparse
 
 from .config import settings
 
-# Convert DATABASE_URL to async version
-DATABASE_URL = settings.DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://")
+def fix_database_url(url):
+    """Fix the database URL by properly encoding the password"""
+    # First replace the scheme
+    url = url.replace("postgresql://", "postgresql+psycopg://")
+    
+    # Parse the URL
+    parsed = urlparse(url)
+    
+    # Extract and encode the password if needed
+    if '@' in parsed.netloc:
+        auth_part, host_part = parsed.netloc.split('@', 1)
+        if ':' in auth_part:
+            username, password = auth_part.split(':', 1)
+            # URL encode the password to handle special characters
+            encoded_password = quote(password, safe='')
+            # Reconstruct the netloc
+            new_netloc = f"{username}:{encoded_password}@{host_part}"
+            # Create new URL with encoded password
+            parsed = parsed._replace(netloc=new_netloc)
+    
+    return urlunparse(parsed)
 
+# Use psycopg driver with properly encoded URL
+DATABASE_URL = fix_database_url(settings.DATABASE_URL)
+
+# For psycopg, we keep the SSL parameters in the URL
 engine = create_async_engine(
     DATABASE_URL,
     echo=settings.ENVIRONMENT == "development",
@@ -16,11 +40,6 @@ engine = create_async_engine(
     max_overflow=20,
     pool_pre_ping=True,  # Important for cloud databases
     pool_recycle=300,  # Recycle connections after 5 minutes
-    connect_args={
-        "server_settings": {"jit": "off"},
-        "timeout": 60,  # Connection timeout
-        "command_timeout": 60,  # Command timeout
-    }
 )
 
 AsyncSessionLocal = sessionmaker(
