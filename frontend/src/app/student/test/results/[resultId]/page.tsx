@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthSupabase } from '@/hooks/useAuthSupabase';
-import { tokenStorage } from '@/lib/tokenStorage';
+import { supabase } from '@/lib/supabase';
 import { 
   CheckCircleIcon, 
   XCircleIcon, 
@@ -59,9 +59,9 @@ export default function TestResultsPage({ params }: { params: { resultId: string
 
   const fetchTestResults = async () => {
     try {
-      const token = tokenStorage.getAccessToken();
+      const { data: { session } } = await supabase.auth.getSession();
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/v1/student/tests/results/${params.resultId}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { 'Authorization': `Bearer ${session?.access_token}` }
       });
 
       if (!response.ok) {

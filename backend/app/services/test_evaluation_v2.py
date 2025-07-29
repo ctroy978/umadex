@@ -537,6 +537,9 @@ class TestEvaluationServiceV2:
     
     async def _handle_evaluation_failure(self, test_attempt_id: UUID, error_message: str):
         """Handle evaluation failure."""
+        # Rollback any failed transaction first
+        await self.db.rollback()
+        
         # Store failure info in feedback field since evaluation columns don't exist
         await self.db.execute(
             update(StudentTestAttempt)
