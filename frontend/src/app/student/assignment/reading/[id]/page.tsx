@@ -43,27 +43,55 @@ export default function UMAReadAssignmentPage({ params }: { params: { id: string
       return false;
     };
 
+    const handleCut = (e: ClipboardEvent) => {
+      e.preventDefault();
+      return false;
+    };
+
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Prevent Ctrl+C, Ctrl+V
-      if (e.ctrlKey && ['c', 'v'].includes(e.key.toLowerCase())) {
+      // Prevent Ctrl+C, Ctrl+V, Ctrl+X, Ctrl+A
+      if (e.ctrlKey && ['c', 'v', 'x', 'a'].includes(e.key.toLowerCase())) {
         e.preventDefault();
         return false;
       }
-      // Prevent Cmd+C, Cmd+V on Mac
-      if (e.metaKey && ['c', 'v'].includes(e.key.toLowerCase())) {
+      // Prevent Cmd+C, Cmd+V, Cmd+X, Cmd+A on Mac
+      if (e.metaKey && ['c', 'v', 'x', 'a'].includes(e.key.toLowerCase())) {
         e.preventDefault();
         return false;
       }
     };
 
+    const handleSelectStart = (e: Event) => {
+      e.preventDefault();
+      return false;
+    };
+
+    const handleContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+      return false;
+    };
+
+    const handleDragStart = (e: DragEvent) => {
+      e.preventDefault();
+      return false;
+    };
+
     document.addEventListener('copy', handleCopy);
     document.addEventListener('paste', handlePaste);
+    document.addEventListener('cut', handleCut);
     document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('selectstart', handleSelectStart);
+    document.addEventListener('contextmenu', handleContextMenu);
+    document.addEventListener('dragstart', handleDragStart);
 
     return () => {
       document.removeEventListener('copy', handleCopy);
       document.removeEventListener('paste', handlePaste);
+      document.removeEventListener('cut', handleCut);
       document.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('selectstart', handleSelectStart);
+      document.removeEventListener('contextmenu', handleContextMenu);
+      document.removeEventListener('dragstart', handleDragStart);
     };
   }, []);
 
@@ -354,9 +382,13 @@ export default function UMAReadAssignmentPage({ params }: { params: { id: string
 
   return (
       <div 
-        className="min-h-screen bg-gray-50"
+        className="min-h-screen bg-gray-50 select-none"
         onCopy={(e) => e.preventDefault()}
         onPaste={(e) => e.preventDefault()}
+        onCut={(e) => e.preventDefault()}
+        onDragStart={(e) => e.preventDefault()}
+        onContextMenu={(e) => e.preventDefault()}
+        style={{ userSelect: 'none', WebkitUserSelect: 'none', msUserSelect: 'none' }}
       >
         {/* Header */}
         <div className="bg-white shadow-sm">

@@ -25,7 +25,28 @@ api.interceptors.request.use(
     const { data: { session } } = await supabase.auth.getSession()
     
     if (session?.access_token) {
-      config.headers.Authorization = `Bearer ${session.access_token}`
+      // Check if token is about to expire (within 5 minutes)
+      const tokenPayload = JSON.parse(atob(session.access_token.split('.')[1]))
+      const expiryTime = tokenPayload.exp * 1000 // Convert to milliseconds
+      const currentTime = Date.now()
+      const timeUntilExpiry = expiryTime - currentTime
+      
+      // If token expires in less than 5 minutes, try to refresh it
+      if (timeUntilExpiry < 5 * 60 * 1000) {
+        try {
+          const { data, error } = await supabase.auth.refreshSession()
+          if (!error && data.session) {
+            config.headers.Authorization = `Bearer ${data.session.access_token}`
+          } else {
+            config.headers.Authorization = `Bearer ${session.access_token}`
+          }
+        } catch (refreshError) {
+          // If refresh fails, use existing token
+          config.headers.Authorization = `Bearer ${session.access_token}`
+        }
+      } else {
+        config.headers.Authorization = `Bearer ${session.access_token}`
+      }
     }
     
     return config
@@ -41,6 +62,13 @@ api.interceptors.response.use(
     
     // Skip retry for auth endpoints to prevent loops
     if (originalRequest?.url?.includes('/auth/')) {
+      return Promise.reject(error)
+    }
+    
+    // Special handling for test-related endpoints - don't redirect on 401
+    if (originalRequest?.url?.includes('/security-incident') || 
+        originalRequest?.url?.includes('/save-answer') ||
+        originalRequest?.url?.includes('/tests/')) {
       return Promise.reject(error)
     }
     

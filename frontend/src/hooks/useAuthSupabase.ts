@@ -53,10 +53,18 @@ if (typeof window !== 'undefined') {
     
     // Listen for auth state changes
     supabase.auth.onAuthStateChange((event, session) => {
+      console.log('Auth state change:', event)
+      
       if (event === 'SIGNED_OUT') {
         useAuthSupabase.getState().setUser(null)
-      } else if (event === 'SIGNED_IN') {
+      } else if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
         // Only reload on sign in, not on token refresh to prevent loops
+        useAuthSupabase.getState().loadUser()
+      } else if (event === 'TOKEN_REFRESHED') {
+        // Don't reload user on token refresh - just log it
+        console.log('Token refreshed, keeping current user state')
+      } else if (event === 'USER_UPDATED') {
+        // User data changed, reload it
         useAuthSupabase.getState().loadUser()
       }
     })

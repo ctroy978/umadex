@@ -14,7 +14,7 @@ export function useTestSecurity({ testId, isActive, onWarning, onLock }: UseTest
   const [showWarning, setShowWarning] = useState(false);
 
   const handleSecurityViolation = useCallback(async (violationType: string) => {
-    if (!isActive || isLocked) return;
+    if (!isActive || isLocked || !testId) return;
 
     try {
       const response = await testApi.logSecurityIncident(testId, {
@@ -35,16 +35,31 @@ export function useTestSecurity({ testId, isActive, onWarning, onLock }: UseTest
         setIsLocked(true);
         onLock?.();
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to log security incident:', error);
+      
+      // If it's a 401 or 404 error, don't show warning - the test might be over
+      if (error?.response?.status === 401 || error?.response?.status === 404) {
+        console.warn('Test session may have ended. Security incident not recorded.');
+        return;
+      }
+      
+      // For other errors, still show warning as a precaution
+      if (violationCount === 0) {
+        setViolationCount(1);
+        setShowWarning(true);
+        onWarning?.();
+      }
     }
-  }, [testId, isActive, isLocked, onWarning, onLock]);
+  }, [testId, isActive, isLocked, onWarning, onLock, violationCount]);
 
   useEffect(() => {
-    if (!isActive) return;
+    if (!isActive || !testId) return;
+
+    let isCleanedUp = false;
 
     const handleVisibilityChange = () => {
-      if (document.hidden) {
+      if (!isCleanedUp && document.hidden) {
         handleSecurityViolation('tab_switch');
       }
     };
@@ -52,14 +67,14 @@ export function useTestSecurity({ testId, isActive, onWarning, onLock }: UseTest
     const handleWindowBlur = () => {
       // Check if the blur is due to developer tools or other browser UI
       setTimeout(() => {
-        if (!document.hasFocus()) {
+        if (!isCleanedUp && !document.hasFocus()) {
           handleSecurityViolation('window_blur');
         }
       }, 100);
     };
 
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (!isLocked) {
+      if (!isCleanedUp && !isLocked) {
         e.preventDefault();
         e.returnValue = 'Are you sure you want to leave the test?';
         handleSecurityViolation('navigation_attempt');
@@ -68,12 +83,14 @@ export function useTestSecurity({ testId, isActive, onWarning, onLock }: UseTest
 
     // Mobile-specific handlers
     const handlePageHide = () => {
-      handleSecurityViolation('app_switch');
+      if (!isCleanedUp) {
+        handleSecurityViolation('app_switch');
+      }
     };
 
     const handleOrientationChange = () => {
       setTimeout(() => {
-        if (document.hidden) {
+        if (!isCleanedUp && document.hidden) {
           handleSecurityViolation('orientation_cheat');
         }
       }, 100);
@@ -91,6 +108,7 @@ export function useTestSecurity({ testId, isActive, onWarning, onLock }: UseTest
 
     // Cleanup
     return () => {
+      isCleanedUp = true;
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('blur', handleWindowBlur);
       window.removeEventListener('beforeunload', handleBeforeUnload);
@@ -100,7 +118,7 @@ export function useTestSecurity({ testId, isActive, onWarning, onLock }: UseTest
         window.removeEventListener('orientationchange', handleOrientationChange);
       }
     };
-  }, [isActive, isLocked, handleSecurityViolation]);
+  }, [isActive, isLocked, testId, handleSecurityViolation]);
 
   // Load initial security status
   useEffect(() => {

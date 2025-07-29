@@ -21,7 +21,13 @@ export default function CompletionScreen({
   const router = useRouter();
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4 select-none"
+         onCopy={(e) => e.preventDefault()}
+         onPaste={(e) => e.preventDefault()}
+         onCut={(e) => e.preventDefault()}
+         onDragStart={(e) => e.preventDefault()}
+         onContextMenu={(e) => e.preventDefault()}
+         style={{ userSelect: 'none', WebkitUserSelect: 'none', msUserSelect: 'none' }}>
       <div className="max-w-2xl w-full">
         <div className="bg-white rounded-lg shadow-lg p-8 text-center">
           {/* Success Icon */}

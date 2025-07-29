@@ -133,8 +133,15 @@ export default function TestInterface({ testData, readingContent, onComplete }: 
       setLastSaveTime(new Date())
     } catch (error: any) {
       console.error('Failed to save answer:', error)
-      const errorMessage = error.response?.data?.detail || error.message || 'Failed to save answer'
-      setSaveError(errorMessage)
+      
+      // Handle 401 errors without redirecting
+      if (error.response?.status === 401) {
+        console.warn('Auth issue while saving answer. Answer may not be saved.')
+        setSaveError('Session expired. Your answer may not be saved. Please complete the test quickly.')
+      } else {
+        const errorMessage = error.response?.data?.detail || error.message || 'Failed to save answer'
+        setSaveError(errorMessage)
+      }
     } finally {
       setIsSaving(false)
     }

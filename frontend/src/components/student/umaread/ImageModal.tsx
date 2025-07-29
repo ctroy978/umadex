@@ -24,12 +24,19 @@ export default function ImageModal({ imageUrl, altText, onClose }: ImageModalPro
 
   return (
     <div 
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75 p-4 select-none"
       onClick={onClose}
+      onCopy={(e) => e.preventDefault()}
+      onPaste={(e) => e.preventDefault()}
+      onCut={(e) => e.preventDefault()}
+      onDragStart={(e) => e.preventDefault()}
+      onContextMenu={(e) => e.preventDefault()}
+      style={{ userSelect: 'none', WebkitUserSelect: 'none', msUserSelect: 'none' }}
     >
       <div 
-        className="relative max-w-7xl max-h-[90vh] bg-white rounded-lg shadow-xl"
+        className="relative max-w-7xl max-h-[90vh] bg-white rounded-lg shadow-xl select-none"
         onClick={(e) => e.stopPropagation()}
+        style={{ userSelect: 'none', WebkitUserSelect: 'none', msUserSelect: 'none' }}
       >
         <button
           onClick={onClose}

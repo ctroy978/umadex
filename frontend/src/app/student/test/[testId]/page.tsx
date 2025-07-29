@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation'
 import { testApi } from '@/lib/testApi'
 import TestInterface from '@/components/student/test/TestInterface'
 import { TestStartResponse, ReadingContentResponse } from '@/types/test'
-import { Loader2 } from 'lucide-react'
+import { Loader2, LockIcon } from 'lucide-react'
+import UnlockTestModal from '@/components/student/test/UnlockTestModal'
 
 export default function TestPage({ params }: { params: { testId: string } }) {
   const router = useRouter()
@@ -18,6 +19,9 @@ export default function TestPage({ params }: { params: { testId: string } }) {
   const [showOverrideDialog, setShowOverrideDialog] = useState(false)
   const [overrideCode, setOverrideCode] = useState('')
   const [retryAttempt, setRetryAttempt] = useState(0)
+  const [isTestLocked, setIsTestLocked] = useState(false)
+  const [showUnlockModal, setShowUnlockModal] = useState(false)
+  const [testAttemptId, setTestAttemptId] = useState<string | null>(null)
 
   useEffect(() => {
     loadTestData()
@@ -38,12 +42,32 @@ export default function TestPage({ params }: { params: { testId: string } }) {
         testApi.getReadingContent(assignmentId)
       ])
       
+      // Check if test is locked
+      if (test.status === 'locked') {
+        setIsTestLocked(true)
+        setTestAttemptId(test.test_attempt_id)
+        setError('This test has been locked due to security violations.')
+        return
+      }
+      
       setTestData(test)
       setReadingContent(content)
       setShowOverrideDialog(false)
       setRetryAttempt(0) // Reset retry count on success
     } catch (err: any) {
       console.error('Failed to load test:', err)
+      
+      // Check if it's a test locked error (403 with locked message)
+      if (err.response?.status === 403 && err.response?.data?.detail?.includes('locked')) {
+        setIsTestLocked(true)
+        // Try to extract test attempt ID from error message or response
+        const attemptIdMatch = err.response?.data?.detail?.match(/attempt_id[:\s]+([a-f0-9-]+)/i)
+        if (attemptIdMatch) {
+          setTestAttemptId(attemptIdMatch[1])
+        }
+        setError('This test has been locked due to security violations.')
+        return
+      }
       
       // Check if it's a schedule restriction error
       if (err.response?.status === 403) {
@@ -52,6 +76,18 @@ export default function TestPage({ params }: { params: { testId: string } }) {
           setShowOverrideDialog(true)
           return
         }
+      }
+      
+      // Check if it's a test locked error in 500 response
+      if (err.response?.data?.detail?.includes('locked')) {
+        setIsTestLocked(true)
+        // Try to extract test attempt ID from error message or response
+        const attemptIdMatch = err.response?.data?.detail?.match(/attempt_id[:\s]+([a-f0-9-]+)/i)
+        if (attemptIdMatch) {
+          setTestAttemptId(attemptIdMatch[1])
+        }
+        setError('This test has been locked due to security violations.')
+        return
       }
       
       // Handle 500 errors (like duplicate key constraints) with automatic retry
@@ -117,24 +153,61 @@ export default function TestPage({ params }: { params: { testId: string } }) {
         <div className="min-h-screen bg-gray-50 p-4">
           <div className="max-w-2xl mx-auto mt-8">
             <div className="bg-red-50 border border-red-200 rounded-lg p-6">
-              <h3 className="text-lg font-semibold text-red-800 mb-2">Unable to Load Test</h3>
+              {isTestLocked && (
+                <div className="flex justify-center mb-4">
+                  <LockIcon className="h-12 w-12 text-red-600" />
+                </div>
+              )}
+              <h3 className="text-lg font-semibold text-red-800 mb-2">
+                {isTestLocked ? 'Test Locked' : 'Unable to Load Test'}
+              </h3>
               <p className="text-red-700 mb-4">{error}</p>
+              {isTestLocked && (
+                <p className="text-red-600 mb-4 text-sm">
+                  Contact your teacher for assistance or use a bypass code if you have one.
+                </p>
+              )}
               <div className="flex space-x-3">
+                {isTestLocked && (
+                  <button
+                    onClick={() => setShowUnlockModal(true)}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                  >
+                    Enter Bypass Code
+                  </button>
+                )}
+                {!isTestLocked && (
+                  <button
+                    onClick={() => loadTestData()}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                  >
+                    Try Again
+                  </button>
+                )}
                 <button
-                  onClick={() => loadTestData()}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                  onClick={() => router.push('/student/dashboard')}
+                  className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 transition-colors"
                 >
-                  Try Again
-                </button>
-                <button
-                  onClick={() => router.back()}
-                  className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors"
-                >
-                  Go Back
+                  Return to Dashboard
                 </button>
               </div>
             </div>
           </div>
+          
+          {/* Unlock Modal */}
+          {showUnlockModal && testAttemptId && (
+            <UnlockTestModal
+              isOpen={showUnlockModal}
+              testAttemptId={testAttemptId}
+              onUnlockSuccess={() => {
+                setShowUnlockModal(false)
+                setIsTestLocked(false)
+                setError(null)
+                loadTestData() // Reload the test
+              }}
+              onCancel={() => setShowUnlockModal(false)}
+            />
+          )}
         </div>
     )
   }
@@ -165,7 +238,7 @@ export default function TestPage({ params }: { params: { testId: string } }) {
               />
               <div className="flex justify-end space-x-3">
                 <button
-                  onClick={() => router.back()}
+                  onClick={() => router.push('/student/dashboard')}
                   className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
                 >
                   Cancel

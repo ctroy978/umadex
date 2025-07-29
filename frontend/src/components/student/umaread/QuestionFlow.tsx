@@ -104,7 +104,13 @@ export default function QuestionFlow({
   };
 
   return (
-    <div className="bg-white rounded-lg shadow-sm p-6">
+    <div className="bg-white rounded-lg shadow-sm p-6 select-none"
+         onCopy={(e) => e.preventDefault()}
+         onPaste={(e) => e.preventDefault()}
+         onCut={(e) => e.preventDefault()}
+         onDragStart={(e) => e.preventDefault()}
+         onContextMenu={(e) => e.preventDefault()}
+         style={{ userSelect: 'none', WebkitUserSelect: 'none', msUserSelect: 'none' }}>
       {/* Question Header */}
       <div className="mb-4">
         <div className="flex justify-between items-center mb-2">

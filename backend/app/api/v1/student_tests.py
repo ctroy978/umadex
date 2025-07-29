@@ -141,17 +141,39 @@ async def start_test(
             detail="You must complete the reading assignment before taking the test"
         )
     
-    # Check for existing in-progress attempt first
+    # Check for locked attempt first
+    locked_attempt = await db.execute(
+        select(StudentTestAttempt)
+        .where(
+            and_(
+                StudentTestAttempt.student_id == current_user.id,
+                StudentTestAttempt.assignment_test_id == assignment_test.id,
+                StudentTestAttempt.is_locked == True
+            )
+        )
+        .order_by(StudentTestAttempt.created_at.desc())
+    )
+    locked_test = locked_attempt.scalar_one_or_none()
+    
+    if locked_test:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Test is locked due to security violations. Test attempt_id: {locked_test.id}"
+        )
+    
+    # Check for existing in-progress attempt
     existing_attempt = await db.execute(
         select(StudentTestAttempt)
         .where(
             and_(
                 StudentTestAttempt.student_id == current_user.id,
                 StudentTestAttempt.assignment_test_id == assignment_test.id,
-                StudentTestAttempt.status == "in_progress"
+                StudentTestAttempt.status == "in_progress",
+                StudentTestAttempt.is_locked == False
             )
         )
         .order_by(StudentTestAttempt.created_at.desc())
+        .limit(1)
     )
     test_attempt = existing_attempt.scalar_one_or_none()
     

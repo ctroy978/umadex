@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
 
 interface CrunchTextModalProps {
@@ -20,6 +20,72 @@ export default function CrunchTextModal({
   error,
   onRetry
 }: CrunchTextModalProps) {
+  // Disable copy/paste when modal is open
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleCopy = (e: ClipboardEvent) => {
+      e.preventDefault();
+      return false;
+    };
+
+    const handlePaste = (e: ClipboardEvent) => {
+      e.preventDefault();
+      return false;
+    };
+
+    const handleCut = (e: ClipboardEvent) => {
+      e.preventDefault();
+      return false;
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Prevent Ctrl+C, Ctrl+V, Ctrl+X, Ctrl+A
+      if (e.ctrlKey && ['c', 'v', 'x', 'a'].includes(e.key.toLowerCase())) {
+        e.preventDefault();
+        return false;
+      }
+      // Prevent Cmd+C, Cmd+V, Cmd+X, Cmd+A on Mac
+      if (e.metaKey && ['c', 'v', 'x', 'a'].includes(e.key.toLowerCase())) {
+        e.preventDefault();
+        return false;
+      }
+    };
+
+    const handleSelectStart = (e: Event) => {
+      e.preventDefault();
+      return false;
+    };
+
+    const handleContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+      return false;
+    };
+
+    const handleDragStart = (e: DragEvent) => {
+      e.preventDefault();
+      return false;
+    };
+
+    document.addEventListener('copy', handleCopy, true);
+    document.addEventListener('paste', handlePaste, true);
+    document.addEventListener('cut', handleCut, true);
+    document.addEventListener('keydown', handleKeyDown, true);
+    document.addEventListener('selectstart', handleSelectStart, true);
+    document.addEventListener('contextmenu', handleContextMenu, true);
+    document.addEventListener('dragstart', handleDragStart, true);
+
+    return () => {
+      document.removeEventListener('copy', handleCopy, true);
+      document.removeEventListener('paste', handlePaste, true);
+      document.removeEventListener('cut', handleCut, true);
+      document.removeEventListener('keydown', handleKeyDown, true);
+      document.removeEventListener('selectstart', handleSelectStart, true);
+      document.removeEventListener('contextmenu', handleContextMenu, true);
+      document.removeEventListener('dragstart', handleDragStart, true);
+    };
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   const handleBackdropClick = (e: React.MouseEvent) => {
@@ -36,12 +102,19 @@ export default function CrunchTextModal({
 
   return (
     <div 
-      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 select-none"
       onClick={handleBackdropClick}
       onKeyDown={handleKeyDown}
+      onCopy={(e) => e.preventDefault()}
+      onPaste={(e) => e.preventDefault()}
+      onCut={(e) => e.preventDefault()}
+      onDragStart={(e) => e.preventDefault()}
+      onContextMenu={(e) => e.preventDefault()}
+      style={{ userSelect: 'none', WebkitUserSelect: 'none', msUserSelect: 'none' }}
       tabIndex={-1}
     >
-      <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] flex flex-col">
+      <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] flex flex-col select-none"
+           style={{ userSelect: 'none', WebkitUserSelect: 'none', msUserSelect: 'none' }}>
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-200">
           <div>

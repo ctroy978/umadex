@@ -200,7 +200,13 @@ export default function ChunkReader({
 
   return (
     <>
-      <div className="bg-white rounded-lg shadow-sm">
+      <div className="bg-white rounded-lg shadow-sm select-none"
+           onCopy={(e) => e.preventDefault()}
+           onPaste={(e) => e.preventDefault()}
+           onCut={(e) => e.preventDefault()}
+           onDragStart={(e) => e.preventDefault()}
+           onContextMenu={(e) => e.preventDefault()}
+           style={{ userSelect: 'none', WebkitUserSelect: 'none', msUserSelect: 'none' }}>
         {/* Header with controls */}
         <div className="flex justify-between items-center p-4 border-b border-gray-200">
           <h2 className="text-lg font-medium text-gray-900 flex items-center">
