@@ -218,6 +218,7 @@ class SupabaseAuthService:
             response = supabase.auth.get_user(access_token)
             
             if not response.user:
+                logger.error(f"No user found for token validation")
                 return None
             
             # Get user from database by Supabase Auth ID
@@ -247,5 +248,5 @@ class SupabaseAuthService:
             return user
             
         except Exception as e:
-            logger.error(f"Failed to get user from token: {str(e)}")
+            logger.error(f"Failed to get user from token: {str(e)} - Token length: {len(access_token) if access_token else 0}")
             return None
