@@ -32,6 +32,7 @@ def fix_database_url(url):
 DATABASE_URL = fix_database_url(settings.DATABASE_URL)
 
 # For psycopg, we keep the SSL parameters in the URL
+# Disable prepared statements to avoid conflicts
 engine = create_async_engine(
     DATABASE_URL,
     echo=settings.ENVIRONMENT == "development",
@@ -40,6 +41,9 @@ engine = create_async_engine(
     max_overflow=20,
     pool_pre_ping=True,  # Important for cloud databases
     pool_recycle=300,  # Recycle connections after 5 minutes
+    connect_args={
+        "prepare_threshold": None,  # Disable prepared statements
+    }
 )
 
 AsyncSessionLocal = sessionmaker(

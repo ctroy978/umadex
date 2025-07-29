@@ -284,14 +284,9 @@ async def get_classroom_details(
     # Get all classroom assignments (both reading and vocabulary)
     assignment_list = []
     
-    # Get reading assignments
-    reading_assignments_result = await db.execute(
-        select(ReadingAssignmentModel, ClassroomAssignment)
-        .join(ClassroomAssignment, 
-              and_(
-                  ClassroomAssignment.assignment_id == ReadingAssignmentModel.id,
-                  ClassroomAssignment.assignment_type == "reading"
-              ))
+    # Get ALL classroom assignments in one query to avoid prepared statement conflicts
+    all_ca_result = await db.execute(
+        select(ClassroomAssignment)
         .where(
             and_(
                 ClassroomAssignment.classroom_id == classroom_id,
@@ -300,137 +295,98 @@ async def get_classroom_details(
         )
         .order_by(ClassroomAssignment.display_order, ClassroomAssignment.assigned_at)
     )
+    all_classroom_assignments = all_ca_result.scalars().all()
     
-    for assignment, ca in reading_assignments_result:
-        assignment_list.append(AssignmentInClassroom(
-            id=ca.id,
-            assignment_id=assignment.id,
-            title=assignment.assignment_title,
-            assignment_type=assignment.assignment_type,
-            assigned_at=ca.assigned_at,
-            display_order=ca.display_order,
-            start_date=ca.start_date,
-            end_date=ca.end_date
-        ))
-    
-    # Get vocabulary assignments
-    from app.models.vocabulary import VocabularyList
-    vocab_assignments_result = await db.execute(
-        select(VocabularyList, ClassroomAssignment)
-        .join(ClassroomAssignment,
-              and_(
-                  ClassroomAssignment.vocabulary_list_id == VocabularyList.id,
-                  ClassroomAssignment.assignment_type == "vocabulary"
-              ))
-        .where(
-            and_(
-                ClassroomAssignment.classroom_id == classroom_id,
-                ClassroomAssignment.removed_from_classroom_at.is_(None)
+    # Process each assignment type
+    for ca in all_classroom_assignments:
+        if ca.assignment_type == "reading" and ca.assignment_id:
+            assignment_result = await db.execute(
+                select(ReadingAssignmentModel)
+                .where(ReadingAssignmentModel.id == ca.assignment_id)
             )
-        )
-        .order_by(ClassroomAssignment.display_order, ClassroomAssignment.assigned_at)
-    )
-    
-    for vocab_list, ca in vocab_assignments_result:
-        assignment_list.append(AssignmentInClassroom(
-            id=ca.id,
-            assignment_id=vocab_list.id,
-            title=vocab_list.title,
-            assignment_type="UMAVocab",
-            assigned_at=ca.assigned_at,
-            display_order=ca.display_order,
-            start_date=ca.start_date,
-            end_date=ca.end_date
-        ))
-    
-    # Get debate assignments
-    from app.models.debate import DebateAssignment
-    debate_assignments_result = await db.execute(
-        select(DebateAssignment, ClassroomAssignment)
-        .join(ClassroomAssignment,
-              and_(
-                  ClassroomAssignment.assignment_id == DebateAssignment.id,
-                  ClassroomAssignment.assignment_type == "debate"
-              ))
-        .where(
-            and_(
-                ClassroomAssignment.classroom_id == classroom_id,
-                ClassroomAssignment.removed_from_classroom_at.is_(None)
+            assignment = assignment_result.scalar_one_or_none()
+            if assignment:
+                assignment_list.append(AssignmentInClassroom(
+                    id=ca.id,
+                    assignment_id=assignment.id,
+                    title=assignment.assignment_title,
+                    assignment_type=assignment.assignment_type,
+                    assigned_at=ca.assigned_at,
+                    display_order=ca.display_order,
+                    start_date=ca.start_date,
+                    end_date=ca.end_date
+                ))
+        elif ca.assignment_type == "vocabulary" and ca.vocabulary_list_id:
+            from app.models.vocabulary import VocabularyList
+            vocab_result = await db.execute(
+                select(VocabularyList)
+                .where(VocabularyList.id == ca.vocabulary_list_id)
             )
-        )
-        .order_by(ClassroomAssignment.display_order, ClassroomAssignment.assigned_at)
-    )
-    
-    for debate, ca in debate_assignments_result:
-        assignment_list.append(AssignmentInClassroom(
-            id=ca.id,
-            assignment_id=debate.id,
-            title=debate.title,
-            assignment_type="UMADebate",
-            assigned_at=ca.assigned_at,
-            display_order=ca.display_order,
-            start_date=ca.start_date,
-            end_date=ca.end_date
-        ))
-    
-    # Get writing assignments
-    from app.models.writing import WritingAssignment
-    writing_assignments_result = await db.execute(
-        select(WritingAssignment, ClassroomAssignment)
-        .join(ClassroomAssignment,
-              and_(
-                  ClassroomAssignment.assignment_id == WritingAssignment.id,
-                  ClassroomAssignment.assignment_type == "writing"
-              ))
-        .where(
-            and_(
-                ClassroomAssignment.classroom_id == classroom_id,
-                ClassroomAssignment.removed_from_classroom_at.is_(None)
+            vocab_list = vocab_result.scalar_one_or_none()
+            if vocab_list:
+                assignment_list.append(AssignmentInClassroom(
+                    id=ca.id,
+                    assignment_id=vocab_list.id,
+                    title=vocab_list.title,
+                    assignment_type="UMAVocab",
+                    assigned_at=ca.assigned_at,
+                    display_order=ca.display_order,
+                    start_date=ca.start_date,
+                    end_date=ca.end_date
+                ))
+        elif ca.assignment_type == "debate" and ca.assignment_id:
+            from app.models.debate import DebateAssignment
+            debate_result = await db.execute(
+                select(DebateAssignment)
+                .where(DebateAssignment.id == ca.assignment_id)
             )
-        )
-        .order_by(ClassroomAssignment.display_order, ClassroomAssignment.assigned_at)
-    )
-    
-    for writing, ca in writing_assignments_result:
-        assignment_list.append(AssignmentInClassroom(
-            id=ca.id,
-            assignment_id=writing.id,
-            title=writing.title,
-            assignment_type="UMAWrite",
-            assigned_at=ca.assigned_at,
-            display_order=ca.display_order,
-            start_date=ca.start_date,
-            end_date=ca.end_date
-        ))
-    
-    # Get UMALecture assignments
-    lecture_assignments_result = await db.execute(
-        select(ReadingAssignmentModel, ClassroomAssignment)
-        .join(ClassroomAssignment, 
-              and_(
-                  ClassroomAssignment.assignment_id == ReadingAssignmentModel.id,
-                  ClassroomAssignment.assignment_type == "UMALecture"
-              ))
-        .where(
-            and_(
-                ClassroomAssignment.classroom_id == classroom_id,
-                ClassroomAssignment.removed_from_classroom_at.is_(None)
+            debate = debate_result.scalar_one_or_none()
+            if debate:
+                assignment_list.append(AssignmentInClassroom(
+                    id=ca.id,
+                    assignment_id=debate.id,
+                    title=debate.title,
+                    assignment_type="UMADebate",
+                    assigned_at=ca.assigned_at,
+                    display_order=ca.display_order,
+                    start_date=ca.start_date,
+                    end_date=ca.end_date
+                ))
+        elif ca.assignment_type == "writing" and ca.assignment_id:
+            from app.models.writing import WritingAssignment
+            writing_result = await db.execute(
+                select(WritingAssignment)
+                .where(WritingAssignment.id == ca.assignment_id)
             )
-        )
-        .order_by(ClassroomAssignment.display_order, ClassroomAssignment.assigned_at)
-    )
-    
-    for assignment, ca in lecture_assignments_result:
-        assignment_list.append(AssignmentInClassroom(
-            id=ca.id,
-            assignment_id=assignment.id,
-            title=assignment.assignment_title,
-            assignment_type=assignment.assignment_type,
-            assigned_at=ca.assigned_at,
-            display_order=ca.display_order,
-            start_date=ca.start_date,
-            end_date=ca.end_date
-        ))
+            writing = writing_result.scalar_one_or_none()
+            if writing:
+                assignment_list.append(AssignmentInClassroom(
+                    id=ca.id,
+                    assignment_id=writing.id,
+                    title=writing.title,
+                    assignment_type="UMAWrite",
+                    assigned_at=ca.assigned_at,
+                    display_order=ca.display_order,
+                    start_date=ca.start_date,
+                    end_date=ca.end_date
+                ))
+        elif ca.assignment_type == "UMALecture" and ca.assignment_id:
+            lecture_result = await db.execute(
+                select(ReadingAssignmentModel)
+                .where(ReadingAssignmentModel.id == ca.assignment_id)
+            )
+            lecture = lecture_result.scalar_one_or_none()
+            if lecture:
+                assignment_list.append(AssignmentInClassroom(
+                    id=ca.id,
+                    assignment_id=lecture.id,
+                    title=lecture.assignment_title,
+                    assignment_type=lecture.assignment_type,
+                    assigned_at=ca.assigned_at,
+                    display_order=ca.display_order,
+                    start_date=ca.start_date,
+                    end_date=ca.end_date
+                ))
     
     # Sort all assignments by display order
     assignment_list.sort(key=lambda x: (x.display_order or float('inf'), x.assigned_at))

@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.models.user import User, UserRole
 from app.core.supabase import get_supabase_admin, get_supabase_anon
+from app.core.config import settings
 from app.schemas.user import UserCreate
 from app.models.auth import EmailWhitelist as Whitelist
 import logging
@@ -214,12 +215,16 @@ class SupabaseAuthService:
         supabase = get_supabase_anon()
         
         try:
+            logger.info(f"Attempting to validate token of length: {len(access_token) if access_token else 0}")
+            
             # Get user from token
             response = supabase.auth.get_user(access_token)
             
             if not response.user:
-                logger.error(f"No user found for token validation")
+                logger.error(f"No user found for token validation - Supabase returned no user")
                 return None
+            
+            logger.info(f"Supabase returned user: {response.user.email} with ID: {response.user.id}")
             
             # Get user from database by Supabase Auth ID
             result = await db.execute(
@@ -229,6 +234,11 @@ class SupabaseAuthService:
                 )
             )
             user = result.scalar_one_or_none()
+            
+            if user:
+                logger.info(f"Found user by supabase_auth_id: {user.email}")
+            else:
+                logger.info(f"No user found by supabase_auth_id, trying email fallback")
             
             # Fallback to email if supabase_auth_id not set (during migration)
             if not user:
@@ -240,13 +250,19 @@ class SupabaseAuthService:
                 )
                 user = result.scalar_one_or_none()
                 
-                # Update supabase_auth_id if found by email
-                if user and not user.supabase_auth_id:
-                    user.supabase_auth_id = response.user.id
-                    await db.commit()
+                if user:
+                    logger.info(f"Found user by email fallback: {user.email}")
+                    # Update supabase_auth_id if found by email
+                    if not user.supabase_auth_id:
+                        user.supabase_auth_id = response.user.id
+                        await db.commit()
+                        logger.info(f"Updated supabase_auth_id for user: {user.email}")
+                else:
+                    logger.error(f"No user found in database for email: {response.user.email}")
             
             return user
             
         except Exception as e:
             logger.error(f"Failed to get user from token: {str(e)} - Token length: {len(access_token) if access_token else 0}")
+            logger.exception("Full exception details:")
             return None
