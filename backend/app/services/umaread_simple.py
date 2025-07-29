@@ -131,7 +131,7 @@ class UMAReadService:
                         )
                     )
                 )
-                student_assignment = student_assignment_result.scalar_one()
+                student_assignment = student_assignment_result.scalar_one_or_none()
         
         # Store assignment details before commit
         assignment_title = assignment.assignment_title

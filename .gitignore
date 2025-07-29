@@ -32,6 +32,11 @@ yarn-error.log*
 .env.test.local
 .env.production.local
 .env.supabase
+.env.production.template
+.env.example
+.env.*
+.ENV
+.ENV.*
 
 # IDE
 .vscode/

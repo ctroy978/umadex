@@ -62,7 +62,7 @@ class AuthSupabaseService {
     }
     
     // Get user data from our backend
-    const userResponse = await api.get<User>('/auth/me')
+    const userResponse = await api.get<User>('/v1/auth/me')
     
     return {
       access_token: data.session.access_token,

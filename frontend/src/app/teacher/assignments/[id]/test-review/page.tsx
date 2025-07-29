@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthSupabase } from '@/hooks/useAuthSupabase';
-import { tokenStorage } from '@/lib/tokenStorage';
+import { apiRequest } from '@/lib/api';
 
 interface TestQuestion {
   question: string;
@@ -45,57 +45,49 @@ export default function TestReviewPage({ params }: { params: { id: string } }) {
   const [hasAttemptedFetch, setHasAttemptedFetch] = useState(false);
 
   useEffect(() => {
-    const token = tokenStorage.getAccessToken();
-    if (token && user && !isLoading && !hasAttemptedFetch) {
+    if (user && !isLoading && !hasAttemptedFetch) {
       setHasAttemptedFetch(true);
       fetchTest();
+    } else if (!isLoading && !user) {
+      // User is not authenticated
+      setError('Please login to access this page');
+      setLoading(false);
     }
   }, [user, isLoading, params.id, hasAttemptedFetch]);
 
   const fetchTest = async () => {
     try {
-      const token = tokenStorage.getAccessToken();
-      
-      if (!token) {
-        console.error('No token available');
-        setError('Authentication required');
-        setLoading(false);
-        return;
-      }
-      
       // First, check if a test exists for this assignment
       // We need to query by assignment_id, not test_id
       // For now, try to fetch existing test, if not found, generate one
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/v1/tests/assignment/${params.id}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-
-      if (!response.ok) {
-        if (response.status === 404) {
+      try {
+        const data = await apiRequest<TestData>(`/v1/tests/assignment/${params.id}`);
+        setTest(data);
+        setTestId(data.id);
+        setQuestions(data.test_questions);
+        setTimeLimit(data.time_limit_minutes);
+        setMaxAttempts(data.max_attempts);
+        setTeacherNotes(data.teacher_notes || '');
+      } catch (error: any) {
+        if (error.response?.status === 404 || error.message?.includes('404')) {
           // First check if the assignment exists
-          const assignmentCheck = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/v1/teacher/assignments/reading/${params.id}`, {
-            headers: { 'Authorization': `Bearer ${token}` }
-          });
-          
-          if (!assignmentCheck.ok) {
-            setError('Assignment not found. Please create the assignment first.');
+          try {
+            await apiRequest(`/v1/teacher/assignments/reading/${params.id}`);
+            // Assignment exists, try to generate test
+            await generateTest();
+            return;
+          } catch (assignmentError: any) {
+            if (assignmentError.response?.status === 404 || assignmentError.message?.includes('404')) {
+              setError('Assignment not found. Please create the assignment first.');
+            } else {
+              throw assignmentError;
+            }
             return;
           }
-          
-          // Assignment exists, try to generate test
-          await generateTest();
-          return;
+        } else {
+          throw error;
         }
-        throw new Error('Failed to fetch test');
       }
-
-      const data = await response.json();
-      setTest(data);
-      setTestId(data.id);
-      setQuestions(data.test_questions);
-      setTimeLimit(data.time_limit_minutes);
-      setMaxAttempts(data.max_attempts);
-      setTeacherNotes(data.teacher_notes || '');
     } catch (err) {
       console.error('Error in fetchTest:', err);
       setError('Failed to load test. The assignment may have been deleted.');
@@ -106,30 +98,11 @@ export default function TestReviewPage({ params }: { params: { id: string } }) {
 
   const generateTest = async () => {
     try {
-      const token = tokenStorage.getAccessToken();
-      
-      if (!token) {
-        console.error('No token available for generation');
-        setError('Authentication required');
-        setLoading(false);
-        return;
-      }
-      
       // params.id is the assignment ID
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/v1/tests/${params.id}/generate`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
+      const data = await apiRequest<TestData>(`/v1/tests/${params.id}/generate`, {
+        method: 'POST'
       });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('Generate error response:', errorText);
-        throw new Error('Failed to generate test');
-      }
-
-      const data = await response.json();
       setTest(data);
       setTestId(data.id);
       setQuestions(data.test_questions);
@@ -153,19 +126,10 @@ export default function TestReviewPage({ params }: { params: { id: string } }) {
     setSuccess('');
 
     try {
-      const token = tokenStorage.getAccessToken();
-      
       // Delete the existing test
-      const deleteResponse = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/v1/tests/${testId}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
+      await apiRequest(`/v1/tests/${testId}`, {
+        method: 'DELETE'
       });
-
-      if (!deleteResponse.ok) {
-        const errorData = await deleteResponse.text();
-        console.error('Delete error response:', errorData);
-        throw new Error(`Failed to delete test: ${deleteResponse.status} - ${errorData}`);
-      }
 
       // Clear the testId to ensure the page knows the test was deleted
       setTestId(null);
@@ -229,8 +193,6 @@ export default function TestReviewPage({ params }: { params: { id: string } }) {
     }
 
     try {
-      const token = tokenStorage.getAccessToken();
-      
       // Ensure questions have the correct structure
       const formattedQuestions = questions.map(q => ({
         question: String(q.question || ''),
@@ -251,34 +213,10 @@ export default function TestReviewPage({ params }: { params: { id: string } }) {
       console.log('Sending payload:', payload);
       console.log('Formatted questions:', formattedQuestions);
       
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/v1/tests/${testId}`, {
+      await apiRequest(`/v1/tests/${testId}`, {
         method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
         body: JSON.stringify(payload)
       });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        console.error('Save test error:', errorData);
-        
-        // Handle validation errors from FastAPI
-        if (errorData.detail && Array.isArray(errorData.detail)) {
-          const errorMessages = errorData.detail.map((err: any) => {
-            if (typeof err === 'string') return err;
-            if (err.msg) return err.msg;
-            if (err.loc && err.msg) return `${err.loc.join('.')}: ${err.msg}`;
-            return JSON.stringify(err);
-          });
-          throw new Error(errorMessages.join(', '));
-        } else if (typeof errorData.detail === 'string') {
-          throw new Error(errorData.detail);
-        } else {
-          throw new Error('Failed to save test');
-        }
-      }
 
       setSuccess('Test saved successfully!');
       
@@ -310,19 +248,10 @@ export default function TestReviewPage({ params }: { params: { id: string } }) {
       await saveTest();
 
       // Then approve
-      const token = tokenStorage.getAccessToken();
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/v1/tests/${testId}/approve`, {
+      await apiRequest(`/v1/tests/${testId}/approve`, {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
         body: JSON.stringify({ expires_days: expirationDays })
       });
-
-      if (!response.ok) {
-        throw new Error('Failed to approve test');
-      }
 
       setSuccess('Test approved! Students can now take this test.');
       setTimeout(() => {

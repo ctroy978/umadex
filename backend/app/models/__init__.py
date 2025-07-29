@@ -10,6 +10,7 @@ from .tests import AssignmentTest, TestResult, StudentTestAttempt, TeacherBypass
 from .umaread import UmareadStudentResponse, UmareadChunkProgress, UmareadAssignmentProgress
 from .test_schedule import ClassroomTestSchedule, ClassroomTestOverride, TestOverrideUsage
 from .writing import WritingAssignment, StudentWritingSubmission
+from .debate import DebateAssignment, StudentDebate, DebatePost
 
 __all__ = ["User", "UserRole", "EmailWhitelist", "OTPRequest", "UserSession", "RefreshToken",
           "Classroom", "ClassroomStudent", "ClassroomAssignment",
@@ -21,4 +22,5 @@ __all__ = ["User", "UserRole", "EmailWhitelist", "OTPRequest", "UserSession", "R
           "AssignmentTest", "TestResult", "StudentTestAttempt", "TeacherBypassCode", "TestSecurityIncident",
           "UmareadStudentResponse", "UmareadChunkProgress", "UmareadAssignmentProgress",
           "ClassroomTestSchedule", "ClassroomTestOverride", "TestOverrideUsage",
-          "WritingAssignment", "StudentWritingSubmission"]
+          "WritingAssignment", "StudentWritingSubmission",
+          "DebateAssignment", "StudentDebate", "DebatePost"]

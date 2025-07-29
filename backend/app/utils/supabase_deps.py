@@ -38,8 +38,9 @@ async def get_current_user_supabase(
         )
     
     # Set RLS context for Supabase
-    from sqlalchemy import text
-    await db.execute(text(f"SET LOCAL app.current_user_id = '{user.id}'"))
+    # Note: Commented out for now as it's causing prepared statement conflicts
+    # from sqlalchemy import text
+    # await db.execute(text(f"SET LOCAL app.current_user_id = '{user.id}'"))
     
     return user
 

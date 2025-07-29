@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import MetadataForm from '@/components/AssignmentCreator/MetadataForm';
 import ContentEditor from '@/components/AssignmentCreator/ContentEditor';
 import { ReadingAssignmentMetadata, ReadingAssignment, AssignmentImage } from '@/types/reading';
@@ -9,11 +9,49 @@ import { readingApi } from '@/lib/readingApi';
 
 export default function NewReadingAssignment() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [step, setStep] = useState(1);
   const [metadata, setMetadata] = useState<Partial<ReadingAssignmentMetadata>>({});
   const [assignment, setAssignment] = useState<ReadingAssignment | null>(null);
   const [content, setContent] = useState('');
   const [images, setImages] = useState<AssignmentImage[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isPublishing, setIsPublishing] = useState(false);
+
+  // Load assignment if ID is in URL
+  useEffect(() => {
+    const loadAssignment = async () => {
+      const assignmentId = searchParams.get('id');
+      const stepParam = searchParams.get('step');
+      
+      if (assignmentId) {
+        try {
+          const loadedAssignment = await readingApi.getAssignmentForEdit(assignmentId);
+          setAssignment(loadedAssignment);
+          setContent(loadedAssignment.raw_content || '');
+          setImages(loadedAssignment.images || []);
+          setMetadata({
+            assignment_title: loadedAssignment.assignment_title,
+            work_title: loadedAssignment.work_title,
+            author: loadedAssignment.author,
+            grade_level: loadedAssignment.grade_level,
+            work_type: loadedAssignment.work_type,
+            subject: loadedAssignment.subject,
+            description: loadedAssignment.description,
+            start_date: loadedAssignment.start_date,
+            end_date: loadedAssignment.end_date,
+          });
+          // Set step based on URL or default to content editing
+          setStep(stepParam === '1' ? 1 : 2);
+        } catch (error) {
+          console.error('Error loading assignment:', error);
+        }
+      }
+      setLoading(false);
+    };
+
+    loadAssignment();
+  }, [searchParams]);
 
   const handleMetadataSubmit = async () => {
     try {
@@ -27,6 +65,11 @@ export default function NewReadingAssignment() {
       setAssignment(createdAssignment);
       setContent(createdAssignment.raw_content);
       setImages(createdAssignment.images || []);
+      
+      // Update URL to include assignment ID without navigating
+      const newUrl = `/teacher/assignments/reading/new?id=${createdAssignment.id}&step=2`;
+      window.history.pushState({}, '', newUrl);
+      
       setStep(2);
     } catch (error) {
       console.error('Error creating draft:', error);
@@ -70,24 +113,54 @@ export default function NewReadingAssignment() {
       return result;
     } catch (error) {
       console.error('Validation error:', error);
+      alert('Failed to validate assignment. Please check your content and try again.');
       throw error;
     }
   };
 
   const handlePublish = async () => {
-    if (!assignment) return;
+    if (!assignment || isPublishing) return;
+    
+    setIsPublishing(true);
+    
+    // Set a timeout to prevent infinite loading
+    const timeoutId = setTimeout(() => {
+      setIsPublishing(false);
+      alert('Publishing is taking longer than expected. Please check your assignment and try again.');
+    }, 60000); // 60 seconds timeout
     
     try {
       const result = await readingApi.publishAssignment(assignment.id);
+      clearTimeout(timeoutId);
+      
       if (result.success) {
+        // Show success message
         alert(`Assignment published successfully! Created ${result.chunk_count} chunks.`);
-        router.push('/teacher/uma-read');
+        
+        // Small delay to ensure the alert is shown before navigation
+        setTimeout(() => {
+          router.push('/teacher/uma-read');
+        }, 100);
       } else {
         alert(`Failed to publish: ${result.message}`);
+        setIsPublishing(false);
       }
     } catch (error) {
+      clearTimeout(timeoutId);
       console.error('Publishing error:', error);
-      alert('Failed to publish assignment. Please try again.');
+      
+      // Check for specific error types
+      if (error instanceof Error) {
+        if (error.message.includes('timeout')) {
+          alert('The request timed out. Please check your internet connection and try again.');
+        } else {
+          alert(`Failed to publish assignment: ${error.message}`);
+        }
+      } else {
+        alert('Failed to publish assignment. Please try again.');
+      }
+      
+      setIsPublishing(false);
     }
   };
 
@@ -115,6 +188,14 @@ export default function NewReadingAssignment() {
       throw error;
     }
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-gray-500">Loading...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -169,6 +250,19 @@ export default function NewReadingAssignment() {
           />
         )}
       </div>
+
+      {/* Publishing Overlay */}
+      {isPublishing && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-sm w-full">
+            <div className="flex flex-col items-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
+              <p className="text-lg font-medium">Publishing assignment...</p>
+              <p className="text-sm text-gray-500 mt-2">Please wait while we process your content</p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
