@@ -1777,51 +1777,56 @@ class VocabularyPracticeService:
             student_id, vocabulary_list_id, classroom_assignment_id
         )
         
-        # Check if story builder is already completed
-        completed_assignments = progress.practice_status.get('completed_assignments', [])
-        if 'story_builder' in completed_assignments:
-            raise ValueError("Story builder challenge has already been completed. Cannot retake completed activities.")
+        # Allow retakes even if story builder is already completed
+        # This enables students to improve their scores or practice more
         
-        # Check for existing failed attempts and clean them up for retry
+        # Check for existing completed attempts and clean them up for retry
         story_builder_status = progress.practice_status.get('assignments', {}).get('story_builder', {})
-        if story_builder_status.get('status') == 'failed':
-            # Clean up failed story attempts from database
-            failed_attempts = await self.db.execute(
+        current_status = story_builder_status.get('status')
+        
+        # If there's a completed or failed attempt, clean it up to allow retake
+        if current_status in ['failed', 'completed']:
+            # Clean up any existing non-in-progress attempts before starting new one
+            existing_attempts = await self.db.execute(
                 select(VocabularyStoryAttempt)
                 .where(
                     and_(
                         VocabularyStoryAttempt.student_id == student_id,
                         VocabularyStoryAttempt.vocabulary_list_id == vocabulary_list_id,
-                        VocabularyStoryAttempt.status == 'failed'
+                        VocabularyStoryAttempt.status != 'in_progress'
                     )
                 )
             )
-            for attempt in failed_attempts.scalars():
+            for attempt in existing_attempts.scalars():
                 await self.db.delete(attempt)
             
             # Clean up any StudentAssignment records created for failed attempts
-            existing_assignment = await self.db.execute(
-                select(StudentAssignment)
-                .where(
-                    and_(
-                        StudentAssignment.student_id == student_id,
-                        StudentAssignment.assignment_id == vocabulary_list_id,
-                        StudentAssignment.assignment_type == "vocabulary",
-                        StudentAssignment.assignment_subtype == "story_builder",
-                        StudentAssignment.passed == False
+            # (Keep passed assignments for record-keeping)
+            if current_status == 'failed':
+                existing_assignment = await self.db.execute(
+                    select(StudentAssignment)
+                    .where(
+                        and_(
+                            StudentAssignment.student_id == student_id,
+                            StudentAssignment.assignment_id == vocabulary_list_id,
+                            StudentAssignment.assignment_type == "vocabulary",
+                            StudentAssignment.assignment_subtype == "story_builder",
+                            StudentAssignment.passed == False
+                        )
                     )
                 )
-            )
-            failed_assignment = existing_assignment.scalar_one_or_none()
-            if failed_assignment:
-                await self.db.delete(failed_assignment)
+                failed_assignment = existing_assignment.scalar_one_or_none()
+                if failed_assignment:
+                    await self.db.delete(failed_assignment)
             
-            # Clear sessions and force fresh start by clearing status
+            # Clear sessions and force fresh start
             await self.session_manager.clear_session(student_id, vocabulary_list_id)
             await self.session_manager.clear_attempt(student_id, vocabulary_list_id, 'story_builder')
             
-            # Reset the failed status to allow fresh attempt
+            # Reset the status to allow fresh attempt but keep historical data
             story_builder_status['status'] = 'not_started'
+            story_builder_status['retake'] = True
+            story_builder_status['previous_best_score'] = story_builder_status.get('best_score', 0)
             progress.practice_status['assignments']['story_builder'] = story_builder_status
             
             # Commit the cleanup changes
@@ -1830,8 +1835,21 @@ class VocabularyPracticeService:
         # Check for existing active session after cleanup
         existing_session = await self.session_manager.get_current_session(student_id, vocabulary_list_id)
         if existing_session and 'story_attempt_id' in existing_session:
-            # Resume existing story attempt
-            return await self._resume_story_builder(student_id, vocabulary_list_id, existing_session)
+            # Check if the existing attempt is still valid
+            story_attempt_id = UUID(existing_session['story_attempt_id'])
+            result = await self.db.execute(
+                select(VocabularyStoryAttempt)
+                .where(VocabularyStoryAttempt.id == story_attempt_id)
+            )
+            existing_attempt = result.scalar_one_or_none()
+            
+            # If attempt exists and is still in progress, resume it
+            if existing_attempt and existing_attempt.status == 'in_progress':
+                return await self._resume_story_builder(student_id, vocabulary_list_id, existing_session)
+            else:
+                # Clear stale session data
+                await self.session_manager.clear_session(student_id, vocabulary_list_id)
+                await self.session_manager.clear_attempt(student_id, vocabulary_list_id, 'story_builder')
         
         # Check if prompts exist, generate if not
         prompts_result = await self.db.execute(

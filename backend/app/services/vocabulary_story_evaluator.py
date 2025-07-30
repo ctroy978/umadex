@@ -6,7 +6,8 @@ import re
 import json
 from typing import List, Dict, Any, Optional
 from app.core.config import settings
-import httpx
+from app.config.ai_config import get_gemini_config
+import google.generativeai as genai
 import asyncio
 import logging
 
@@ -23,7 +24,14 @@ class VocabularyStoryEvaluator:
     CREATIVITY_WEIGHT = 0.15  # 15 points
     
     def __init__(self):
-        pass
+        self.gemini_config = get_gemini_config()
+        
+        # Initialize Gemini if API key is available
+        if self.gemini_config.api_key:
+            genai.configure(api_key=self.gemini_config.api_key)
+            self.gemini_model = genai.GenerativeModel('gemini-2.0-flash')
+        else:
+            self.gemini_model = None
     
     async def evaluate_story(
         self,
@@ -352,64 +360,42 @@ SUGGESTION: [one specific revision suggestion]"""
         return prompt
     
     async def _call_ai_api(self, prompt: str) -> str:
-        """Call AI service for story evaluation"""
+        """Call Gemini AI service for story evaluation"""
         
         try:
-            # Check if AI is configured
-            if hasattr(settings, 'LLM_PROVIDER') and settings.LLM_PROVIDER:
-                if settings.LLM_PROVIDER == "openai" and hasattr(settings, 'OPENAI_API_KEY') and settings.OPENAI_API_KEY:
-                    return await self._call_openai_simple(prompt)
-                elif settings.LLM_PROVIDER == "anthropic" and hasattr(settings, 'ANTHROPIC_API_KEY') and settings.ANTHROPIC_API_KEY:
-                    return await self._call_anthropic_simple(prompt)
+            if not self.gemini_config.api_key:
+                raise Exception("Gemini API key not configured")
             
-            raise Exception("AI not configured")
+            logger.debug(f"Calling Gemini API with model: gemini-2.0-flash")
+            
+            # Configure generation settings for consistent evaluation
+            generation_config = {
+                "temperature": 0.3,  # Lower temperature for consistent evaluation
+                "max_output_tokens": 1000,
+                "top_p": 0.95,
+            }
+            
+            # Generate response in a thread pool to avoid blocking
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(
+                None,
+                lambda: self.gemini_model.generate_content(
+                    prompt,
+                    generation_config=generation_config
+                )
+            )
+            
+            if response.text:
+                logger.info("Gemini API call successful")
+                return response.text.strip()
+            else:
+                logger.error("No text in Gemini response")
+                raise Exception("Empty response from Gemini")
             
         except Exception as e:
-            logger.error(f"AI API call failed: {e}")
+            logger.error(f"Gemini API call failed: {e}")
             raise e
     
-    async def _call_openai_simple(self, prompt: str) -> str:
-        """Simple OpenAI API call"""
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                "https://api.openai.com/v1/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {settings.OPENAI_API_KEY}",
-                    "Content-Type": "application/json"
-                },
-                json={
-                    "model": getattr(settings, 'OPENAI_MODEL', 'gpt-3.5-turbo'),
-                    "messages": [{"role": "user", "content": prompt}],
-                    "temperature": 0.3,
-                    "max_tokens": 500
-                },
-                timeout=30.0
-            )
-            response.raise_for_status()
-            result = response.json()
-            return result['choices'][0]['message']['content']
-    
-    async def _call_anthropic_simple(self, prompt: str) -> str:
-        """Simple Anthropic API call"""
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={
-                    "Authorization": f"Bearer {settings.ANTHROPIC_API_KEY}",
-                    "Content-Type": "application/json",
-                    "anthropic-version": "2023-06-01"
-                },
-                json={
-                    "model": getattr(settings, 'ANTHROPIC_MODEL', 'claude-3-haiku-20240307'),
-                    "messages": [{"role": "user", "content": prompt}],
-                    "temperature": 0.3,
-                    "max_tokens": 500
-                },
-                timeout=30.0
-            )
-            response.raise_for_status()
-            result = response.json()
-            return result['content'][0]['text']
     
     def _parse_ai_evaluation(self, ai_response: str, max_score: int) -> Dict[str, Any]:
         """Parse AI evaluation response"""
@@ -493,16 +479,8 @@ SUGGESTION: [one specific revision suggestion]"""
         return evaluation
     
     async def _is_ai_available(self) -> bool:
-        """Check if AI service is available"""
-        try:
-            if hasattr(settings, 'LLM_PROVIDER') and settings.LLM_PROVIDER:
-                if settings.LLM_PROVIDER == "openai" and hasattr(settings, 'OPENAI_API_KEY') and settings.OPENAI_API_KEY:
-                    return True
-                elif settings.LLM_PROVIDER == "anthropic" and hasattr(settings, 'ANTHROPIC_API_KEY') and settings.ANTHROPIC_API_KEY:
-                    return True
-            return False
-        except:
-            return False
+        """Check if Gemini AI service is available"""
+        return bool(self.gemini_config.api_key and self.gemini_model)
     
     def _fallback_evaluation(self, story_text: str, required_words: List[str], max_score: int) -> Dict[str, Any]:
         """Fallback evaluation when all else fails"""
