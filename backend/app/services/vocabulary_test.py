@@ -220,10 +220,7 @@ class VocabularyTestService:
             "id": config.id,
             "vocabulary_list_id": config.vocabulary_list_id,
             "chain_enabled": config.chain_enabled,
-            "chain_type": config.chain_type if hasattr(config, 'chain_type') else "weeks",
-            "weeks_to_include": config.weeks_to_include,
-            "questions_per_week": config.questions_per_week,
-            "chained_list_ids": list(config.chained_list_ids) if hasattr(config, 'chained_list_ids') and config.chained_list_ids else [],
+            "chain_type": "named_chain",  # Always use named_chain
             "chain_id": config.chain_id if hasattr(config, 'chain_id') else None,
             "total_review_words": config.total_review_words if hasattr(config, 'total_review_words') else 3,
             "current_week_questions": config.current_week_questions,
@@ -274,10 +271,10 @@ class VocabularyTestService:
             {
                 "vocabulary_list_id": str(vocabulary_list_id),
                 "chain_enabled": config_data.get("chain_enabled", False),
-                "chain_type": config_data.get("chain_type", "weeks"),
-                "weeks_to_include": config_data.get("weeks_to_include", 1),
-                "questions_per_week": config_data.get("questions_per_week", 5),
-                "chained_list_ids": chained_list_ids_list,
+                "chain_type": "named_chain",  # Always use named_chain
+                "weeks_to_include": 1,  # Keep for backward compatibility but unused
+                "questions_per_week": 5,  # Keep for backward compatibility but unused
+                "chained_list_ids": chained_list_ids_list,  # Keep for backward compatibility but unused
                 "chain_id": str(chain_id) if chain_id else None,
                 "total_review_words": config_data.get("total_review_words", 3),
                 "current_week_questions": config_data.get("current_week_questions", 10),
@@ -293,10 +290,7 @@ class VocabularyTestService:
             "id": config.id,
             "vocabulary_list_id": config.vocabulary_list_id,
             "chain_enabled": config.chain_enabled,
-            "chain_type": config.chain_type if hasattr(config, 'chain_type') else "weeks",
-            "weeks_to_include": config.weeks_to_include,
-            "questions_per_week": config.questions_per_week,
-            "chained_list_ids": list(config.chained_list_ids) if hasattr(config, 'chained_list_ids') and config.chained_list_ids else [],
+            "chain_type": "named_chain",  # Always use named_chain
             "chain_id": config.chain_id if hasattr(config, 'chain_id') else None,
             "total_review_words": config.total_review_words if hasattr(config, 'total_review_words') else 3,
             "current_week_questions": config.current_week_questions,
@@ -318,13 +312,11 @@ class VocabularyTestService:
         # Get test configuration
         config = await VocabularyTestService.get_test_config(db, vocabulary_list_id)
         if not config:
-            # Create default config
+            # Create default config - chain_enabled defaults to False since chain_id needs to be set
             config = {
                 "chain_enabled": False,
-                "chain_type": "weeks",
-                "weeks_to_include": 1,
-                "questions_per_week": 5,
-                "chained_list_ids": [],
+                "chain_type": "named_chain",
+                "chain_id": None,
                 "total_review_words": 3,
                 "current_week_questions": 10,
                 "max_attempts": DEFAULT_MAX_ATTEMPTS,
@@ -353,11 +345,18 @@ class VocabularyTestService:
         
         # Handle chaining if enabled
         if config["chain_enabled"]:
+            logger.info(f"Chain enabled for vocabulary list {vocabulary_list_id}")
+            logger.info(f"Chain config: chain_id={config.get('chain_id')}, total_review_words={config.get('total_review_words')}")
+            
             chained_questions, chained_list_ids = await VocabularyTestService._generate_chained_questions(
                 db, vocabulary_list_id, classroom_assignment_id, config
             )
+            
+            logger.info(f"Generated {len(chained_questions)} chained questions from {len(chained_list_ids)} lists")
             questions.extend(chained_questions)
             chained_lists.extend(chained_list_ids)
+        else:
+            logger.info(f"Chain not enabled for vocabulary list {vocabulary_list_id}")
         
         # Shuffle questions
         import random
@@ -450,7 +449,7 @@ class VocabularyTestService:
         classroom_assignment_id: UUID,
         config: Dict[str, Any]
     ) -> Tuple[List[Dict[str, Any]], List[UUID]]:
-        """Generate questions from previous vocabulary lists (chaining)"""
+        """Generate questions from previous vocabulary lists (chaining) using named chains only"""
         
         # Get classroom for this assignment
         result = await db.execute(
@@ -462,155 +461,83 @@ class VocabularyTestService:
         if not assignment:
             return [], []
         
-        # Check chain type
-        chain_type = config.get("chain_type", "weeks")
-        
-        if chain_type == "named_chain":
-            # Use named chain
-            chain_id = config.get("chain_id")
-            if not chain_id:
-                return [], []
-            
-            # Get all words from chain members
-            from app.services.vocabulary_chain import VocabularyChainService
-            chain_lists = await VocabularyChainService.get_lists_for_chain(db, chain_id)
-            
-            all_words = []
-            valid_list_ids = []
-            
-            for vocab_list in chain_lists:
-                if vocab_list.status == 'published' and vocab_list.id != current_list_id:
-                    # Load words for this list
-                    result = await db.execute(
-                        select(VocabularyList)
-                        .where(VocabularyList.id == vocab_list.id)
-                        .options(selectinload(VocabularyList.words))
-                    )
-                    list_with_words = result.scalar_one_or_none()
-                    
-                    if list_with_words and list_with_words.words:
-                        for word in list_with_words.words:
-                            all_words.append((word, vocab_list.id))
-                        valid_list_ids.append(vocab_list.id)
-            
-            # Get total review words from chain configuration
-            result = await db.execute(
-                text("""
-                    SELECT total_review_words FROM vocabulary_chains 
-                    WHERE id = :chain_id
-                """),
-                {"chain_id": str(chain_id)}
-            )
-            chain_data = result.fetchone()
-            total_review_words = chain_data.total_review_words if chain_data else config.get("total_review_words", 3)
-            
-            # Randomly select review words
-            if all_words:
-                total_review_words = min(total_review_words, len(all_words))
-                import random
-                selected_word_pairs = random.sample(all_words, total_review_words)
-                
-                questions = []
-                for word, list_id in selected_word_pairs:
-                    # Use consistent question format
-                    question = await VocabularyTestService._create_question(
-                        word, "definition_from_context", list_id
-                    )
-                    questions.append(question)
-                
-                return questions, valid_list_ids
-            
+        # Only use named chain method
+        chain_id = config.get("chain_id")
+        if not chain_id:
+            logger.warning(f"No chain_id found in config for vocabulary list {current_list_id}")
             return [], []
-            
-        elif chain_type == "specific_lists":
-            # Use specific lists provided in config
-            chained_list_ids = config.get("chained_list_ids", [])
-            if not chained_list_ids:
-                return [], []
-            
-            # Get all words from chained lists
-            all_words = []
-            valid_list_ids = []
-            
-            for list_id in chained_list_ids:
+        
+        # Get current list's timestamp for comparison
+        current_list_result = await db.execute(
+            select(VocabularyList.created_at)
+            .where(VocabularyList.id == current_list_id)
+        )
+        current_list_timestamp = current_list_result.scalar_one_or_none()
+        
+        if not current_list_timestamp:
+            logger.warning(f"Could not find timestamp for current vocabulary list {current_list_id}")
+            return [], []
+        
+        # Get all lists from the chain that are older than the current list
+        from app.services.vocabulary_chain import VocabularyChainService
+        chain_lists = await VocabularyChainService.get_lists_for_chain(db, chain_id)
+        
+        all_words = []
+        valid_list_ids = []
+        
+        for vocab_list in chain_lists:
+            # Only include published lists that are older than the current list
+            if (vocab_list.status == 'published' and 
+                vocab_list.id != current_list_id and 
+                vocab_list.created_at < current_list_timestamp):
+                
+                # Load words for this list
                 result = await db.execute(
                     select(VocabularyList)
-                    .where(VocabularyList.id == list_id)
-                    .where(VocabularyList.status == 'published')
+                    .where(VocabularyList.id == vocab_list.id)
                     .options(selectinload(VocabularyList.words))
                 )
-                vocab_list = result.scalar_one_or_none()
+                list_with_words = result.scalar_one_or_none()
                 
-                if vocab_list and vocab_list.words:
-                    for word in vocab_list.words:
+                if list_with_words and list_with_words.words:
+                    for word in list_with_words.words:
                         all_words.append((word, vocab_list.id))
                     valid_list_ids.append(vocab_list.id)
-            
-            # Randomly select total_review_words from all available words
-            if all_words:
-                total_review_words = min(config.get("total_review_words", 3), len(all_words))
-                import random
-                selected_word_pairs = random.sample(all_words, total_review_words)
-                
-                questions = []
-                for word, list_id in selected_word_pairs:
-                    # Use consistent question format
-                    question = await VocabularyTestService._create_question(
-                        word, "definition_from_context", list_id
-                    )
-                    questions.append(question)
-                
-                return questions, valid_list_ids
-            
-            return [], []
         
-        else:  # weeks-based chaining (existing logic)
-            # Find previous vocabulary assignments in the same classroom
-            weeks_back = config["weeks_to_include"]
-            cutoff_date = datetime.now(timezone.utc) - timedelta(weeks=weeks_back)
+        # Get total review words from chain configuration
+        result = await db.execute(
+            text("""
+                SELECT total_review_words FROM vocabulary_chains 
+                WHERE id = :chain_id
+            """),
+            {"chain_id": str(chain_id)}
+        )
+        chain_data = result.fetchone()
+        total_review_words = chain_data.total_review_words if chain_data else config.get("total_review_words", 3)
+        
+        # Log debugging information
+        logger.info(f"Chain {chain_id}: Found {len(all_words)} words from {len(valid_list_ids)} older lists")
+        logger.info(f"Selecting {total_review_words} review words")
+        
+        # Randomly select review words
+        if all_words:
+            total_review_words = min(total_review_words, len(all_words))
+            import random
+            selected_word_pairs = random.sample(all_words, total_review_words)
             
-            result = await db.execute(
-                text("""
-                    SELECT vl.*, ca.assigned_at FROM vocabulary_lists vl
-                    JOIN classroom_assignments ca ON ca.vocabulary_list_id = vl.id
-                    WHERE ca.classroom_id = :classroom_id
-                    AND ca.assignment_type = 'vocabulary'
-                    AND ca.id != :current_assignment_id
-                    AND ca.assigned_at >= :cutoff_date
-                    AND vl.status = 'published'
-                    ORDER BY ca.assigned_at DESC
-                    LIMIT :max_lists
-                """),
-                {
-                    "classroom_id": str(assignment.classroom_id),
-                    "current_assignment_id": classroom_assignment_id,
-                    "cutoff_date": cutoff_date,
-                    "max_lists": weeks_back
-                }
-            )
-            
-            previous_assignments = result.fetchall()
-            
-            all_questions = []
-            chained_list_ids = []
-            
-            for prev_assignment in previous_assignments:
-                # Get vocabulary list with words
-                result = await db.execute(
-                    select(VocabularyList)
-                    .where(VocabularyList.id == prev_assignment.id)
-                    .options(selectinload(VocabularyList.words))
+            questions = []
+            for word, list_id in selected_word_pairs:
+                # Use consistent question format
+                question = await VocabularyTestService._create_question(
+                    word, "definition_from_context", list_id
                 )
-                prev_list = result.scalar_one_or_none()
-                
-                if prev_list and prev_list.words:
-                    questions = await VocabularyTestService._generate_questions_for_list(
-                        db, prev_list, config["questions_per_week"]
-                    )
-                    all_questions.extend(questions)
-                    chained_list_ids.append(prev_list.id)
+                questions.append(question)
             
-            return all_questions, chained_list_ids
+            logger.info(f"Generated {len(questions)} review questions")
+            return questions, valid_list_ids
+        
+        logger.warning(f"No eligible words found for review in chain {chain_id}")
+        return [], []
 
     @staticmethod
     async def _create_test_record(

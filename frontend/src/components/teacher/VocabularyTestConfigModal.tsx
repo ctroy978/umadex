@@ -27,9 +27,7 @@ export default function VocabularyTestConfigModal({
   const [config, setConfig] = useState<VocabularyTestConfig>({
     chain_enabled: false,
     chain_type: 'named_chain',
-    weeks_to_include: 1,
-    questions_per_week: 5,
-    chained_list_ids: [],
+    chain_id: undefined,
     total_review_words: 3,
     current_week_questions: 10,
     max_attempts: 3,
@@ -50,8 +48,8 @@ export default function VocabularyTestConfigModal({
       const data = await vocabularyApi.getTestConfig(vocabularyListId)
       setConfig({
         ...data,
-        chain_type: data.chain_type || 'named_chain',
-        chained_list_ids: data.chained_list_ids || [],
+        chain_type: 'named_chain',  // Always use named_chain
+        chain_id: data.chain_id,
         total_review_words: data.total_review_words || 3
       })
     } catch (err) {

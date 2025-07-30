@@ -689,43 +689,37 @@ async def update_test_config(
             detail="You don't have permission to update this list's test configuration"
         )
     
-    # Validate chain configuration
-    if config_data.chain_enabled and config_data.chain_type == "specific_lists":
-        # Validate chained lists
-        if not config_data.chained_list_ids:
+    # Validate chain configuration for named chains only
+    if config_data.chain_enabled:
+        # For named chains, ensure chain_id is provided
+        if not config_data.chain_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Must specify at least one list when using specific_lists chain type"
+                detail="Must specify a chain when chain is enabled"
             )
         
-        # Ensure chained lists are valid and accessible
-        valid_list_ids = []
-        for chained_id in config_data.chained_list_ids:
-            # Check if the list exists and is published
-            result = await db.execute(
-                select(VocabularyList)
-                .where(
-                    and_(
-                        VocabularyList.id == chained_id,
-                        VocabularyList.status == 'published',
-                        VocabularyList.deleted_at.is_(None)
-                    )
+        # Verify the chain exists and belongs to the teacher
+        from app.models.vocabulary_chain import VocabularyChain
+        result = await db.execute(
+            select(VocabularyChain)
+            .where(
+                and_(
+                    VocabularyChain.id == config_data.chain_id,
+                    VocabularyChain.teacher_id == current_user.id,
+                    VocabularyChain.is_active == True
                 )
             )
-            if result.scalar_one_or_none():
-                valid_list_ids.append(chained_id)
+        )
+        chain = result.scalar_one_or_none()
         
-        if not valid_list_ids:
+        if not chain:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="No valid published vocabulary lists found for chaining"
+                detail="Invalid or inactive vocabulary chain"
             )
         
-        # Update config with only valid lists
-        config_data.chained_list_ids = valid_list_ids
-        
         # Validate total review words
-        if not config_data.total_review_words or config_data.total_review_words < 1 or config_data.total_review_words > 4:
+        if config_data.total_review_words and (config_data.total_review_words < 1 or config_data.total_review_words > 4):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Total review words must be between 1 and 4"
