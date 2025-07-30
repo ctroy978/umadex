@@ -106,9 +106,26 @@ class VocabularyStoryGenerator:
             prompt_models.append(prompt)
             self.db.add(prompt)
         
-        await self.db.commit()
-        
-        return [self._format_prompt(prompt) for prompt in prompt_models]
+        try:
+            await self.db.commit()
+            return [self._format_prompt(prompt) for prompt in prompt_models]
+        except Exception as e:
+            await self.db.rollback()
+            logger.error(f"Failed to save story prompts: {str(e)}")
+            
+            # Check if prompts were created by another request (race condition)
+            existing_result = await self.db.execute(
+                select(VocabularyStoryPrompt)
+                .where(VocabularyStoryPrompt.vocabulary_list_id == vocabulary_list_id)
+                .order_by(VocabularyStoryPrompt.prompt_order)
+            )
+            existing_prompts = existing_result.scalars().all()
+            
+            if existing_prompts:
+                logger.info("Found existing prompts after race condition")
+                return [self._format_prompt(prompt) for prompt in existing_prompts]
+            else:
+                raise
     
     def _create_prompts_for_words(
         self, 

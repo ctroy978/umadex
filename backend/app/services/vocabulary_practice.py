@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, or_, update, func, text, delete
 from sqlalchemy.orm import selectinload
+from sqlalchemy.exc import IntegrityError
 import json
 import logging
 import random
@@ -1064,17 +1065,28 @@ class VocabularyPracticeService:
         
         if not puzzles:
             # Generate puzzles
-            generator = VocabularyPuzzleGenerator(self.db)
-            puzzle_data = await generator.generate_puzzle_set(vocabulary_list_id)
+            try:
+                generator = VocabularyPuzzleGenerator(self.db)
+                puzzle_data = await generator.generate_puzzle_set(vocabulary_list_id)
+                
+                # Save puzzles to database
+                for p_data in puzzle_data:
+                    puzzle = VocabularyPuzzleGame(**p_data)
+                    self.db.add(puzzle)
+                
+                await self.db.commit()
+            except IntegrityError as e:
+                # If there's a unique constraint violation, it means another request
+                # already created the puzzles. Rollback and continue.
+                await self.db.rollback()
+                logger.warning(f"Puzzle generation race condition handled: {e}")
+            except Exception as e:
+                # For other errors, rollback and re-raise
+                await self.db.rollback()
+                logger.error(f"Error generating puzzles: {e}")
+                raise
             
-            # Save puzzles to database
-            for p_data in puzzle_data:
-                puzzle = VocabularyPuzzleGame(**p_data)
-                self.db.add(puzzle)
-            
-            await self.db.commit()
-            
-            # Reload puzzles
+            # Reload puzzles (whether we created them or another request did)
             puzzles_result = await self.db.execute(
                 select(VocabularyPuzzleGame)
                 .where(VocabularyPuzzleGame.vocabulary_list_id == vocabulary_list_id)
@@ -1830,17 +1842,26 @@ class VocabularyPracticeService:
         prompts = prompts_result.scalars().all()
         
         if not prompts:
-            # Generate prompts
+            # Generate prompts with race condition handling
             generator = VocabularyStoryGenerator(self.db)
-            prompt_data = await generator.generate_story_prompts(vocabulary_list_id)
-            
-            # Reload prompts
+            try:
+                prompt_data = await generator.generate_story_prompts(vocabulary_list_id)
+            except Exception as e:
+                # If generation fails (likely due to race condition), try to reload
+                logger.warning(f"Failed to generate prompts, attempting reload: {str(e)}")
+                await self.db.rollback()
+                
+            # Reload prompts (whether generation succeeded or failed)
             prompts_result = await self.db.execute(
                 select(VocabularyStoryPrompt)
                 .where(VocabularyStoryPrompt.vocabulary_list_id == vocabulary_list_id)
                 .order_by(VocabularyStoryPrompt.prompt_order)
             )
             prompts = prompts_result.scalars().all()
+            
+            # If still no prompts after race condition, raise error
+            if not prompts:
+                raise ValueError("Failed to generate story prompts")
         
         # Calculate scoring
         total_prompts = len(prompts)
