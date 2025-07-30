@@ -689,6 +689,10 @@ async def update_test_config(
             detail="You don't have permission to update this list's test configuration"
         )
     
+    # Get the current config to check if chain is changing
+    current_config = await VocabularyTestService.get_test_config(db, list_id)
+    old_chain_id = current_config.get("chain_id") if current_config and current_config.get("chain_enabled") else None
+    
     # Validate chain configuration for named chains only
     if config_data.chain_enabled:
         # For named chains, ensure chain_id is provided
@@ -725,9 +729,52 @@ async def update_test_config(
                 detail="Total review words must be between 1 and 4"
             )
     
+    # Save the test configuration
     config = await VocabularyTestService.save_test_config(
         db, list_id, config_data.model_dump()
     )
+    
+    # Handle chain membership changes
+    from app.services.vocabulary_chain import VocabularyChainService
+    from app.schemas.vocabulary_chain import VocabularyChainMemberAdd
+    
+    # If chain was disabled or changed, remove from old chain
+    if old_chain_id and (not config_data.chain_enabled or str(old_chain_id) != str(config_data.chain_id)):
+        try:
+            await VocabularyChainService.remove_member(
+                db, old_chain_id, list_id, current_user.id
+            )
+        except Exception:
+            # Ignore errors when removing from old chain (it might not be a member)
+            pass
+    
+    # If chain is enabled, add vocabulary list to the chain
+    if config_data.chain_enabled and config_data.chain_id:
+        # Check if already a member
+        from app.models.vocabulary_chain import VocabularyChainMember
+        result = await db.execute(
+            select(VocabularyChainMember)
+            .where(
+                and_(
+                    VocabularyChainMember.chain_id == config_data.chain_id,
+                    VocabularyChainMember.vocabulary_list_id == list_id
+                )
+            )
+        )
+        existing_member = result.scalar_one_or_none()
+        
+        # Only add if not already a member
+        if not existing_member:
+            try:
+                member_data = VocabularyChainMemberAdd(
+                    vocabulary_list_ids=[list_id]
+                )
+                await VocabularyChainService.add_members(
+                    db, config_data.chain_id, current_user.id, member_data
+                )
+            except ValueError as e:
+                # Log but don't fail - the test config is already saved
+                logger.warning(f"Could not add vocabulary list to chain: {e}")
     
     return VocabularyTestConfigResponse.model_validate(config)
 
