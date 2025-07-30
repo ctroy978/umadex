@@ -281,7 +281,10 @@ export default function VocabularyPracticePage() {
                     <div className="text-4xl mr-4">{getAssignmentIcon(assignment.type)}</div>
                     <div>
                       <h3 className="text-lg font-semibold text-gray-900">
-                        {assignment.display_name}
+                        {assignment.type === 'story_builder' && 'Story Builder'}
+                        {assignment.type === 'concept_mapping' && 'Concept Map'}
+                        {assignment.type === 'puzzle_path' && 'Word Puzzles'}
+                        {assignment.type === 'fill_in_blank' && 'Fill In The Blank'}
                       </h3>
                       {assignment.attempts > 0 && (
                         <p className="text-sm text-gray-600 mt-1">
@@ -331,39 +334,6 @@ export default function VocabularyPracticePage() {
               </div>
             </div>
           ))}
-          
-          {/* Coming Soon Placeholder */}
-          <div className="bg-white rounded-lg shadow opacity-60">
-            <div className="p-6">
-              <div className="flex items-start justify-between mb-4">
-                <div className="flex items-center">
-                  <div className="text-4xl mr-4">🚧</div>
-                  <div>
-                    <h3 className="text-lg font-semibold text-gray-900">
-                      Assignment Coming Soon
-                    </h3>
-                    <p className="text-sm text-gray-600 mt-1">
-                      New assignment type in development
-                    </p>
-                  </div>
-                </div>
-                <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                  Coming Soon
-                </span>
-              </div>
-
-              <p className="text-gray-600 mb-4">
-                This assignment type is currently under development and will be available in a future update.
-              </p>
-
-              <button
-                disabled
-                className="w-full px-4 py-2 rounded-lg text-sm font-medium bg-gray-100 text-gray-400 cursor-not-allowed transition-colors"
-              >
-                Coming Soon
-              </button>
-            </div>
-          </div>
         </div>
 
         {/* Final Test Card */}

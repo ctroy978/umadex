@@ -356,23 +356,23 @@ export default function VocabularyAssignmentPage() {
           
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="text-center p-4 bg-gray-50 rounded-lg">
-              <div className="text-2xl mb-1">🎯</div>
-              <p className="text-sm font-medium text-gray-700">Fill in the Blank</p>
-              <p className="text-xs text-gray-500 mt-1">Available</p>
-            </div>
-            <div className="text-center p-4 bg-gray-50 rounded-lg">
-              <div className="text-2xl mb-1">📚</div>
+              <div className="text-2xl mb-1">📝</div>
               <p className="text-sm font-medium text-gray-700">Story Builder</p>
               <p className="text-xs text-gray-500 mt-1">Available</p>
             </div>
             <div className="text-center p-4 bg-gray-50 rounded-lg">
               <div className="text-2xl mb-1">🗺️</div>
-              <p className="text-sm font-medium text-gray-700">Concept Mapping</p>
+              <p className="text-sm font-medium text-gray-700">Concept Map</p>
               <p className="text-xs text-gray-500 mt-1">Available</p>
             </div>
             <div className="text-center p-4 bg-gray-50 rounded-lg">
               <div className="text-2xl mb-1">🧩</div>
-              <p className="text-sm font-medium text-gray-700">Puzzle Path</p>
+              <p className="text-sm font-medium text-gray-700">Word Puzzles</p>
+              <p className="text-xs text-gray-500 mt-1">Available</p>
+            </div>
+            <div className="text-center p-4 bg-gray-50 rounded-lg">
+              <div className="text-2xl mb-1">✏️</div>
+              <p className="text-sm font-medium text-gray-700">Fill In The Blank</p>
               <p className="text-xs text-gray-500 mt-1">Available</p>
             </div>
           </div>
