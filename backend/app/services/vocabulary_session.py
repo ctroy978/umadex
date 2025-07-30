@@ -17,7 +17,11 @@ class VocabularySessionManager:
     """Manages vocabulary practice sessions using Redis for active state"""
     
     def __init__(self):
-        self.redis = get_redis_client()
+        try:
+            self.redis = get_redis_client()
+        except Exception as e:
+            logger.warning(f"Redis client not available: {e}")
+            self.redis = None
     
     # Session State Keys
     def _activity_key(self, user_id: UUID, assignment_id: UUID) -> str:
@@ -39,6 +43,8 @@ class VocabularySessionManager:
     # Activity Tracking
     async def update_activity(self, user_id: UUID, assignment_id: UUID) -> None:
         """Update last activity timestamp"""
+        if not self.redis:
+            return
         try:
             timestamp = datetime.now(timezone.utc).isoformat()
             await self.redis.setex(
@@ -51,6 +57,8 @@ class VocabularySessionManager:
     
     async def get_last_activity(self, user_id: UUID, assignment_id: UUID) -> Optional[datetime]:
         """Get last activity timestamp"""
+        if not self.redis:
+            return None
         try:
             timestamp_str = await self.redis.get(self._activity_key(user_id, assignment_id))
             if timestamp_str:
@@ -68,6 +76,8 @@ class VocabularySessionManager:
         session_data: Dict[str, Any]
     ) -> None:
         """Store current session data in Redis"""
+        if not self.redis:
+            return
         try:
             session_json = json.dumps(session_data, default=str)
             await self.redis.setex(
@@ -85,6 +95,8 @@ class VocabularySessionManager:
         assignment_id: UUID
     ) -> Optional[Dict[str, Any]]:
         """Get current session data from Redis"""
+        if not self.redis:
+            return None
         try:
             session_json = await self.redis.get(self._session_key(user_id, assignment_id))
             if session_json:
@@ -96,6 +108,8 @@ class VocabularySessionManager:
     
     async def clear_session(self, user_id: UUID, assignment_id: UUID) -> None:
         """Clear session data from Redis"""
+        if not self.redis:
+            return
         try:
             await self.redis.delete(self._session_key(user_id, assignment_id))
         except Exception as e:
@@ -144,6 +158,8 @@ class VocabularySessionManager:
         attempt_data: Dict[str, Any]
     ) -> None:
         """Store current attempt data in Redis"""
+        if not self.redis:
+            return
         try:
             attempt_json = json.dumps(attempt_data, default=str)
             await self.redis.setex(
@@ -162,6 +178,8 @@ class VocabularySessionManager:
         activity_type: str
     ) -> Optional[Dict[str, Any]]:
         """Get current attempt data from Redis"""
+        if not self.redis:
+            return None
         try:
             attempt_json = await self.redis.get(self._attempt_key(user_id, assignment_id, activity_type))
             if attempt_json:
@@ -178,6 +196,8 @@ class VocabularySessionManager:
         activity_type: str
     ) -> None:
         """Clear current attempt data from Redis"""
+        if not self.redis:
+            return
         try:
             await self.redis.delete(self._attempt_key(user_id, assignment_id, activity_type))
         except Exception as e:

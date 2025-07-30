@@ -98,8 +98,11 @@ async def detailed_health_check():
     
     # Check Redis connectivity
     try:
-        await redis_client.redis.ping()
-        health_status["checks"]["redis"] = "ok"
+        if redis_client._redis:
+            await redis_client._redis.ping()
+            health_status["checks"]["redis"] = "ok"
+        else:
+            health_status["checks"]["redis"] = "not initialized"
     except Exception as e:
         health_status["status"] = "unhealthy"
         health_status["checks"]["redis"] = f"error: {str(e)}"

@@ -108,18 +108,28 @@ class VocabularyStoryResponse(Base):
     vocabulary_list_id = Column(UUID(as_uuid=True), ForeignKey("vocabulary_lists.id", ondelete="CASCADE"), nullable=False)
     practice_progress_id = Column(UUID(as_uuid=True), ForeignKey("vocabulary_practice_progress.id", ondelete="CASCADE"), nullable=False)
     prompt_id = Column(UUID(as_uuid=True), ForeignKey("vocabulary_story_prompts.id", ondelete="CASCADE"), nullable=False)
+    story_attempt_id = Column(UUID(as_uuid=True), ForeignKey("vocabulary_story_attempts.id", ondelete="CASCADE"), nullable=False)
+    prompt_order = Column(Integer, nullable=False)
+    response_text = Column(Text, nullable=False)
+    words_used = Column(JSONB, nullable=False, default=list)
+    used_required_words = Column(JSONB, nullable=False, default=list)
+    score = Column(Integer, nullable=False)
+    word_count = Column(Integer, nullable=False)
+    feedback = Column(JSONB)
     story_text = Column(Text, nullable=False)
     ai_evaluation = Column(JSONB, nullable=False)  # scores and detailed feedback
     total_score = Column(Integer, nullable=False)
     attempt_number = Column(Integer, nullable=False, default=1)
     submitted_at = Column(DateTime(timezone=True), server_default=func.now())
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     
     # Relationships
     student = relationship("User", foreign_keys=[student_id])
     vocabulary_list = relationship("VocabularyList")
     practice_progress = relationship("VocabularyPracticeProgress")
     prompt = relationship("VocabularyStoryPrompt", back_populates="story_responses")
+    story_attempt = relationship("VocabularyStoryAttempt")
     
     __table_args__ = (
         CheckConstraint("attempt_number BETWEEN 1 AND 2", name='check_attempt_number'),

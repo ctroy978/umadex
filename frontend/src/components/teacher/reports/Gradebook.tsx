@@ -11,7 +11,7 @@ import {
   MagnifyingGlassIcon,
   XMarkIcon
 } from '@heroicons/react/24/outline';
-import { tokenStorage } from '@/lib/tokenStorage';
+import { api } from '@/lib/api';
 
 interface ClassroomOption {
   id: string;
@@ -145,26 +145,13 @@ export default function Gradebook() {
 
   const fetchClassrooms = async () => {
     try {
-      const token = tokenStorage.getAccessToken();
-      if (!token) {
-        console.error('No authentication token available');
-        return;
-      }
-      
-      const response = await fetch('/api/v1/teacher/classrooms', {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      if (response.ok) {
-        const data = await response.json();
-        // Extract classrooms with id and name
-        const classroomOptions = data.map((c: any) => ({
-          id: c.id,
-          name: c.name
-        }));
-        setClassrooms(classroomOptions);
-      }
+      const data = await api.get('/v1/teacher/classrooms');
+      // Extract classrooms with id and name
+      const classroomOptions = data.data.map((c: any) => ({
+        id: c.id,
+        name: c.name
+      }));
+      setClassrooms(classroomOptions);
     } catch (error) {
       console.error('Error fetching classrooms:', error);
     }
@@ -172,23 +159,12 @@ export default function Gradebook() {
 
   const fetchAssignments = async () => {
     try {
-      const token = tokenStorage.getAccessToken();
-      if (!token) {
-        console.error('No authentication token available');
-        return;
-      }
-      
       const allAssignments: AssignmentOption[] = [];
       
       // Fetch UMARead assignments
-      const readingResponse = await fetch('/api/v1/teacher/assignments/reading', {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      if (readingResponse.ok) {
-        const data = await readingResponse.json();
-        const readingAssignments = data.assignments
+      try {
+        const response = await api.get('/v1/teacher/assignments/reading');
+        const readingAssignments = response.data.assignments
           .filter((a: any) => a.assignment_type === 'UMARead')
           .map((a: any) => ({
             id: a.id,
@@ -197,17 +173,14 @@ export default function Gradebook() {
             type: 'UMARead'
           }));
         allAssignments.push(...readingAssignments);
+      } catch (error) {
+        console.error('Error fetching reading assignments:', error);
       }
       
       // Fetch UMAVocab assignments (published vocabulary lists)
-      const vocabResponse = await fetch('/api/v1/teacher/vocabulary?status=published&per_page=100', {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      if (vocabResponse.ok) {
-        const data = await vocabResponse.json();
-        const vocabAssignments = data.items
+      try {
+        const response = await api.get('/v1/teacher/vocabulary?status=published&per_page=100');
+        const vocabAssignments = response.data.items
           .map((v: any) => ({
             id: v.id,
             title: v.title,
@@ -215,17 +188,14 @@ export default function Gradebook() {
             type: 'UMAVocab'
           }));
         allAssignments.push(...vocabAssignments);
+      } catch (error) {
+        console.error('Error fetching vocab assignments:', error);
       }
       
       // Fetch UMADebate assignments
-      const debateResponse = await fetch('/api/v1/teacher/debate/assignments', {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      if (debateResponse.ok) {
-        const data = await debateResponse.json();
-        const debateAssignments = data.assignments
+      try {
+        const response = await api.get('/v1/teacher/debate/assignments');
+        const debateAssignments = response.data.assignments
           .filter((d: any) => !d.deleted_at)
           .map((d: any) => ({
             id: d.id,
@@ -234,17 +204,14 @@ export default function Gradebook() {
             type: 'UMADebate'
           }));
         allAssignments.push(...debateAssignments);
+      } catch (error) {
+        console.error('Error fetching debate assignments:', error);
       }
       
       // Fetch UMAWrite assignments
-      const writeResponse = await fetch('/api/v1/writing/assignments?per_page=100', {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      if (writeResponse.ok) {
-        const data = await writeResponse.json();
-        const writeAssignments = data.assignments
+      try {
+        const response = await api.get('/v1/writing/assignments?per_page=100');
+        const writeAssignments = response.data.assignments
           .filter((w: any) => !w.is_archived)
           .map((w: any) => ({
             id: w.id,
@@ -253,54 +220,38 @@ export default function Gradebook() {
             type: 'UMAWrite'
           }));
         allAssignments.push(...writeAssignments);
+      } catch (error) {
+        console.error('Error fetching write assignments:', error);
       }
       
       // Fetch UMATest assignments
       try {
-        const testResponse = await fetch('/api/v1/teacher/umatest/tests?status=published&page_size=100', {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        });
-        if (testResponse.ok) {
-          const data = await testResponse.json();
-          const testAssignments = data.tests
-            .filter((t: any) => t.status === 'published')
-            .map((t: any) => ({
-              id: t.id,
-              title: t.test_title,
-              workTitle: t.test_description || 'Comprehensive Test',
-              type: 'UMATest'
-            }));
-          allAssignments.push(...testAssignments);
-        } else {
-          console.error('Failed to fetch UMATest assignments:', testResponse.status);
-        }
+        const response = await api.get('/v1/teacher/umatest/tests?status=published&page_size=100');
+        const testAssignments = response.data.tests
+          .filter((t: any) => t.status === 'published')
+          .map((t: any) => ({
+            id: t.id,
+            title: t.test_title,
+            workTitle: t.test_description || 'Comprehensive Test',
+            type: 'UMATest'
+          }));
+        allAssignments.push(...testAssignments);
       } catch (error) {
         console.error('Error fetching UMATest assignments:', error);
       }
       
       // Fetch UMALecture assignments
       try {
-        const lectureResponse = await fetch('/api/v1/umalecture/lectures?status=published&limit=100', {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        });
-        if (lectureResponse.ok) {
-          const data = await lectureResponse.json();
-          const lectureAssignments = data
-            .filter((l: any) => l.status === 'published')
-            .map((l: any) => ({
-              id: l.id,
-              title: l.title,
-              workTitle: `${l.grade_level} - ${l.subject}`,
-              type: 'UMALecture'
-            }));
-          allAssignments.push(...lectureAssignments);
-        } else {
-          console.error('Failed to fetch UMALecture assignments:', lectureResponse.status);
-        }
+        const response = await api.get('/v1/umalecture/lectures?status=published&limit=100');
+        const lectureAssignments = response.data
+          .filter((l: any) => l.status === 'published')
+          .map((l: any) => ({
+            id: l.id,
+            title: l.title,
+            workTitle: `${l.grade_level} - ${l.subject}`,
+            type: 'UMALecture'
+          }));
+        allAssignments.push(...lectureAssignments);
       } catch (error) {
         console.error('Error fetching UMALecture assignments:', error);
       }
@@ -313,13 +264,6 @@ export default function Gradebook() {
 
   const fetchGrades = async () => {
     setLoading(true);
-    
-    const token = tokenStorage.getAccessToken();
-    if (!token) {
-      console.error('No authentication token available');
-      setLoading(false);
-      return;
-    }
     
     try {
       const queryParams = new URLSearchParams();
@@ -372,26 +316,16 @@ export default function Gradebook() {
         queryParams.append('sort_direction', sortConfig.direction);
       }
       
-      const response = await fetch(`/api/v1/teacher/reports/gradebook?${queryParams}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
+      const response = await api.get(`/v1/teacher/reports/gradebook?${queryParams}`);
       
-      if (response.ok) {
-        const data = await response.json();
-        setGrades(data.grades || []);
-        setSummaryStats(data.summary || {
-          total_students: 0,
-          average_score: 0,
-          completion_rate: 0,
-          average_time: 0,
-          class_average_by_assignment: {}
-        });
-      } else {
-        console.error('Error response from server:', response.status, response.statusText);
-        setGrades([]);
-      }
+      setGrades(response.data.grades || []);
+      setSummaryStats(response.data.summary || {
+        total_students: 0,
+        average_score: 0,
+        completion_rate: 0,
+        average_time: 0,
+        class_average_by_assignment: {}
+      });
     } catch (error) {
       console.error('Error fetching grades:', error);
       setGrades([]);
@@ -450,30 +384,20 @@ export default function Gradebook() {
       // ... add other filters ...
       
       queryParams.append('format', 'csv');
-
-      const token = tokenStorage.getAccessToken();
-      if (!token) {
-        console.error('No authentication token available');
-        return;
-      }
       
-      const response = await fetch(`/api/v1/teacher/reports/gradebook/export?${queryParams}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
+      const response = await api.get(`/v1/teacher/reports/gradebook/export?${queryParams}`, {
+        responseType: 'blob'
       });
       
-      if (response.ok) {
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.style.display = 'none';
-        a.href = url;
-        a.download = `gradebook_${format(new Date(), 'yyyy-MM-dd')}.csv`;
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-      }
+      const blob = response.data;
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      a.href = url;
+      a.download = `gradebook_${format(new Date(), 'yyyy-MM-dd')}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
     } catch (error) {
       console.error('Error exporting to CSV:', error);
     }

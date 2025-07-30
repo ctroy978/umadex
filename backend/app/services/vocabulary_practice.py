@@ -2023,16 +2023,27 @@ class VocabularyPracticeService:
             max_score=prompt.max_score
         )
         
+        # Calculate prompt order
+        prompt_order = len(story_attempt.story_responses) + 1
+        
         # Save story response
         story_response = VocabularyStoryResponse(
             student_id=story_attempt.student_id,
             vocabulary_list_id=story_attempt.vocabulary_list_id,
             practice_progress_id=story_attempt.practice_progress_id,
             prompt_id=prompt_id,
+            story_attempt_id=story_attempt.id,
             story_text=story_text,
             ai_evaluation=evaluation,
             total_score=evaluation['total_score'],
-            attempt_number=attempt_number
+            attempt_number=attempt_number,
+            prompt_order=prompt_order,
+            response_text=story_text,  # Also needed by the table
+            words_used=evaluation.get('vocabulary_analysis', {}).get('words_used', []),
+            used_required_words=evaluation.get('vocabulary_analysis', {}).get('words_used_correctly', []),
+            score=evaluation['total_score'],
+            word_count=len(story_text.split()),
+            feedback=evaluation  # Store full evaluation as feedback
         )
         self.db.add(story_response)
         
