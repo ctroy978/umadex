@@ -290,73 +290,86 @@ export default function DebateInterfacePage() {
         {assignment && progress && (
           <div className={(() => {
             const studentDebate = progress.studentDebate
-            if (!studentDebate) return "bg-blue-50 border-b border-blue-200"
+            if (!studentDebate) return "bg-gray-50 border-b border-gray-200"
             
             const currentDebate = studentDebate.currentDebate
-            let position = null
             
-            // Access position fields directly based on current debate
+            // Color based on debate round
             if (currentDebate === 1) {
-              position = studentDebate.debate_1Position
+              return "bg-blue-50 border-b border-blue-200"
             } else if (currentDebate === 2) {
-              position = studentDebate.debate_2Position
-            } else if (currentDebate === 3) {
-              position = studentDebate.debate_3Position
-            }
-            
-            if (position === 'pro') {
-              return "bg-green-50 border-b border-green-200"
-            } else if (position === 'con') {
               return "bg-red-50 border-b border-red-200"
+            } else if (currentDebate === 3) {
+              return "bg-yellow-50 border-b border-yellow-200"
             }
-            return "bg-blue-50 border-b border-blue-200"
+            return "bg-gray-50 border-b border-gray-200"
           })() + " p-4"}>
             <div className="max-w-4xl mx-auto">
               <h2 className={`text-lg font-semibold mb-1 ${(() => {
                 const studentDebate = progress.studentDebate
-                if (!studentDebate) return "text-blue-900"
+                if (!studentDebate) return "text-gray-900"
                 
                 const currentDebate = studentDebate.currentDebate
-                let position = null
                 
+                // Text color based on debate round
                 if (currentDebate === 1) {
-                  position = studentDebate.debate_1Position
+                  return "text-blue-900"
                 } else if (currentDebate === 2) {
-                  position = studentDebate.debate_2Position
-                } else if (currentDebate === 3) {
-                  position = studentDebate.debate_3Position
-                }
-                
-                if (position === 'pro') {
-                  return "text-green-900"
-                } else if (position === 'con') {
                   return "text-red-900"
+                } else if (currentDebate === 3) {
+                  return "text-yellow-900"
                 }
-                return "text-blue-900"
+                return "text-gray-900"
               })()}`}>Debate Topic:</h2>
               <p className={`text-base mb-3 ${(() => {
                 const studentDebate = progress.studentDebate
-                if (!studentDebate) return "text-blue-800"
+                if (!studentDebate) return "text-gray-800"
                 
                 const currentDebate = studentDebate.currentDebate
-                let position = null
                 
+                // Text color based on debate round
                 if (currentDebate === 1) {
-                  position = studentDebate.debate_1Position
+                  return "text-blue-800"
                 } else if (currentDebate === 2) {
-                  position = studentDebate.debate_2Position
-                } else if (currentDebate === 3) {
-                  position = studentDebate.debate_3Position
-                }
-                
-                if (position === 'pro') {
-                  return "text-green-800"
-                } else if (position === 'con') {
                   return "text-red-800"
+                } else if (currentDebate === 3) {
+                  return "text-yellow-800"
                 }
-                return "text-blue-800"
+                return "text-gray-800"
               })()}`}>{assignment.topic}</p>
               
+              {/* Debate Round Indicator */}
+              {(() => {
+                const studentDebate = progress.studentDebate
+                if (!studentDebate) return null
+                
+                const currentDebate = studentDebate.currentDebate
+                
+                let bgColor, textColor, borderColor, label
+                
+                if (currentDebate === 1) {
+                  bgColor = "bg-blue-100"
+                  textColor = "text-blue-900"
+                  borderColor = "border-blue-300"
+                  label = "Debate 1: Argue PRO (Supporting)"
+                } else if (currentDebate === 2) {
+                  bgColor = "bg-red-100"
+                  textColor = "text-red-900"
+                  borderColor = "border-red-300"
+                  label = "Debate 2: Argue CON (Opposing)"
+                } else if (currentDebate === 3) {
+                  bgColor = "bg-yellow-100"
+                  textColor = "text-yellow-900"
+                  borderColor = "border-yellow-300"
+                  label = "Debate 3: Your Choice"
+                }
+                
+                return (
+                  <div className={`inline-flex items-center px-4 py-2 rounded-lg text-sm font-bold mb-3 ${bgColor} ${textColor} border-2 ${borderColor}`}>
+                    <span>{label}</span>
+                  </div>
+                )
+              })()}
               
               {/* Position Indicator */}
               {(() => {
