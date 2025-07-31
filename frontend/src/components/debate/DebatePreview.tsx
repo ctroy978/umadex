@@ -10,8 +10,6 @@ interface DebatePreviewProps {
 }
 
 export default function DebatePreview({ metadata, config, onClose }: DebatePreviewProps) {
-  const estimatedTime = config.debateCount * config.timeLimitHours
-  
   const getDifficultyColor = (level: string) => {
     switch (level) {
       case 'beginner': return 'text-green-600'
@@ -108,28 +106,6 @@ export default function DebatePreview({ metadata, config, onClose }: DebatePrevi
                         </dl>
                       </div>
 
-                      {/* Debate Structure */}
-                      <div className="bg-gray-50 rounded-lg p-4">
-                        <h4 className="font-medium text-gray-900 mb-2">Debate Structure</h4>
-                        <div className="grid grid-cols-2 gap-4 text-sm">
-                          <div>
-                            <span className="text-gray-500">Total Debates:</span>
-                            <span className="ml-2 font-medium">{config.debateCount}</span>
-                          </div>
-                          <div>
-                            <span className="text-gray-500">Rounds per Debate:</span>
-                            <span className="ml-2 font-medium">{config.roundsPerDebate}</span>
-                          </div>
-                          <div>
-                            <span className="text-gray-500">Time Limit:</span>
-                            <span className="ml-2 font-medium">{config.timeLimitHours}h per debate</span>
-                          </div>
-                          <div>
-                            <span className="text-gray-500">Total Time:</span>
-                            <span className="ml-2 font-medium">~{estimatedTime}h to complete</span>
-                          </div>
-                        </div>
-                      </div>
 
                       {/* Difficulty & AI Settings */}
                       <div className="bg-gray-50 rounded-lg p-4">
@@ -191,12 +167,8 @@ export default function DebatePreview({ metadata, config, onClose }: DebatePrevi
                       <div className="border-t pt-4">
                         <h4 className="font-medium text-gray-900 mb-2">Student Experience</h4>
                         <p className="text-sm text-gray-600">
-                          Students will participate in {config.debateCount} debate{config.debateCount > 1 ? 's' : ''} on the topic: 
+                          Students will participate in debates on the topic: 
                           <span className="font-medium"> "{metadata.topic}"</span>
-                        </p>
-                        <p className="text-sm text-gray-600 mt-2">
-                          Each debate will consist of {config.roundsPerDebate} rounds of arguments, 
-                          with a {config.timeLimitHours}-hour time limit per debate.
                         </p>
                         {config.aiPersonalitiesEnabled && (
                           <p className="text-sm text-gray-600 mt-2">

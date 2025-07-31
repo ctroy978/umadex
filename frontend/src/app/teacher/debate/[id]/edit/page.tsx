@@ -283,52 +283,6 @@ export default function DebateEditPage() {
         <div className="border-b pb-6">
           <h2 className="text-lg font-medium text-gray-900 mb-4">Debate Configuration</h2>
           
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-            <div>
-              <label htmlFor="debateCount" className="block text-sm font-medium text-gray-700">
-                Number of Debates
-              </label>
-              <input
-                type="number"
-                id="debateCount"
-                min="1"
-                max="10"
-                value={formData.debateCount}
-                onChange={(e) => handleFieldChange('debateCount', parseInt(e.target.value))}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-              />
-            </div>
-
-            <div>
-              <label htmlFor="roundsPerDebate" className="block text-sm font-medium text-gray-700">
-                Rounds per Debate
-              </label>
-              <input
-                type="number"
-                id="roundsPerDebate"
-                min="1"
-                max="10"
-                value={formData.roundsPerDebate}
-                onChange={(e) => handleFieldChange('roundsPerDebate', parseInt(e.target.value))}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-              />
-            </div>
-
-            <div>
-              <label htmlFor="timeLimitHours" className="block text-sm font-medium text-gray-700">
-                Time Limit (hours)
-              </label>
-              <input
-                type="number"
-                id="timeLimitHours"
-                min="1"
-                max="168"
-                value={formData.timeLimitHours}
-                onChange={(e) => handleFieldChange('timeLimitHours', parseInt(e.target.value))}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-              />
-            </div>
-          </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
