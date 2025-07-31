@@ -50,7 +50,8 @@ class StudentDebateService:
                     ClassroomStudent.student_id == student_id,
                     ClassroomStudent.removed_at.is_(None),
                     ClassroomAssignment.assignment_id == assignment_id,
-                    ClassroomAssignment.assignment_type == 'debate'
+                    ClassroomAssignment.assignment_type == 'debate',
+                    ClassroomAssignment.removed_from_classroom_at.is_(None)  # Ensure assignment is still active
                 )
             )
         )

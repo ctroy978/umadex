@@ -103,6 +103,12 @@ export const studentDebateApi = {
     return toCamelCase(response.data)
   },
 
+  // Retry AI response generation
+  async retryAiResponse(assignmentId: string): Promise<{ success: boolean; message: string }> {
+    const response = await api.post(`/v1/student/debate/${assignmentId}/retry-ai-response`)
+    return response.data
+  },
+
   // Get rhetorical techniques for reference
   async getTechniques(): Promise<{proper: any[], improper: any[]}> {
     const response = await api.get('/v1/student/debate/techniques/list')

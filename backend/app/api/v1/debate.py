@@ -247,14 +247,15 @@ async def archive_debate_assignment(
             detail="Assignment not found"
         )
     
-    # Check if assignment is attached to any classrooms
+    # Check if assignment is attached to any classrooms (excluding soft-deleted ones)
     from app.models.classroom import ClassroomAssignment
     count_result = await db.execute(
         select(func.count(ClassroomAssignment.id))
         .where(
             and_(
                 ClassroomAssignment.assignment_id == assignment.id,
-                ClassroomAssignment.assignment_type == "debate"
+                ClassroomAssignment.assignment_type == "debate",
+                ClassroomAssignment.removed_from_classroom_at.is_(None)  # Only count active assignments
             )
         )
     )

@@ -342,7 +342,7 @@ async def get_gradebook(
             ReadingAssignment, ClassroomAssignment.assignment_id == ReadingAssignment.id
         ).join(
             Classroom, ClassroomAssignment.classroom_id == Classroom.id
-        ).outerjoin(
+        ).join(
             StudentTestAttempt, 
             and_(
                 StudentTestAttempt.student_id == StudentAssignment.student_id,
@@ -550,7 +550,9 @@ async def get_gradebook(
                 Classroom.teacher_id == teacher.id,
                 Classroom.deleted_at.is_(None),
                 ClassroomAssignment.assignment_type == 'debate',
-                User.deleted_at.is_(None)
+                User.deleted_at.is_(None),
+                StudentDebate.status != 'not_started',  # Exclude not started debates
+                StudentDebate.final_percentage.isnot(None)  # Only include graded debates
             )
         )
         
@@ -645,11 +647,12 @@ async def get_gradebook(
             WritingAssignment, ClassroomAssignment.assignment_id == WritingAssignment.id
         ).join(
             Classroom, ClassroomAssignment.classroom_id == Classroom.id
-        ).outerjoin(
+        ).join(
             StudentWritingSubmission,
             and_(
                 StudentWritingSubmission.student_assignment_id == StudentAssignment.id,
-                StudentWritingSubmission.is_final_submission == True  # Only consider final submissions for scores
+                StudentWritingSubmission.is_final_submission == True,  # Only consider final submissions for scores
+                StudentWritingSubmission.score.isnot(None)  # Only graded submissions
             )
         ).where(
             and_(
@@ -759,6 +762,8 @@ async def get_gradebook(
                 Classroom.deleted_at.is_(None),
                 ClassroomAssignment.assignment_type == 'test',
                 StudentTestAttempt.test_id.isnot(None),  # Only UMATest attempts (not UMARead)
+                StudentTestAttempt.status == 'graded',  # Only graded tests
+                StudentTestAttempt.score.isnot(None),  # Only tests with scores
                 User.deleted_at.is_(None)
             )
         )

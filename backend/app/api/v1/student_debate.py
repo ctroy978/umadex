@@ -3,6 +3,7 @@ from typing import List, Optional
 from uuid import UUID
 import random
 import logging
+import asyncio
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select, and_, func
@@ -730,3 +731,137 @@ async def get_rhetorical_techniques(
         "proper": proper_techniques,
         "improper": improper_techniques
     }
+
+
+@router.post("/{assignment_id}/retry-ai-response")
+async def retry_ai_response(
+    assignment_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Retry generating AI response when previous attempt failed or timed out."""
+    
+    # Get student debate
+    classroom_assignment = await debate_service.verify_student_access(
+        db, current_user.id, assignment_id
+    )
+    
+    student_debate = await debate_service.get_student_debate(
+        db, current_user.id, assignment_id, classroom_assignment.id
+    )
+    
+    if not student_debate or student_debate.status != 'in_progress':
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No active debate found"
+        )
+    
+    # Check current posts to verify we're waiting for AI
+    current_posts = await debate_service.get_debate_posts(
+        db, student_debate.id, student_debate.current_debate
+    )
+    
+    if not current_posts or current_posts[-1].post_type != 'student':
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Not waiting for AI response"
+        )
+    
+    # Get the statement count
+    statement_count = len(current_posts)
+    
+    # Only retry for statements 2 and 4 (after student statements 1 and 3)
+    if statement_count not in [1, 3]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="AI response not expected at this point"
+        )
+    
+    # Get debate assignment
+    result = await db.execute(
+        select(DebateAssignment).where(DebateAssignment.id == assignment_id)
+    )
+    debate_assignment = result.scalar_one_or_none()
+    
+    if not debate_assignment:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Debate assignment not found"
+        )
+    
+    # Load AI services
+    await ai_service.load_personalities(db)
+    await ai_service.load_fallacy_templates(db)
+    
+    try:
+        # Get student's last post
+        student_post = current_posts[-1]
+        
+        # Determine if we should include fallacy
+        should_include_fallacy = await debate_service.should_inject_fallacy(db, student_debate)
+        
+        # Get debate point
+        if student_debate.current_debate == 1:
+            debate_point = student_debate.debate_1_point or await debate_service.get_or_create_debate_point(
+                db, assignment_id, 1, 'con'
+            )
+        elif student_debate.current_debate == 2:
+            debate_point = student_debate.debate_2_point or await debate_service.get_or_create_debate_point(
+                db, assignment_id, 2, 'pro'
+            )
+        else:
+            debate_point = student_debate.debate_3_point or "The main point being debated in this round"
+        
+        # Get student position
+        position_field = f'debate_{student_debate.current_debate}_position'
+        position = getattr(student_debate, position_field, None)
+        
+        if not position:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Position not set for debate {student_debate.current_debate}"
+            )
+        
+        # Generate AI response with a timeout
+        ai_response = await ai_service.generate_ai_response(
+            student_post=student_post.content,
+            debate_context={
+                'topic': debate_assignment.topic,
+                'debate_point': debate_point,
+                'position': position,
+                'round_number': student_debate.current_debate,
+                'statement_number': statement_count + 1,
+                'difficulty': debate_assignment.difficulty_level,
+                'grade_level': debate_assignment.grade_level,
+                'previous_posts': current_posts[:-1]  # Exclude the last student post
+            },
+            should_include_fallacy=should_include_fallacy
+        )
+        
+        # Create AI post
+        ai_post = await debate_service.create_ai_post(
+            db,
+            student_debate_id=student_debate.id,
+            debate_number=student_debate.current_debate,
+            round_number=student_debate.current_round,
+            content=ai_response['content'],
+            word_count=ai_response['word_count'],
+            ai_personality=ai_response['personality'],
+            is_fallacy=ai_response['is_fallacy'],
+            fallacy_type=ai_response['fallacy_type']
+        )
+        
+        return {"success": True, "message": "AI response generated successfully"}
+        
+    except asyncio.TimeoutError:
+        logger.error("AI response generation timed out during retry")
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="AI response generation timed out. Please try again."
+        )
+    except Exception as e:
+        logger.error(f"Error during AI response retry: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to generate AI response. Please try again."
+        )

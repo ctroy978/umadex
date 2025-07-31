@@ -25,16 +25,24 @@ export default function DebateInterfacePage() {
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [showPositionSelector, setShowPositionSelector] = useState(false)
+  const [aiResponseTimeout, setAiResponseTimeout] = useState<NodeJS.Timeout | null>(null)
+  const [aiResponseRetries, setAiResponseRetries] = useState(0)
 
   useEffect(() => {
     fetchInitialData()
-    // Poll for updates every 30 seconds when waiting for AI
+    // Poll for updates more frequently when waiting for AI
     const interval = setInterval(() => {
       if (progress?.nextAction === 'await_ai') {
         fetchDebateProgress()
       }
-    }, 30000)
-    return () => clearInterval(interval)
+    }, 5000) // Check every 5 seconds instead of 30
+    return () => {
+      clearInterval(interval)
+      // Clear AI timeout on unmount
+      if (aiResponseTimeout) {
+        clearTimeout(aiResponseTimeout)
+      }
+    }
   }, [assignmentId])
 
   useEffect(() => {
@@ -61,6 +69,11 @@ export default function DebateInterfacePage() {
       // Check if we need position selection
       if (progressData.nextAction === 'choose_position') {
         setShowPositionSelector(true)
+      }
+      
+      // Set up AI response timeout if waiting
+      if (progressData.nextAction === 'await_ai') {
+        setupAiResponseTimeout()
       }
     } catch (err) {
       setError('Failed to load debate. Please try again.')
@@ -90,6 +103,12 @@ export default function DebateInterfacePage() {
       if (data.nextAction === 'choose_position') {
         setShowPositionSelector(true)
       }
+      
+      // Clear AI timeout if we're no longer waiting for AI
+      if (data.nextAction !== 'await_ai' && aiResponseTimeout) {
+        clearTimeout(aiResponseTimeout)
+        setAiResponseTimeout(null)
+      }
     } catch (err) {
       setError('Failed to load debate. Please try again.')
     } finally {
@@ -114,6 +133,8 @@ export default function DebateInterfacePage() {
       await fetchDebateProgress()
       
       // Post submitted successfully, AI is preparing response
+      // Set up timeout for AI response
+      setupAiResponseTimeout()
     } catch (err: any) {
       
       if (err.message === 'Post submitted for review') {
@@ -125,6 +146,60 @@ export default function DebateInterfacePage() {
       }
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  const setupAiResponseTimeout = () => {
+    // Clear any existing timeout
+    if (aiResponseTimeout) {
+      clearTimeout(aiResponseTimeout)
+    }
+
+    // Set a 45-second timeout for AI response
+    const timeout = setTimeout(() => {
+      if (progress?.nextAction === 'await_ai') {
+        handleAiResponseTimeout()
+      }
+    }, 45000)
+
+    setAiResponseTimeout(timeout)
+  }
+
+  const handleAiResponseTimeout = async () => {
+    // First check if AI has actually responded
+    const currentProgress = await studentDebateApi.getCurrentDebate(assignmentId)
+    
+    if (currentProgress.nextAction !== 'await_ai') {
+      // AI has responded, update state
+      setProgress(currentProgress)
+      return
+    }
+
+    // AI hasn't responded, show retry option
+    setError('AI response is taking longer than expected. Click "Retry" to try again.')
+  }
+
+  const retryAiResponse = async () => {
+    try {
+      setError(null)
+      setAiResponseRetries(aiResponseRetries + 1)
+      
+      // Call retry endpoint
+      await studentDebateApi.retryAiResponse(assignmentId)
+      
+      // Wait a moment then check progress
+      setTimeout(() => {
+        fetchDebateProgress()
+      }, 2000)
+      
+      // Set up new timeout
+      setupAiResponseTimeout()
+    } catch (err: any) {
+      if (err.response?.status === 504) {
+        setError('AI is still not responding. Please try again in a moment.')
+      } else {
+        setError('Failed to generate AI response. Please try again.')
+      }
     }
   }
 
@@ -390,10 +465,22 @@ export default function DebateInterfacePage() {
           {progress.nextAction === 'await_ai' && (
             <div className="flex justify-start">
               <div className="bg-gray-100 rounded-lg p-4 max-w-md">
-                <div className="flex items-center space-x-2">
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600"></div>
-                  <span className="text-gray-600">AI is typing...</span>
-                </div>
+                {error && error.includes('AI response is taking longer') ? (
+                  <div className="space-y-3">
+                    <p className="text-red-600 text-sm">{error}</p>
+                    <button
+                      onClick={retryAiResponse}
+                      className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
+                    >
+                      Retry AI Response
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center space-x-2">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600"></div>
+                    <span className="text-gray-600">AI is typing...</span>
+                  </div>
+                )}
               </div>
             </div>
           )}
