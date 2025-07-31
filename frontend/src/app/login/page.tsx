@@ -26,8 +26,22 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  const { register: registerEmail, handleSubmit: handleSubmitEmail, formState: { errors: emailErrors } } = useForm<LoginForm>()
+  const { register: registerEmail, handleSubmit: handleSubmitEmail, formState: { errors: emailErrors }, watch: watchEmail } = useForm<LoginForm>()
   const { register: registerOTP, handleSubmit: handleSubmitOTP, formState: { errors: otpErrors } } = useForm<VerifyForm>()
+  
+  // Watch form fields for validation
+  const watchedEmail = watchEmail('email')
+  const watchedFirstName = watchEmail('first_name')
+  const watchedLastName = watchEmail('last_name')
+  
+  // Determine if form is valid
+  const isFormValid = () => {
+    if (!watchedEmail) return false
+    if (showRegistrationFields) {
+      return !!(watchedFirstName?.trim() && watchedLastName?.trim())
+    }
+    return true
+  }
 
   const onSubmitEmail = async (data: LoginForm) => {
     setLoading(true)
@@ -129,7 +143,7 @@ export default function LoginPage() {
                   </div>
                   <div>
                     <label htmlFor="first_name" className="block text-sm font-medium text-gray-700">
-                      First name
+                      First name <span className="text-red-500">*</span>
                     </label>
                     <div className="mt-1">
                       <input
@@ -138,6 +152,7 @@ export default function LoginPage() {
                         })}
                         type="text"
                         autoComplete="given-name"
+                        placeholder="Enter your first name"
                         className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
                       />
                       {emailErrors.first_name && (
@@ -148,7 +163,7 @@ export default function LoginPage() {
 
                   <div>
                     <label htmlFor="last_name" className="block text-sm font-medium text-gray-700">
-                      Last name
+                      Last name <span className="text-red-500">*</span>
                     </label>
                     <div className="mt-1">
                       <input
@@ -157,6 +172,7 @@ export default function LoginPage() {
                         })}
                         type="text"
                         autoComplete="family-name"
+                        placeholder="Enter your last name"
                         className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
                       />
                       {emailErrors.last_name && (
@@ -175,8 +191,8 @@ export default function LoginPage() {
 
               <button
                 type="submit"
-                disabled={loading}
-                className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50"
+                disabled={loading || !isFormValid()}
+                className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {loading ? 'Sending...' : showRegistrationFields ? 'Register & Send Code' : 'Send Login Code'}
               </button>

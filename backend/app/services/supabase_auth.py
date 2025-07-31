@@ -76,8 +76,8 @@ class SupabaseAuthService:
                     "should_create_user": not existing_user,
                     "email_redirect_to": None,  # Disable magic link
                     "data": {
-                        "first_name": user_data.first_name if user_data else "",
-                        "last_name": user_data.last_name if user_data else "",
+                        "first_name": user_data.first_name.strip() if user_data and user_data.first_name else "",
+                        "last_name": user_data.last_name.strip() if user_data and user_data.last_name else "",
                         "role": user_data.role if user_data else "student",
                         "is_admin": False  # Never set admin on signup
                     } if not existing_user and user_data else None
@@ -120,12 +120,20 @@ class SupabaseAuthService:
             user = result.scalar_one_or_none()
             
             if not user:
+                # Get names from metadata
+                first_name = auth_user.user_metadata.get("first_name", "").strip()
+                last_name = auth_user.user_metadata.get("last_name", "").strip()
+                
+                # Validate that names are not empty
+                if not first_name or not last_name:
+                    raise ValueError("First name and last name are required for new users")
+                
                 # Create new user
                 user = User(
                     email=email,
                     username=email,  # Default username to email
-                    first_name=auth_user.user_metadata.get("first_name", ""),
-                    last_name=auth_user.user_metadata.get("last_name", ""),
+                    first_name=first_name,
+                    last_name=last_name,
                     role=UserRole(auth_user.user_metadata.get("role", UserRole.STUDENT.value)),
                     is_admin=auth_user.user_metadata.get("is_admin", False),
                     supabase_auth_id=auth_user.id
