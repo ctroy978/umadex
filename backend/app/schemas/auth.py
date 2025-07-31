@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, Field, validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Optional
 from datetime import datetime
 from uuid import UUID
@@ -11,10 +11,10 @@ class OTPRequestSchema(BaseModel):
     last_name: Optional[str] = Field(None, min_length=1, max_length=100)
     role: Optional[UserRole] = UserRole.STUDENT
     
-    @validator('first_name', 'last_name')
-    def validate_names(cls, v, field):
+    @field_validator('first_name', 'last_name')
+    def validate_names(cls, v):
         if v is not None and v.strip() == '':
-            raise ValueError(f'{field.name.replace("_", " ").title()} cannot be empty')
+            raise ValueError('Name cannot be empty')
         return v
 
 class OTPVerifySchema(BaseModel):

@@ -111,7 +111,7 @@ api.interceptors.response.use(
 
 // Helper function for simpler API requests
 export async function apiRequest<T = any>(url: string, options?: {
-  method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
+  method?: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
   body?: string | FormData;
   headers?: Record<string, string>;
 }): Promise<T> {

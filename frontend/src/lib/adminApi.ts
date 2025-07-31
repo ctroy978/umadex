@@ -76,6 +76,16 @@ export const adminApi = {
     });
   },
 
+  updateUserName: async (userId: string, data: {
+    first_name: string;
+    last_name: string;
+  }) => {
+    return apiRequest(`/v1/admin/users/${userId}/name`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  },
+
   // Audit Log
   getAuditLog: async (params?: {
     page?: number;

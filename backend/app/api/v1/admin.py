@@ -4,6 +4,7 @@ from sqlalchemy import select, func, and_, or_
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 import logging
+import re
 
 from app.core.database import get_db
 from app.utils.supabase_deps import require_admin_supabase as require_admin
@@ -269,19 +270,19 @@ async def promote_user(
     
     # TODO: Log the action
     # log_admin_action(
-        db=db,
-        admin_id=current_admin.id,
-        action_type="user_promotion",
-        target_id=user.id,
-        target_type="user",
-        action_data={
-            "from_role": old_role,
-            "to_role": user.role,
-            "from_admin": old_is_admin,
-            "to_admin": user.is_admin,
-            "reason": request.reason
-        }
-    )
+    #     db=db,
+    #     admin_id=current_admin.id,
+    #     action_type="user_promotion",
+    #     target_id=user.id,
+    #     target_type="user",
+    #     action_data={
+    #         "from_role": old_role,
+    #         "to_role": user.role,
+    #         "from_admin": old_is_admin,
+    #         "to_admin": user.is_admin,
+    #         "reason": request.reason
+    #     }
+    # )
     
     await db.commit()
     
@@ -312,16 +313,16 @@ async def soft_delete_user(
     
     # TODO: Log the action
     # log_admin_action(
-        db=db,
-        admin_id=current_admin.id,
-        action_type="user_soft_delete",
-        target_id=user.id,
-        target_type="user",
-        action_data={
-            "reason": request.reason,
-            "notify_teachers": request.notify_affected_teachers
-        }
-    )
+    #     db=db,
+    #     admin_id=current_admin.id,
+    #     action_type="user_soft_delete",
+    #     target_id=user.id,
+    #     target_type="user",
+    #     action_data={
+    #         "reason": request.reason,
+    #         "notify_teachers": request.notify_affected_teachers
+    #     }
+    # )
     
     await db.commit()
     
@@ -348,17 +349,83 @@ async def restore_user(
     
     # TODO: Log the action
     # log_admin_action(
-        db=db,
-        admin_id=current_admin.id,
-        action_type="user_restore",
-        target_id=user.id,
-        target_type="user",
-        action_data={}
-    )
+    #     db=db,
+    #     admin_id=current_admin.id,
+    #     action_type="user_restore",
+    #     target_id=user.id,
+    #     target_type="user",
+    #     action_data={}
+    # )
     
     await db.commit()
     
     return {"message": "User restored successfully", "user_id": user.id}
+
+@router.patch("/users/{user_id}/name")
+async def update_user_name(
+    user_id: str,
+    request: dict,
+    current_admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Update a user's first and last name."""
+    user = await db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    if user.deleted_at:
+        raise HTTPException(status_code=400, detail="Cannot update deleted user")
+    
+    # Validate names
+    first_name = request.get("first_name", "").strip()
+    last_name = request.get("last_name", "").strip()
+    
+    if not first_name or not last_name:
+        raise HTTPException(status_code=400, detail="First name and last name are required")
+    
+    if len(first_name) > 100 or len(last_name) > 100:
+        raise HTTPException(status_code=400, detail="Names must be 100 characters or less")
+    
+    # Basic validation to prevent injection or inappropriate content
+    if len(first_name) < 2 or len(last_name) < 2:
+        raise HTTPException(status_code=400, detail="Names must be at least 2 characters long")
+    
+    # Allow letters, spaces, hyphens, and apostrophes
+    name_pattern = re.compile(r"^[a-zA-Z\s\-']+$")
+    if not name_pattern.match(first_name) or not name_pattern.match(last_name):
+        raise HTTPException(status_code=400, detail="Names can only contain letters, spaces, hyphens, and apostrophes")
+    
+    # Update user
+    old_first_name = user.first_name
+    old_last_name = user.last_name
+    
+    user.first_name = first_name
+    user.last_name = last_name
+    user.updated_at = datetime.utcnow()
+    
+    # TODO: Log the action
+    # log_admin_action(
+    #     db=db,
+    #     admin_id=current_admin.id,
+    #     action_type="user_name_update",
+    #     target_id=user.id,
+    #     target_type="user",
+    #     action_data={
+    #         "old_first_name": old_first_name,
+    #         "old_last_name": old_last_name,
+    #         "new_first_name": first_name,
+    #         "new_last_name": last_name
+    #     }
+    # )
+    
+    await db.commit()
+    
+    return {
+        "message": "User name updated successfully",
+        "user_id": user.id,
+        "first_name": user.first_name,
+        "last_name": user.last_name
+    }
 
 @router.delete("/users/{user_id}/hard")
 async def hard_delete_user(

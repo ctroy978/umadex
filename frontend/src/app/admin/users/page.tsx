@@ -30,7 +30,7 @@ import {
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Search, UserPlus, Trash2, RotateCcw, Shield, AlertTriangle } from 'lucide-react';
+import { Search, UserPlus, Trash2, RotateCcw, Shield, AlertTriangle, Edit2 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { useToast } from '@/components/ui/use-toast';
 
@@ -49,6 +49,7 @@ export default function AdminUsersPage() {
   const [promoteDialog, setPromoteDialog] = useState<{ open: boolean; user?: AdminUser }>({ open: false });
   const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; user?: AdminUser; impact?: UserImpactAnalysis }>({ open: false });
   const [hardDeleteDialog, setHardDeleteDialog] = useState<{ open: boolean; user?: AdminUser }>({ open: false });
+  const [editNameDialog, setEditNameDialog] = useState<{ open: boolean; user?: AdminUser }>({ open: false });
   
   // Form states
   const [promotionData, setPromotionData] = useState<{
@@ -62,6 +63,10 @@ export default function AdminUsersPage() {
     notify_affected_teachers?: boolean;
   }>({ reason: 'other', notify_affected_teachers: false });
   const [confirmationPhrase, setConfirmationPhrase] = useState('');
+  const [nameEditData, setNameEditData] = useState<{
+    first_name: string;
+    last_name: string;
+  }>({ first_name: '', last_name: '' });
 
   useEffect(() => {
     loadUsers();
@@ -188,6 +193,72 @@ export default function AdminUsersPage() {
     }
   };
 
+  const handleUpdateName = async () => {
+    console.log('handleUpdateName called');
+    console.log('editNameDialog.user:', editNameDialog.user);
+    console.log('nameEditData:', nameEditData);
+    
+    if (!editNameDialog.user) return;
+    
+    // Client-side validation
+    const namePattern = /^[a-zA-Z\s\-']+$/;
+    const firstName = nameEditData.first_name.trim();
+    const lastName = nameEditData.last_name.trim();
+    
+    if (!firstName || !lastName) {
+      toast({
+        title: 'Validation Error',
+        description: 'First name and last name are required',
+        variant: 'destructive',
+      });
+      return;
+    }
+    
+    if (firstName.length < 2 || lastName.length < 2) {
+      toast({
+        title: 'Validation Error',
+        description: 'Names must be at least 2 characters long',
+        variant: 'destructive',
+      });
+      return;
+    }
+    
+    if (!namePattern.test(firstName) || !namePattern.test(lastName)) {
+      toast({
+        title: 'Validation Error',
+        description: 'Names can only contain letters, spaces, hyphens, and apostrophes',
+        variant: 'destructive',
+      });
+      return;
+    }
+    
+    try {
+      console.log('Calling updateUserName API with:', {
+        userId: editNameDialog.user.id,
+        data: { first_name: firstName, last_name: lastName }
+      });
+      
+      await adminApi.updateUserName(editNameDialog.user.id, {
+        first_name: firstName,
+        last_name: lastName
+      });
+      toast({
+        title: 'Success',
+        description: 'User name updated successfully',
+      });
+      setEditNameDialog({ open: false });
+      setNameEditData({ first_name: '', last_name: '' });
+      loadUsers();
+    } catch (err) {
+      console.error('Error updating user name:', err);
+      toast({
+        title: 'Error',
+        description: 'Failed to update user name',
+        variant: 'destructive',
+      });
+    }
+  };
+
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="mb-8">
@@ -307,6 +378,21 @@ export default function AdminUsersPage() {
                           <Button
                             size="sm"
                             variant="outline"
+                            title="Edit Name"
+                            onClick={() => {
+                              setEditNameDialog({ open: true, user });
+                              setNameEditData({ 
+                                first_name: user.first_name, 
+                                last_name: user.last_name 
+                              });
+                            }}
+                          >
+                            <Edit2 className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            title="Change Role"
                             onClick={() => {
                               setPromoteDialog({ open: true, user });
                               setPromotionData({ new_role: user.role });
@@ -317,6 +403,7 @@ export default function AdminUsersPage() {
                           <Button
                             size="sm"
                             variant="outline"
+                            title="Delete User"
                             className="text-red-600 hover:text-red-700"
                             onClick={() => openDeleteDialog(user)}
                           >
@@ -552,6 +639,54 @@ export default function AdminUsersPage() {
               disabled={confirmationPhrase !== `PERMANENTLY DELETE ${hardDeleteDialog.user?.first_name} ${hardDeleteDialog.user?.last_name}`}
             >
               Permanently Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Name Dialog */}
+      <Dialog open={editNameDialog.open} onOpenChange={(open) => setEditNameDialog({ open })}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit User Name</DialogTitle>
+            <DialogDescription>
+              Update the name for {editNameDialog.user?.email}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="first-name">First Name</Label>
+              <Input
+                id="first-name"
+                value={nameEditData.first_name}
+                onChange={(e) => setNameEditData({ ...nameEditData, first_name: e.target.value })}
+                placeholder="Enter first name"
+                maxLength={100}
+              />
+            </div>
+            <div>
+              <Label htmlFor="last-name">Last Name</Label>
+              <Input
+                id="last-name"
+                value={nameEditData.last_name}
+                onChange={(e) => setNameEditData({ ...nameEditData, last_name: e.target.value })}
+                placeholder="Enter last name"
+                maxLength={100}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => {
+              setEditNameDialog({ open: false });
+              setNameEditData({ first_name: '', last_name: '' });
+            }}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleUpdateName}
+              disabled={!nameEditData.first_name.trim() || !nameEditData.last_name.trim()}
+            >
+              Update Name
             </Button>
           </DialogFooter>
         </DialogContent>
