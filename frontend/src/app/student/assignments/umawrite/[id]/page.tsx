@@ -285,17 +285,17 @@ export default function StudentWritingAssignmentPage() {
     )
   }
 
-  // If results view but not completed, redirect to regular view
-  if (isResultsView && (!progress || !progress.is_completed)) {
-    router.push(`/student/assignments/umawrite/${assignmentId}`)
-    return null
-  }
-
-  // If assignment is completed but not in results view, redirect to results view
-  if (!isResultsView && progress && progress.is_completed) {
-    router.push(`/student/assignments/umawrite/${assignmentId}?view=results`)
-    return null
-  }
+  // Handle redirects in useEffect to avoid state updates during render
+  useEffect(() => {
+    // If results view but not completed, redirect to regular view
+    if (isResultsView && (!progress || !progress.is_completed)) {
+      router.push(`/student/assignments/umawrite/${assignmentId}`)
+    }
+    // If assignment is completed but not in results view, redirect to results view
+    else if (!isResultsView && progress && progress.is_completed) {
+      router.push(`/student/assignments/umawrite/${assignmentId}?view=results`)
+    }
+  }, [isResultsView, progress, assignmentId, router])
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -320,13 +320,6 @@ export default function StudentWritingAssignmentPage() {
                 </p>
               </div>
             </div>
-            <button
-              onClick={() => setShowTechniques(!showTechniques)}
-              className="flex items-center px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-            >
-              <BookOpenIcon className="h-5 w-5 mr-2" />
-              <span>Writing Techniques</span>
-            </button>
           </div>
         </div>
       </div>
@@ -391,6 +384,17 @@ export default function StudentWritingAssignmentPage() {
                   )
                 ))}
               </div>
+            </div>
+
+            {/* Writing Techniques Button */}
+            <div className="mb-6">
+              <button
+                onClick={() => setShowTechniques(!showTechniques)}
+                className="w-full flex items-center justify-center px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                <BookOpenIcon className="h-5 w-5 mr-2" />
+                <span className="font-medium">Select Writing Techniques</span>
+              </button>
             </div>
 
             {/* Selected Techniques */}
