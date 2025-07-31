@@ -140,7 +140,7 @@ class TestQuestionEvaluation(Base):
     
     # AI evaluation details
     scoring_rationale = Column(Text, nullable=False)
-    feedback = Column(Text)
+    feedback_text = Column(Text)
     key_concepts_identified = Column(JSONB, default=list)
     misconceptions_detected = Column(JSONB, default=list)
     evaluation_confidence = Column(DECIMAL(3, 2), nullable=False)  # 0.00-1.00

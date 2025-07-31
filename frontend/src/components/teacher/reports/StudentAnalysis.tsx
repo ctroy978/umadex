@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { UserIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
-import { tokenStorage } from '@/lib/tokenStorage';
+import { api } from '@/lib/api';
 
 interface Student {
   id: string;
@@ -33,21 +33,8 @@ export default function StudentAnalysis() {
   useEffect(() => {
     const fetchStudents = async () => {
       try {
-        const token = tokenStorage.getAccessToken();
-        if (!token) {
-          console.error('No access token found');
-          return;
-        }
-        
-        const response = await fetch('/api/v1/teacher/students', {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-        if (response.ok) {
-          const data = await response.json();
-          setStudents(data);
-        }
+        const response = await api.get('/v1/teacher/students');
+        setStudents(response.data);
       } catch (error) {
         console.error('Error fetching students:', error);
       }
@@ -62,22 +49,8 @@ export default function StudentAnalysis() {
     
     setLoading(true);
     try {
-      const token = tokenStorage.getAccessToken();
-      if (!token) {
-        console.error('No access token found');
-        setLoading(false);
-        return;
-      }
-      
-      const response = await fetch(`/api/v1/teacher/student-analytics/${selectedStudent}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setAnalyticsData(data);
-      }
+      const response = await api.get(`/v1/teacher/student-analytics/${selectedStudent}`);
+      setAnalyticsData(response.data);
     } catch (error) {
       console.error('Error fetching analytics:', error);
     } finally {
