@@ -76,6 +76,8 @@ class AssignmentImage(Base):
     description_generated_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     uploaded_at = Column(DateTime, default=datetime.utcnow)  # Backward compatibility
+    # Storage path for Supabase
+    storage_path = Column(Text, nullable=True)
     # Legacy columns
     file_url = Column(Text, nullable=True)
     custom_name = Column(String(100), nullable=True)

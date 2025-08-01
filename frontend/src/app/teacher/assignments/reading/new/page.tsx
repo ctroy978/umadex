@@ -6,6 +6,7 @@ import MetadataForm from '@/components/AssignmentCreator/MetadataForm';
 import ContentEditor from '@/components/AssignmentCreator/ContentEditor';
 import { ReadingAssignmentMetadata, ReadingAssignment, AssignmentImage } from '@/types/reading';
 import { readingApi } from '@/lib/readingApi';
+import { supabase } from '@/lib/supabase';
 
 export default function NewReadingAssignment() {
   const router = useRouter();
@@ -168,7 +169,48 @@ export default function NewReadingAssignment() {
     if (!assignment) throw new Error('No assignment created yet');
     
     try {
-      const uploadedImage = await readingApi.uploadImage(assignment.id, file, customName);
+      // Generate a unique filename
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+      const filePath = `assignments/${assignment.id}/${fileName}`;
+      
+      // Upload to Supabase Storage
+      const { data: storageData, error: storageError } = await supabase.storage
+        .from('reading-images')
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: false
+        });
+      
+      if (storageError) {
+        throw new Error(`Storage upload failed: ${storageError.message}`);
+      }
+      
+      // Get the public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('reading-images')
+        .getPublicUrl(filePath);
+      
+      // Get image dimensions
+      const img = new Image();
+      const dimensions = await new Promise<{ width: number; height: number }>((resolve) => {
+        img.onload = () => resolve({ width: img.width, height: img.height });
+        img.src = URL.createObjectURL(file);
+      });
+      
+      // Save reference to backend
+      const uploadedImage = await readingApi.createImageReference({
+        assignment_id: assignment.id,
+        filename: fileName,
+        storage_path: filePath,
+        public_url: publicUrl,
+        custom_name: customName,
+        width: dimensions.width,
+        height: dimensions.height,
+        file_size: file.size,
+        mime_type: file.type
+      });
+      
       setImages([...images, uploadedImage]);
       return uploadedImage;
     } catch (error) {
@@ -181,6 +223,21 @@ export default function NewReadingAssignment() {
     if (!assignment) return;
     
     try {
+      // Find the image to get its storage path
+      const imageToDelete = images.find(img => img.id === imageId);
+      
+      if (imageToDelete && imageToDelete.storage_path) {
+        // Delete from Supabase Storage
+        const { error: storageError } = await supabase.storage
+          .from('reading-images')
+          .remove([imageToDelete.storage_path]);
+        
+        if (storageError) {
+          console.error('Error deleting from storage:', storageError);
+        }
+      }
+      
+      // Delete reference from backend
       await readingApi.deleteImage(assignment.id, imageId);
       setImages(images.filter(img => img.id !== imageId));
     } catch (error) {

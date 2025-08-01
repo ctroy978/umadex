@@ -56,9 +56,13 @@ class AssignmentImageProcessor:
                         if f"<image>{image.image_tag}</image>" in chunk.content
                     ]
                     
-                    # Build full URL for image
-                    base_url = os.getenv("BACKEND_URL", "http://localhost:8000")
-                    image_url = f"{base_url}{image.display_url}"
+                    # Use the display URL directly (it's now a public Supabase URL)
+                    image_url = image.display_url
+                    
+                    # If the URL is relative (legacy images), build full URL
+                    if image_url.startswith('/'):
+                        base_url = os.getenv("BACKEND_URL", "http://localhost:8000")
+                        image_url = f"{base_url}{image_url}"
                     
                     # Download image from URL to temp file
                     async with httpx.AsyncClient() as client:

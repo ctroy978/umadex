@@ -852,6 +852,77 @@ async def update_reading_assignment(
         raise
 
 
+@router.post("/assignments/reading/images/reference", response_model=AssignmentImage)
+async def create_reading_image_reference(
+    image_data: dict,
+    teacher: User = Depends(require_teacher),
+    db: AsyncSession = Depends(get_db)
+):
+    """Create a reference to an image stored in Supabase Storage"""
+    assignment_id = UUID(image_data["assignment_id"])
+    
+    # Verify assignment belongs to teacher
+    result = await db.execute(
+        select(ReadingAssignmentModel).where(
+            and_(
+                ReadingAssignmentModel.id == assignment_id,
+                ReadingAssignmentModel.teacher_id == teacher.id,
+                ReadingAssignmentModel.deleted_at.is_(None)
+            )
+        )
+    )
+    assignment = result.scalar_one_or_none()
+    
+    if not assignment:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Assignment not found"
+        )
+    
+    # Check image count limit
+    existing_images = await db.execute(
+        select(AssignmentImageModel).where(
+            AssignmentImageModel.assignment_id == assignment_id
+        )
+    )
+    image_count = len(existing_images.scalars().all())
+    
+    if image_count >= 10:  # Max 10 images per assignment
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Maximum 10 images allowed per assignment"
+        )
+    
+    # Generate next image number
+    image_number = image_count + 1
+    image_tag = f"image-{image_number}"
+    
+    # Create database record
+    image = AssignmentImageModel(
+        assignment_id=assignment_id,
+        image_tag=image_tag,
+        image_key=image_data["filename"],
+        file_name=image_data["filename"],
+        storage_path=image_data["storage_path"],
+        original_url=image_data["public_url"],
+        display_url=image_data["public_url"],
+        thumbnail_url=image_data["public_url"],
+        image_url=image_data["public_url"],  # Backward compatibility
+        file_url=image_data["public_url"],  # Legacy
+        custom_name=image_data.get("custom_name"),
+        width=image_data.get("width", 0),
+        height=image_data.get("height", 0),
+        file_size=image_data.get("file_size", 0),
+        mime_type=image_data.get("mime_type", "image/jpeg")
+    )
+    
+    db.add(image)
+    await db.commit()
+    await db.refresh(image)
+    
+    return image
+
+
 @router.post("/assignments/reading/{assignment_id}/images", response_model=AssignmentImage)
 async def upload_assignment_image(
     assignment_id: UUID,
@@ -903,10 +974,12 @@ async def upload_assignment_image(
         # Process and validate image
         processor = ImageProcessor()
         try:
-            image_data = await processor.validate_and_process_image(
+            # Use Supabase storage for reading assignments
+            image_data = await processor.validate_and_process_image_supabase(
                 file=file,
                 assignment_id=str(assignment_id),
-                image_number=image_number
+                image_number=image_number,
+                bucket_name="reading-images"
             )
         except HTTPException:
             raise
@@ -923,6 +996,7 @@ async def upload_assignment_image(
             image_tag=image_data["image_tag"],
             image_key=image_data["image_key"],
             file_name=image_data["file_name"],
+            storage_path=image_data.get("storage_path"),  # Add storage path
             original_url=image_data["original_url"],
             display_url=image_data["display_url"],
             thumbnail_url=image_data["thumbnail_url"],

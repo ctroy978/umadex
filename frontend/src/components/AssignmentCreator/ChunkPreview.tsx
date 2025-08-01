@@ -53,7 +53,16 @@ export default function ChunkPreview({ content, images = [] }: ChunkPreviewProps
     processedContent = processedContent.replace(/<image>(.*?)<\/image>/g, (match, imageTag) => {
       const image = images.find(img => img.image_tag === imageTag.trim());
       if (image && image.display_url) {
-        const imageUrl = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost'}${image.display_url.startsWith('/api') ? image.display_url.replace('/api', '') : image.display_url}`;
+        // If the URL is already absolute (starts with http:// or https://), use it directly
+        // Otherwise, prepend the API URL for legacy images
+        let imageUrl: string;
+        if (image.display_url.startsWith('http://') || image.display_url.startsWith('https://')) {
+          imageUrl = image.display_url;
+        } else {
+          // For relative URLs, prepend the base URL (without /api)
+          const baseUrl = process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost';
+          imageUrl = `${baseUrl}${image.display_url}`;
+        }
         return `<img src="${imageUrl}" alt="${imageTag}" class="float-right ml-4 mb-2 w-48 h-auto object-cover rounded shadow-md" title="${image.file_name || imageTag}" />`;
       }
       return `<span class="inline-block bg-red-100 text-red-700 px-2 py-1 rounded text-sm">⚠️ ${imageTag} not found</span>`;

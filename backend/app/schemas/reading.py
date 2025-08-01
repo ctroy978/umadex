@@ -48,6 +48,7 @@ class AssignmentImage(BaseModel):
     image_tag: str  # 'image-1', 'image-2', etc.
     image_key: str  # Unique file identifier
     file_name: Optional[str]  # Original filename
+    storage_path: Optional[str] = None  # Supabase storage path
     original_url: str  # 2000x2000 max
     display_url: str   # 800x600 max
     thumbnail_url: str  # 200x150 max

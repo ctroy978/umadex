@@ -43,6 +43,22 @@ export const readingApi = {
     return response.data;
   },
 
+  // Create an image reference for Supabase storage
+  createImageReference: async (data: {
+    assignment_id: string;
+    filename: string;
+    storage_path: string;
+    public_url: string;
+    custom_name?: string;
+    width?: number;
+    height?: number;
+    file_size?: number;
+    mime_type?: string;
+  }): Promise<AssignmentImage> => {
+    const response = await api.post('/v1/teacher/assignments/reading/images/reference', data);
+    return response.data;
+  },
+
   // Delete an assignment image
   deleteImage: async (assignmentId: string, imageId: string): Promise<void> => {
     await api.delete(`/v1/teacher/assignments/reading/${assignmentId}/images/${imageId}`);

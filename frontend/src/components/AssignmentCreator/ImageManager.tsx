@@ -191,7 +191,11 @@ export default function ImageManager({ images, onUpload, onDelete }: ImageManage
             className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded"
           >
             <img
-              src={`http://localhost${image.thumbnail_url}`}
+              src={
+                image.thumbnail_url.startsWith('http://') || image.thumbnail_url.startsWith('https://')
+                  ? image.thumbnail_url 
+                  : `${(process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost')}${image.thumbnail_url}`
+              }
               alt={image.file_name || image.image_tag}
               className="w-16 h-12 object-cover rounded"
             />
