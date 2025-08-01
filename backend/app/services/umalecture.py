@@ -385,6 +385,53 @@ class UMALectureService:
         
         return bool(updated)
     
+    async def create_image_reference(
+        self,
+        db: AsyncSession,
+        lecture_id: UUID,
+        filename: str,
+        storage_path: str,
+        public_url: str,
+        teacher_description: str,
+        node_id: str,
+        position: int
+    ) -> Dict[str, Any]:
+        """Create a reference to an image stored in Supabase Storage"""
+        import uuid
+        
+        # Insert into database
+        query = sql_text("""
+            INSERT INTO lecture_images (
+                id, lecture_id, filename, teacher_description,
+                node_id, position, storage_path, public_url,
+                original_url, display_url, created_at
+            ) VALUES (
+                :id, :lecture_id, :filename, :teacher_description,
+                :node_id, :position, :storage_path, :public_url,
+                :public_url, :public_url, NOW()
+            )
+            RETURNING *
+        """)
+        
+        result = await db.execute(
+            query,
+            {
+                "id": str(uuid.uuid4()),
+                "lecture_id": lecture_id,
+                "filename": filename,
+                "teacher_description": teacher_description,
+                "node_id": node_id,
+                "position": position,
+                "storage_path": storage_path,
+                "public_url": public_url
+            }
+        )
+        
+        image = result.mappings().first()
+        await db.commit()
+        
+        return dict(image)
+    
     async def add_image(
         self,
         db: AsyncSession,

@@ -246,6 +246,35 @@ async def unlink_lecture_from_all_classrooms(
 
 
 # Image Upload Endpoints
+
+@router.post("/lectures/images/reference", response_model=LectureImageResponse)
+async def create_image_reference(
+    image_data: dict,
+    teacher: User = Depends(require_teacher),
+    db: AsyncSession = Depends(get_db)
+):
+    """Create a reference to an image stored in Supabase Storage"""
+    lecture_id = UUID(image_data["lecture_id"])
+    
+    # Verify lecture ownership
+    lecture = await lecture_service.get_lecture(db, lecture_id, teacher.id)
+    if not lecture:
+        raise HTTPException(status_code=404, detail="Lecture not found")
+    
+    # Create image reference
+    image = await lecture_service.create_image_reference(
+        db,
+        lecture_id=lecture_id,
+        filename=image_data["filename"],
+        storage_path=image_data["storage_path"],
+        public_url=image_data["public_url"],
+        teacher_description=image_data["teacher_description"],
+        node_id=image_data["node_id"],
+        position=image_data.get("position", 1)
+    )
+    
+    return image
+
 @router.post("/lectures/{lecture_id}/images", response_model=LectureImageResponse)
 async def upload_lecture_image(
     lecture_id: UUID,

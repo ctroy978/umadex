@@ -49,6 +49,8 @@ export interface LectureImage {
   original_url: string
   display_url?: string
   thumbnail_url?: string
+  public_url?: string
+  storage_path?: string
   file_size?: number
   mime_type?: string
   created_at: string
@@ -216,6 +218,20 @@ export const umalectureApi = {
     );
     return response.data;
   },
+
+  createImageReference: (data: {
+    lecture_id: string
+    filename: string
+    storage_path: string
+    public_url: string
+    teacher_description: string
+    node_id: string
+    position: number
+  }) =>
+    apiRequest<LectureImage>('/v1/umalecture/lectures/images/reference', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
 
   listImages: (lectureId: string) =>
     apiRequest<LectureImage[]>(`/v1/umalecture/lectures/${lectureId}/images`),

@@ -15,6 +15,7 @@ import {
 } from '@heroicons/react/24/outline'
 import { umalectureApi } from '@/lib/umalectureApi'
 import type { LectureAssignment, LectureImage } from '@/lib/umalectureApi'
+import { supabase } from '@/lib/supabase'
 
 const OUTLINE_EXAMPLE = `Topic: Photosynthesis
 - Basics
@@ -175,6 +176,21 @@ export default function CreateLectureContentPage() {
     if (!confirm('Are you sure you want to remove this image?')) return
     
     try {
+      // Find the image to get its storage path
+      const imageToDelete = uploadedImages.find(img => img.id === imageId)
+      
+      if (imageToDelete && imageToDelete.storage_path) {
+        // Delete from Supabase Storage
+        const { error: storageError } = await supabase.storage
+          .from('lecture-images')
+          .remove([imageToDelete.storage_path])
+        
+        if (storageError) {
+          console.error('Error deleting from storage:', storageError)
+        }
+      }
+      
+      // Delete reference from backend
       await umalectureApi.deleteImage(lectureId, imageId)
       setUploadedImages(uploadedImages.filter(img => img.id !== imageId))
     } catch (err) {
@@ -192,16 +208,41 @@ export default function CreateLectureContentPage() {
       ))
       
       try {
-        const formData = new FormData()
-        formData.append('file', upload.file)
-        formData.append('node_id', upload.nodeId)
-        formData.append('teacher_description', upload.description)
-        formData.append('position', '1')
+        // Generate a unique filename
+        const fileExt = upload.file.name.split('.').pop()
+        const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`
+        const filePath = `lectures/${lectureId}/${fileName}`
         
-        const uploadedImage = await umalectureApi.uploadImage(lectureId, formData)
+        // Upload to Supabase Storage
+        const { data: storageData, error: storageError } = await supabase.storage
+          .from('lecture-images')
+          .upload(filePath, upload.file, {
+            cacheControl: '3600',
+            upsert: false
+          })
+        
+        if (storageError) {
+          throw new Error(`Storage upload failed: ${storageError.message}`)
+        }
+        
+        // Get the public URL
+        const { data: { publicUrl } } = supabase.storage
+          .from('lecture-images')
+          .getPublicUrl(filePath)
+        
+        // Save reference to backend
+        const imageReference = await umalectureApi.createImageReference({
+          lecture_id: lectureId,
+          filename: fileName,
+          storage_path: filePath,
+          public_url: publicUrl,
+          teacher_description: upload.description,
+          node_id: upload.nodeId,
+          position: 1
+        })
         
         // Add to uploaded images
-        setUploadedImages(prev => [...prev, uploadedImage])
+        setUploadedImages(prev => [...prev, imageReference])
         
         // Remove from pending uploads
         setImageUploads(prev => prev.filter(img => img.id !== upload.id))
@@ -477,7 +518,7 @@ export default function CreateLectureContentPage() {
                     <div key={image.id} className="border border-gray-200 rounded-lg p-3 bg-white">
                       <div className="flex items-start space-x-3">
                         <img 
-                          src={image.thumbnail_url || image.display_url || image.original_url} 
+                          src={image.public_url || image.display_url || image.original_url} 
                           alt={image.teacher_description}
                           className="w-16 h-16 object-cover rounded"
                         />
