@@ -6,8 +6,9 @@ import Link from 'next/link'
 import { 
   AcademicCapIcon,
   ArrowLeftIcon,
-  PlusIcon,
-  XMarkIcon
+  BeakerIcon,
+  BookOpenIcon,
+  InformationCircleIcon
 } from '@heroicons/react/24/outline'
 import { umalectureApi } from '@/lib/umalectureApi'
 
@@ -42,6 +43,34 @@ const gradeLevels = [
   'Adult Education'
 ]
 
+// Example cards data
+const examples = [
+  {
+    icon: BeakerIcon,
+    color: 'bg-green-50 text-green-700 border-green-200',
+    iconColor: 'text-green-600',
+    subject: 'Science Example',
+    topic: 'Photosynthesis Process',
+    subtopics: [
+      'What photosynthesis is and why plants need it',
+      'The step-by-step chemical reactions involved',
+      'How photosynthesis impacts ecosystems and food production'
+    ]
+  },
+  {
+    icon: BookOpenIcon,
+    color: 'bg-purple-50 text-purple-700 border-purple-200',
+    iconColor: 'text-purple-600',
+    subject: 'English Literature Example',
+    topic: 'Symbolism in Romeo and Juliet',
+    subtopics: [
+      'Light and darkness imagery throughout the play',
+      'The balcony as symbol of forbidden love',
+      'How symbols foreshadow the tragic ending'
+    ]
+  }
+]
+
 export default function CreateLecturePage() {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
@@ -51,48 +80,27 @@ export default function CreateLecturePage() {
     title: '',
     subject: '',
     grade_level: '',
-    learning_objectives: ['']
+    topic: '',
+    subtopic1: '',
+    subtopic2: '',
+    subtopic3: ''
   })
 
-  const handleAddObjective = () => {
-    if (formData.learning_objectives.length < 10) {
-      setFormData({
-        ...formData,
-        learning_objectives: [...formData.learning_objectives, '']
-      })
+  const validateForm = () => {
+    // Check required fields
+    if (!formData.title || !formData.subject || !formData.grade_level || 
+        !formData.topic || !formData.subtopic1 || !formData.subtopic2) {
+      setError('Please fill in all required fields')
+      return false
     }
-  }
 
-  const handleRemoveObjective = (index: number) => {
-    if (formData.learning_objectives.length > 1) {
-      setFormData({
-        ...formData,
-        learning_objectives: formData.learning_objectives.filter((_, i) => i !== index)
-      })
-    }
-  }
-
-  const handleObjectiveChange = (index: number, value: string) => {
-    const newObjectives = [...formData.learning_objectives]
-    newObjectives[index] = value
-    setFormData({
-      ...formData,
-      learning_objectives: newObjectives
-    })
+    return true
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
-    // Validate form
-    if (!formData.title || !formData.subject || !formData.grade_level) {
-      setError('Please fill in all required fields')
-      return
-    }
-    
-    const validObjectives = formData.learning_objectives.filter(obj => obj.trim())
-    if (validObjectives.length === 0) {
-      setError('Please add at least one learning objective')
+    if (!validateForm()) {
       return
     }
 
@@ -100,10 +108,36 @@ export default function CreateLecturePage() {
       setLoading(true)
       setError(null)
       
+      // Generate learning objectives from the topic and subtopics
+      const learningObjectives = [
+        `Understand the key concepts of ${formData.topic.toLowerCase()}`,
+        `Explain ${formData.subtopic1.toLowerCase()}`,
+        `Analyze ${formData.subtopic2.toLowerCase()}`
+      ]
+      
+      if (formData.subtopic3) {
+        learningObjectives.push(`Evaluate ${formData.subtopic3.toLowerCase()}`)
+      }
+      
+      // Use topic as title if title is not provided
+      const lectureTitle = formData.title.trim() || formData.topic.trim()
+      
       const lecture = await umalectureApi.createLecture({
-        ...formData,
-        learning_objectives: validObjectives
+        title: lectureTitle,
+        subject: formData.subject,
+        grade_level: formData.grade_level,
+        learning_objectives: learningObjectives
       })
+      
+      // Store the topic and subtopics in session storage to use in the next step
+      sessionStorage.setItem('lectureTopicData', JSON.stringify({
+        topic: formData.topic,
+        subtopics: [
+          formData.subtopic1,
+          formData.subtopic2,
+          ...(formData.subtopic3 ? [formData.subtopic3] : [])
+        ]
+      }))
       
       // Navigate to Step 2: content creation
       router.push(`/teacher/uma-lecture/create/${lecture.id}/content`)
@@ -130,9 +164,48 @@ export default function CreateLecturePage() {
         <div className="flex items-center space-x-3">
           <AcademicCapIcon className="h-8 w-8 text-red-500" />
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">Create New Lecture</h1>
-            <p className="text-gray-600 mt-1">Step 1: Basic Information</p>
+            <h1 className="text-3xl font-bold text-gray-900">Create Focused Lecture</h1>
+            <p className="text-gray-600 mt-1">Design a 15-25 minute interactive learning experience</p>
           </div>
+        </div>
+      </div>
+
+      {/* Guidance Message */}
+      <div className="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+        <div className="flex">
+          <InformationCircleIcon className="h-5 w-5 text-blue-600 mr-2 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm text-blue-800 font-medium">Create focused, digestible content</p>
+            <p className="text-sm text-blue-700 mt-1">
+              Focus on one topic with 2-3 key subtopics for best student engagement. 
+              This approach creates 8-12 content sections across difficulty levels.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Example Cards */}
+      <div className="mb-8">
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">Examples of Well-Structured Lectures</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {examples.map((example, index) => (
+            <div key={index} className={`rounded-lg border p-4 ${example.color}`}>
+              <div className="flex items-start space-x-3">
+                <example.icon className={`h-6 w-6 ${example.iconColor} flex-shrink-0 mt-1`} />
+                <div className="flex-1">
+                  <h3 className="font-medium text-gray-900">{example.subject}</h3>
+                  <p className="text-sm font-semibold mt-2">Topic: {example.topic}</p>
+                  <div className="mt-2 space-y-1">
+                    {example.subtopics.map((subtopic, idx) => (
+                      <p key={idx} className="text-sm">
+                        • {subtopic}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 
@@ -219,50 +292,114 @@ export default function CreateLecturePage() {
           </select>
         </div>
 
-        {/* Learning Objectives */}
+        {/* Lecture Topic */}
+        <div className="mb-6">
+          <label htmlFor="topic" className="block text-sm font-medium text-gray-700 mb-2">
+            Lecture Topic <span className="text-red-500">*</span>
+          </label>
+          <p className="text-sm text-gray-500 mb-2">
+            Choose one focused topic for this lecture (max 100 characters)
+          </p>
+          <input
+            type="text"
+            id="topic"
+            value={formData.topic}
+            onChange={(e) => setFormData({ ...formData, topic: e.target.value })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+            placeholder="e.g., The Water Cycle"
+            maxLength={100}
+            required
+          />
+          <div className="mt-1 text-xs text-gray-500">{formData.topic.length}/100 characters</div>
+        </div>
+
+        {/* Subtopics */}
         <div className="mb-6">
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            Learning Objectives <span className="text-red-500">*</span>
+            Key Subtopics
           </label>
-          <p className="text-sm text-gray-600 mb-3">
-            Add 3-5 key goals students should achieve by completing this lecture
+          <p className="text-sm text-gray-500 mb-3">
+            Break down your topic into 2-3 specific learning points (max 150 characters each)
           </p>
           
           <div className="space-y-3">
-            {formData.learning_objectives.map((objective, index) => (
-              <div key={index} className="flex items-center space-x-2">
-                <span className="text-sm text-gray-500 w-6">{index + 1}.</span>
-                <input
-                  type="text"
-                  value={objective}
-                  onChange={(e) => handleObjectiveChange(index, e.target.value)}
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                  placeholder="e.g., Understand the process of photosynthesis"
-                />
-                {formData.learning_objectives.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveObjective(index)}
-                    className="text-red-600 hover:text-red-700"
-                  >
-                    <XMarkIcon className="h-5 w-5" />
-                  </button>
-                )}
-              </div>
-            ))}
+            {/* Subtopic 1 */}
+            <div>
+              <label htmlFor="subtopic1" className="block text-sm text-gray-600 mb-1">
+                Subtopic 1 <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                id="subtopic1"
+                value={formData.subtopic1}
+                onChange={(e) => setFormData({ ...formData, subtopic1: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                placeholder="e.g., How water evaporates from oceans and lakes"
+                maxLength={150}
+                required
+              />
+              <div className="mt-1 text-xs text-gray-500">{formData.subtopic1.length}/150 characters</div>
+            </div>
+
+            {/* Subtopic 2 */}
+            <div>
+              <label htmlFor="subtopic2" className="block text-sm text-gray-600 mb-1">
+                Subtopic 2 <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                id="subtopic2"
+                value={formData.subtopic2}
+                onChange={(e) => setFormData({ ...formData, subtopic2: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                placeholder="e.g., Cloud formation and types of precipitation"
+                maxLength={150}
+                required
+              />
+              <div className="mt-1 text-xs text-gray-500">{formData.subtopic2.length}/150 characters</div>
+            </div>
+
+            {/* Subtopic 3 (Optional) */}
+            <div>
+              <label htmlFor="subtopic3" className="block text-sm text-gray-600 mb-1">
+                Subtopic 3 <span className="text-gray-400">(Optional)</span>
+              </label>
+              <input
+                type="text"
+                id="subtopic3"
+                value={formData.subtopic3}
+                onChange={(e) => setFormData({ ...formData, subtopic3: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                placeholder="e.g., Human impact on the water cycle"
+                maxLength={150}
+              />
+              <div className="mt-1 text-xs text-gray-500">{formData.subtopic3.length}/150 characters</div>
+            </div>
           </div>
-          
-          {formData.learning_objectives.length < 10 && (
-            <button
-              type="button"
-              onClick={handleAddObjective}
-              className="mt-3 inline-flex items-center text-sm text-primary-600 hover:text-primary-700"
-            >
-              <PlusIcon className="h-4 w-4 mr-1" />
-              Add another objective
-            </button>
-          )}
         </div>
+
+        {/* Preview Section */}
+        {(formData.topic || formData.subtopic1 || formData.subtopic2) && (
+          <div className="mb-6 bg-gray-50 border border-gray-200 rounded-lg p-4">
+            <h3 className="text-sm font-medium text-gray-700 mb-2">Preview</h3>
+            <p className="text-sm text-gray-600">
+              This will create 8-12 interactive content sections covering:
+            </p>
+            {formData.topic && (
+              <div className="mt-2 text-sm text-gray-700">
+                <span className="font-medium">Topic:</span> {formData.topic}
+                <div className="ml-4 mt-1">
+                  {formData.subtopic1 && <div>• {formData.subtopic1}</div>}
+                  {formData.subtopic2 && <div>• {formData.subtopic2}</div>}
+                  {formData.subtopic3 && <div>• {formData.subtopic3}</div>}
+                </div>
+              </div>
+            )}
+            <p className="text-sm text-gray-600 mt-2">
+              Each subtopic will have content at Basic, Intermediate, Advanced, and Expert levels.
+            </p>
+          </div>
+        )}
 
         {/* Form Actions */}
         <div className="flex items-center justify-between pt-6 border-t border-gray-200">

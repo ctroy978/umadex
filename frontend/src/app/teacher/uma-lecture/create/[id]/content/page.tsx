@@ -27,6 +27,16 @@ const OUTLINE_EXAMPLE = `Topic: Photosynthesis
   - In agriculture
   - In renewable energy`
 
+const generateOutlineFromTopicData = (topicData: { topic: string; subtopics: string[] }) => {
+  let outline = `Topic: ${topicData.topic}\n`
+  
+  topicData.subtopics.forEach((subtopic, index) => {
+    outline += `- ${subtopic}\n`
+  })
+  
+  return outline
+}
+
 interface ImageUpload {
   id: string
   file: File
@@ -51,52 +61,68 @@ export default function CreateLectureContentPage() {
   const [error, setError] = useState<string | null>(null)
   
   const [outline, setOutline] = useState('')
+  const [topicData, setTopicData] = useState<{ topic: string; subtopics: string[] } | null>(null)
   const [imageUploads, setImageUploads] = useState<ImageUpload[]>([])
   const [uploadedImages, setUploadedImages] = useState<LectureImage[]>([])
   
-  // Extract topics from outline for image association
-  const extractedTopics = outline
-    .split('\n')
-    .map((line, index, lines) => {
-      const trimmed = line.trim()
-      const originalIndent = line.length - trimmed.length
+  // Extract topics for image association
+  const extractedTopics = (() => {
+    if (topicData) {
+      return [topicData.topic, ...topicData.subtopics]
+    }
+    
+    // Fallback: try to parse from outline if we have one
+    if (outline) {
+      const lines = outline.split('\n').filter(line => line.trim())
+      const topics = []
       
-      // Skip empty lines or sub-items
-      if (!trimmed || trimmed.startsWith('-') || trimmed.startsWith('*') || trimmed.startsWith('•')) {
-        return null
-      }
-      
-      // Check if next line is more indented (making this a topic)
-      if (index + 1 < lines.length) {
-        const nextLine = lines[index + 1]
-        const nextTrimmed = nextLine.trim()
-        const nextIndent = nextLine.length - nextTrimmed.length
-        
-        // This is a topic if next line is more indented or starts with a bullet
-        if (nextIndent > originalIndent || nextTrimmed.startsWith('-') || nextTrimmed.startsWith('*')) {
-          return trimmed.replace(':', '')
+      for (const line of lines) {
+        const trimmed = line.trim()
+        if (trimmed.startsWith('Topic:')) {
+          topics.push(trimmed.replace('Topic:', '').trim())
+        } else if (trimmed.startsWith('-')) {
+          topics.push(trimmed.replace(/^-\s*/, '').trim())
         }
       }
       
-      // Also include lines that look like topics (no indent, not too short)
-      if (originalIndent === 0 && trimmed.length > 3) {
-        return trimmed.replace(':', '')
-      }
-      
-      return null
-    })
-    .filter(topic => topic !== null)
+      return topics.filter(t => t && t !== 'Key concepts' && t !== 'Main ideas' && t !== 'Applications')
+    }
+    
+    return []
+  })()
 
   useEffect(() => {
-    loadLecture()
+    // Load topic data from session storage first
+    const topicDataStr = sessionStorage.getItem('lectureTopicData')
+    if (topicDataStr) {
+      const data = JSON.parse(topicDataStr)
+      setTopicData(data)
+      const generatedOutline = generateOutlineFromTopicData(data)
+      setOutline(generatedOutline)
+      // Don't clear session storage yet - we need it for submission
+    }
+    
+    // Then load lecture data
+    loadLecture(topicDataStr)
   }, [lectureId])
 
-  const loadLecture = async () => {
+  const loadLecture = async (topicDataStr?: string | null) => {
     try {
       setLoading(true)
       const data = await umalectureApi.getLecture(lectureId)
       setLecture(data)
-      setOutline(data.topic_outline || '')
+      
+      // If we don't have an outline yet, try to use the saved one or create a basic one
+      if (!outline) {
+        if (data.topic_outline) {
+          setOutline(data.topic_outline)
+        } else if (!topicDataStr) {
+          // Only create a basic outline if we didn't get data from session storage
+          // This means the user likely came directly to this page
+          console.warn('No topic data found in session storage - user may need to go back to step 1')
+          setError('Please complete step 1 first to define your topic and subtopics.')
+        }
+      }
       
       // Load existing images
       const images = await umalectureApi.listImages(lectureId)
@@ -109,28 +135,6 @@ export default function CreateLectureContentPage() {
     }
   }
 
-  const handleOutlineChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setOutline(e.target.value)
-  }
-
-  const handleOutlineKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Tab') {
-      e.preventDefault()
-      const textarea = e.currentTarget
-      const start = textarea.selectionStart
-      const end = textarea.selectionEnd
-      const value = textarea.value
-      
-      // Insert tab character (or spaces)
-      const tabChar = '  ' // Using 2 spaces instead of tab for better compatibility
-      setOutline(value.substring(0, start) + tabChar + value.substring(end))
-      
-      // Move cursor after the inserted tab
-      setTimeout(() => {
-        textarea.selectionStart = textarea.selectionEnd = start + tabChar.length
-      }, 0)
-    }
-  }
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || [])
@@ -181,7 +185,7 @@ export default function CreateLectureContentPage() {
 
   const uploadImages = async () => {
     for (const upload of imageUploads) {
-      if (!upload.nodeId || !upload.description || upload.uploaded) continue
+      if (!upload.nodeId || !upload.description) continue
       
       setImageUploads(prev => prev.map(img => 
         img.id === upload.id ? { ...img, uploading: true } : img
@@ -196,10 +200,11 @@ export default function CreateLectureContentPage() {
         
         const uploadedImage = await umalectureApi.uploadImage(lectureId, formData)
         
+        // Add to uploaded images
         setUploadedImages(prev => [...prev, uploadedImage])
-        setImageUploads(prev => prev.map(img => 
-          img.id === upload.id ? { ...img, uploading: false, uploaded: true } : img
-        ))
+        
+        // Remove from pending uploads
+        setImageUploads(prev => prev.filter(img => img.id !== upload.id))
       } catch (err) {
         console.error('Error uploading image:', err)
         setImageUploads(prev => prev.map(img => 
@@ -211,32 +216,35 @@ export default function CreateLectureContentPage() {
 
   const handleSaveAndProcess = async () => {
     // Validate
-    if (!outline.trim() || outline.trim().split('\n').length < 3) {
-      setError('Please provide a detailed outline with at least 3 lines')
+    if (!outline.trim()) {
+      setError('Missing topic outline. Please go back to step 1.')
       return
     }
     
-    const pendingImages = imageUploads.filter(img => img.nodeId && img.description && !img.uploaded)
+    // Check if there are images that have been configured but not uploaded
+    const pendingImages = imageUploads.filter(img => !img.uploaded)
     if (pendingImages.length > 0) {
-      setError('Please upload all pending images before processing')
-      return
+      const hasValidPending = pendingImages.some(img => img.nodeId && img.description)
+      if (hasValidPending) {
+        setError('Please upload all pending images before creating the lecture. You can also remove these images if you don\'t want to include them.')
+        return
+      }
+      // If there are pending images without topic/description, we can ignore them
     }
     
     try {
       setSaving(true)
       setError(null)
       
-      // Save outline
+      // Save outline (from the first page)
       await umalectureApi.updateLecture(lectureId, { topic_outline: outline })
-      
-      // Upload any pending images
-      if (imageUploads.some(img => !img.uploaded && img.nodeId && img.description)) {
-        await uploadImages()
-      }
       
       // Start AI processing
       setProcessing(true)
       await umalectureApi.processLecture(lectureId)
+      
+      // Clear session storage now that we're done
+      sessionStorage.removeItem('lectureTopicData')
       
       // Redirect to processing status page
       router.push(`/teacher/uma-lecture/${lectureId}/processing`)
@@ -281,7 +289,7 @@ export default function CreateLectureContentPage() {
           <AcademicCapIcon className="h-8 w-8 text-red-500" />
           <div>
             <h1 className="text-3xl font-bold text-gray-900">{lecture.title}</h1>
-            <p className="text-gray-600 mt-1">Step 2: Add Content & Images</p>
+            <p className="text-gray-600 mt-1">Step 2: Add Images (Optional)</p>
           </div>
         </div>
       </div>
@@ -302,7 +310,7 @@ export default function CreateLectureContentPage() {
             <div className="w-8 h-8 bg-primary-600 text-white rounded-full flex items-center justify-center font-semibold">
               2
             </div>
-            <span className="ml-2 text-sm font-medium text-gray-900">Content & Images</span>
+            <span className="ml-2 text-sm font-medium text-gray-900">Add Images</span>
           </div>
         </div>
       </div>
@@ -313,88 +321,173 @@ export default function CreateLectureContentPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Main Content Area */}
-        <div className="lg:col-span-2">
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Topic Outline</h2>
-            
-            <div className="mb-4 bg-blue-50 border border-blue-200 rounded-md p-4">
-              <div className="flex">
-                <InformationCircleIcon className="h-5 w-5 text-blue-600 mr-2 flex-shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-sm text-blue-800 mb-2">
-                    Create a hierarchical outline with main topics and subtopics. Use indentation or bullet points.
-                  </p>
-                  <details className="text-sm text-blue-700">
-                    <summary className="cursor-pointer hover:text-blue-800">View example</summary>
-                    <pre className="mt-2 p-2 bg-white rounded text-xs overflow-x-auto">{OUTLINE_EXAMPLE}</pre>
-                  </details>
-                </div>
+      {/* Topic Summary */}
+      {topicData && (
+        <div className="mb-6 bg-gray-50 border border-gray-200 rounded-lg p-4">
+          <h3 className="text-sm font-semibold text-gray-700 mb-2">Your Lecture Structure</h3>
+          <div className="text-sm text-gray-600">
+            <p className="font-medium text-gray-800">Topic: {topicData.topic}</p>
+            <ul className="mt-2 ml-4 space-y-1">
+              {topicData.subtopics.map((subtopic, index) => (
+                <li key={index}>• {subtopic}</li>
+              ))}
+            </ul>
+          </div>
+          <p className="text-xs text-gray-500 mt-3">
+            The AI will create interactive content for each subtopic at Basic, Intermediate, Advanced, and Expert levels.
+          </p>
+        </div>
+      )}
+
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8">
+        <div className="max-w-4xl mx-auto">
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Add Images to Your Lecture</h2>
+          <p className="text-gray-600 mb-8">
+            Images help students visualize concepts and retain information better. 
+            Upload relevant images and associate them with your topic or subtopics.
+          </p>
+
+          {/* Image Guidelines */}
+          <div className="mb-8 bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <div className="flex">
+              <InformationCircleIcon className="h-5 w-5 text-blue-600 mr-2 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm text-blue-800 font-medium">Image Guidelines</p>
+                <ul className="text-sm text-blue-700 mt-1 ml-4 space-y-1">
+                  <li>• Choose clear, relevant images that illustrate key concepts</li>
+                  <li>• Each image should be associated with a specific topic or subtopic</li>
+                  <li>• Provide a brief description of what the image shows</li>
+                  <li>• Images are optional - only add them if they enhance understanding</li>
+                </ul>
               </div>
             </div>
-
-            <textarea
-              value={outline}
-              onChange={handleOutlineChange}
-              onKeyDown={handleOutlineKeyDown}
-              className="w-full h-96 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 font-mono text-sm"
-              placeholder="Enter your lecture outline here..."
-            />
-            
-            <div className="mt-2 text-sm text-gray-500">
-              {outline.length} characters • {outline.split('\n').filter(l => l.trim()).length} lines
-            </div>
           </div>
-        </div>
 
-        {/* Image Upload Sidebar */}
-        <div className="lg:col-span-1">
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Images</h2>
-            
-            <p className="text-sm text-gray-600 mb-4">
-              Upload images to enhance your lecture. Each image needs a topic association and description.
-            </p>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            {/* Upload Section */}
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Upload Images</h3>
+              
+              {/* Upload Button */}
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="w-full mb-6 px-6 py-8 border-2 border-dashed border-gray-300 rounded-lg text-gray-600 hover:border-primary-500 hover:text-primary-600 transition-colors"
+              >
+                <PhotoIcon className="h-12 w-12 mx-auto mb-2" />
+                <span className="text-base font-medium">Click to upload images</span>
+                <p className="text-sm mt-1">or drag and drop</p>
+              </button>
+              
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={handleImageSelect}
+                className="hidden"
+              />
 
-            {/* Upload Button */}
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="w-full mb-4 px-4 py-2 border-2 border-dashed border-gray-300 rounded-md text-gray-600 hover:border-primary-500 hover:text-primary-600 transition-colors"
-            >
-              <PhotoIcon className="h-6 w-6 mx-auto mb-1" />
-              <span className="text-sm">Click to upload images</span>
-            </button>
-            
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              multiple
-              onChange={handleImageSelect}
-              className="hidden"
-            />
+              {/* Pending Uploads */}
+              {imageUploads.length > 0 && (
+                <div className="space-y-4">
+                  <h4 className="text-sm font-medium text-gray-700">New Images ({imageUploads.length})</h4>
+                  {imageUploads.map(upload => (
+                    <div key={upload.id} className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                      <div className="flex items-start space-x-3">
+                        <img 
+                          src={upload.preview} 
+                          alt="Preview"
+                          className="w-20 h-20 object-cover rounded"
+                        />
+                        <div className="flex-1">
+                          <select
+                            value={upload.nodeId}
+                            onChange={(e) => handleImageUpdate(upload.id, 'nodeId', e.target.value)}
+                            className="w-full mb-2 px-3 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
+                            disabled={upload.uploading || upload.uploaded}
+                          >
+                            <option value="">Select topic or subtopic</option>
+                            {extractedTopics.map((topic, index) => (
+                              <option key={topic} value={topic}>
+                                {index === 0 ? `Topic: ${topic}` : `Subtopic: ${topic}`}
+                              </option>
+                            ))}
+                          </select>
+                          
+                          <input
+                            type="text"
+                            value={upload.description}
+                            onChange={(e) => handleImageUpdate(upload.id, 'description', e.target.value)}
+                            placeholder="Describe what this image shows"
+                            className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
+                            disabled={upload.uploading || upload.uploaded}
+                          />
+                          
+                          {upload.uploading && (
+                            <p className="text-xs text-blue-600 mt-1 flex items-center">
+                              <ArrowPathIcon className="h-3 w-3 mr-1 animate-spin" />
+                              Uploading...
+                            </p>
+                          )}
+                          {upload.uploaded && (
+                            <p className="text-xs text-green-600 mt-1">✓ Uploaded successfully</p>
+                          )}
+                          {upload.error && (
+                            <p className="text-xs text-red-600 mt-1">{upload.error}</p>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => handleImageRemove(upload.id)}
+                          className="text-gray-400 hover:text-red-600"
+                          disabled={upload.uploading}
+                        >
+                          <XMarkIcon className="h-5 w-5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  
+                  {imageUploads.some(img => img.nodeId && img.description && !img.uploading) && (
+                    <button
+                      onClick={uploadImages}
+                      className="w-full py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 transition-colors"
+                    >
+                      Upload {imageUploads.filter(img => img.nodeId && img.description).length} image(s)
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
 
-            {/* Uploaded Images */}
-            {uploadedImages.length > 0 && (
-              <div className="mb-4">
-                <h3 className="text-sm font-medium text-gray-700 mb-2">Uploaded Images</h3>
-                <div className="space-y-2">
+            {/* Uploaded Images Section */}
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                Uploaded Images ({uploadedImages.length})
+              </h3>
+              
+              {uploadedImages.length === 0 ? (
+                <div className="text-center py-12 text-gray-500">
+                  <PhotoIcon className="h-12 w-12 mx-auto mb-3 text-gray-400" />
+                  <p>No images uploaded yet</p>
+                  <p className="text-sm mt-1">Images are optional but can enhance learning</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
                   {uploadedImages.map(image => (
-                    <div key={image.id} className="border border-gray-200 rounded p-2">
-                      <div className="flex items-start space-x-2">
+                    <div key={image.id} className="border border-gray-200 rounded-lg p-3 bg-white">
+                      <div className="flex items-start space-x-3">
                         <img 
                           src={image.thumbnail_url || image.display_url || image.original_url} 
                           alt={image.teacher_description}
                           className="w-16 h-16 object-cover rounded"
                         />
                         <div className="flex-1 min-w-0">
-                          <p className="text-xs font-medium text-gray-700">{image.node_id}</p>
-                          <p className="text-xs text-gray-600 truncate">{image.teacher_description}</p>
+                          <p className="text-sm font-medium text-gray-900">{image.node_id}</p>
+                          <p className="text-sm text-gray-600 truncate">{image.teacher_description}</p>
                         </div>
                         <button
                           onClick={() => handleUploadedImageRemove(image.id)}
-                          className="text-red-600 hover:text-red-700"
+                          className="text-gray-400 hover:text-red-600"
                         >
                           <XMarkIcon className="h-4 w-4" />
                         </button>
@@ -402,107 +495,56 @@ export default function CreateLectureContentPage() {
                     </div>
                   ))}
                 </div>
-              </div>
-            )}
-
-            {/* Pending Uploads */}
-            {imageUploads.length > 0 && (
-              <div className="space-y-3">
-                <h3 className="text-sm font-medium text-gray-700">Pending Uploads</h3>
-                {imageUploads.map(upload => (
-                  <div key={upload.id} className="border border-gray-200 rounded p-3">
-                    <div className="flex items-start space-x-2 mb-2">
-                      <img 
-                        src={upload.preview} 
-                        alt="Preview"
-                        className="w-16 h-16 object-cover rounded"
-                      />
-                      <button
-                        onClick={() => handleImageRemove(upload.id)}
-                        className="ml-auto text-red-600 hover:text-red-700"
-                        disabled={upload.uploading}
-                      >
-                        <XMarkIcon className="h-4 w-4" />
-                      </button>
-                    </div>
-                    
-                    <select
-                      value={upload.nodeId}
-                      onChange={(e) => handleImageUpdate(upload.id, 'nodeId', e.target.value)}
-                      className="w-full mb-2 px-2 py-1 text-sm border border-gray-300 rounded"
-                      disabled={upload.uploading || upload.uploaded}
-                    >
-                      <option value="">Select topic</option>
-                      {extractedTopics.map(topic => (
-                        <option key={topic} value={topic}>{topic}</option>
-                      ))}
-                    </select>
-                    
-                    <input
-                      type="text"
-                      value={upload.description}
-                      onChange={(e) => handleImageUpdate(upload.id, 'description', e.target.value)}
-                      placeholder="Brief description"
-                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
-                      disabled={upload.uploading || upload.uploaded}
-                    />
-                    
-                    {upload.uploading && (
-                      <p className="text-xs text-blue-600 mt-1">Uploading...</p>
-                    )}
-                    {upload.uploaded && (
-                      <p className="text-xs text-green-600 mt-1">✓ Uploaded</p>
-                    )}
-                    {upload.error && (
-                      <p className="text-xs text-red-600 mt-1">{upload.error}</p>
-                    )}
-                  </div>
-                ))}
-                
-                {imageUploads.some(img => !img.uploaded && img.nodeId && img.description) && (
-                  <button
-                    onClick={uploadImages}
-                    className="w-full text-sm text-primary-600 hover:text-primary-700"
-                  >
-                    Upload pending images
-                  </button>
-                )}
-              </div>
-            )}
-            
-            <p className="text-xs text-gray-500 mt-4">
-              Max 10 images • 5MB each • JPEG, PNG, GIF, WebP
-            </p>
+              )}
+              
+              <p className="text-xs text-gray-500 mt-4">
+                Max 10 images • 5MB each • JPEG, PNG, GIF, WebP
+              </p>
+            </div>
           </div>
         </div>
       </div>
 
       {/* Action Buttons */}
       <div className="mt-8 flex items-center justify-between">
-        <button
-          onClick={() => router.push(`/teacher/uma-lecture/${lectureId}/edit`)}
+        <Link
+          href="/teacher/uma-lecture/create"
           className="text-gray-600 hover:text-gray-700"
         >
-          Save as Draft
-        </button>
+          ← Back to Step 1
+        </Link>
         
-        <button
-          onClick={handleSaveAndProcess}
-          disabled={saving || processing || !outline.trim()}
-          className="inline-flex items-center px-6 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {processing ? (
-            <>
-              <ArrowPathIcon className="h-5 w-5 mr-2 animate-spin" />
-              Processing...
-            </>
-          ) : (
-            <>
-              <SparklesIcon className="h-5 w-5 mr-2" />
-              Create Interactive Lecture
-            </>
+        <div className="flex items-center space-x-4">
+          <span className="text-sm text-gray-500">
+            {uploadedImages.length > 0 
+              ? `${uploadedImages.length} image(s) added` 
+              : 'No images added (optional)'}
+          </span>
+          
+          {imageUploads.filter(img => img.nodeId && img.description).length > 0 && (
+            <span className="text-sm text-amber-600">
+              {imageUploads.filter(img => img.nodeId && img.description).length} image(s) need uploading
+            </span>
           )}
-        </button>
+          
+          <button
+            onClick={handleSaveAndProcess}
+            disabled={saving || processing || !outline || !outline.trim()}
+            className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {processing ? (
+              <>
+                <ArrowPathIcon className="h-5 w-5 mr-2 animate-spin" />
+                Processing...
+              </>
+            ) : (
+              <>
+                <SparklesIcon className="h-5 w-5 mr-2" />
+                Create Interactive Lecture
+              </>
+            )}
+          </button>
+        </div>
       </div>
     </div>
   )
