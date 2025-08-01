@@ -32,7 +32,7 @@ export default function TestInterface({ testData, readingContent, onComplete }: 
   const [questionStartTime, setQuestionStartTime] = useState(Date.now())
   const [questions, setQuestions] = useState<TestQuestion[]>([])
   const [questionsLoading, setQuestionsLoading] = useState(true)
-  const [isTestActive, setIsTestActive] = useState(true)
+  const [isTestActive, setIsTestActive] = useState(testData.status === 'in_progress')
   
   // Use the security hook
   const { violationCount, isLocked, showWarning, acknowledgeWarning } = useTestSecurity({
@@ -47,6 +47,14 @@ export default function TestInterface({ testData, readingContent, onComplete }: 
       setIsTestActive(false)
     }
   })
+
+  // Check if test is already submitted
+  useEffect(() => {
+    if (testData.status === 'submitted' || testData.status === 'evaluated') {
+      console.log('Test already submitted, redirecting...')
+      onComplete()
+    }
+  }, [testData.status, onComplete])
 
   // Fetch actual test questions
   useEffect(() => {
@@ -102,6 +110,11 @@ export default function TestInterface({ testData, readingContent, onComplete }: 
 
   // Auto-save functionality
   useEffect(() => {
+    // Don't auto-save if test is not active or is being submitted
+    if (!isTestActive || isSubmitting) {
+      return
+    }
+    
     const timer = setTimeout(() => {
       const currentAnswer = answers[String(currentQuestionIndex)]
       if (currentAnswer && currentAnswer.trim() && !isSaving) {
@@ -110,7 +123,7 @@ export default function TestInterface({ testData, readingContent, onComplete }: 
     }, 2000) // Save 2 seconds after typing stops
 
     return () => clearTimeout(timer)
-  }, [answers, currentQuestionIndex, isSaving])
+  }, [answers, currentQuestionIndex, isSaving, isTestActive, isSubmitting])
 
   // Track time spent on current question
   useEffect(() => {
@@ -118,7 +131,7 @@ export default function TestInterface({ testData, readingContent, onComplete }: 
   }, [currentQuestionIndex])
 
   const saveAnswer = async (questionIndex: number, answer: string) => {
-    if (isSaving) return // Prevent multiple simultaneous saves
+    if (isSaving || !isTestActive || isSubmitting) return // Prevent saves if test is not active or being submitted
     
     setIsSaving(true)
     setSaveError(null)
@@ -133,6 +146,13 @@ export default function TestInterface({ testData, readingContent, onComplete }: 
       setLastSaveTime(new Date())
     } catch (error: any) {
       console.error('Failed to save answer:', error)
+      
+      // Handle 404 errors (test already submitted)
+      if (error.response?.status === 404) {
+        console.warn('Test has been submitted. Cannot save additional answers.')
+        setIsTestActive(false)
+        return
+      }
       
       // Handle 401 errors without redirecting
       if (error.response?.status === 401) {
@@ -184,6 +204,8 @@ export default function TestInterface({ testData, readingContent, onComplete }: 
     
     setShowSubmitModal(false)
     setIsSubmitting(true)
+    setIsTestActive(false) // Stop all auto-save operations
+    
     try {
       // Save current answer first if needed - don't let this fail the submission
       const currentAnswer = answers[String(currentQuestionIndex)] || ''
@@ -201,11 +223,22 @@ export default function TestInterface({ testData, readingContent, onComplete }: 
       const result = await testApi.submitTest(testData.test_attempt_id)
       console.log('=== FRONTEND: Submit result:', result)
       
-      // Only redirect after successful submission and evaluation
+      // Always redirect after submission (whether evaluation succeeds or not)
       onComplete()
     } catch (error) {
       console.error('=== FRONTEND: Failed to submit test ===', error)
       console.error('Error details:', error.response?.data)
+      
+      // Still redirect even if submission fails to avoid getting stuck
+      // The test attempt is already marked as submitted on the backend
+      if (error.response?.data?.detail?.includes('already submitted')) {
+        console.log('Test already submitted, redirecting...')
+        onComplete()
+      } else {
+        // For other errors, show an alert but still redirect
+        alert('Test submission encountered an error. Your answers have been saved. Please contact your teacher if you see any issues.')
+        onComplete()
+      }
     } finally {
       setIsSubmitting(false)
     }
