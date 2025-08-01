@@ -77,13 +77,13 @@ export function QuestionPanel({
     
     if (!state.answer.trim() || state.isEvaluating) return
 
-    // Update state to show evaluating and clear previous feedback
+    // Update state to show evaluating but keep previous feedback visible
     setQuestionStates(prev => {
       const newStates = [...prev]
       newStates[questionIndex] = {
         ...newStates[questionIndex],
         isEvaluating: true,
-        feedback: null, // Clear previous feedback when submitting new answer
+        // Don't clear feedback here - let it persist until user clicks Try Again
       }
       return newStates
     })
@@ -148,8 +148,7 @@ export function QuestionPanel({
         answer: '',
         submitted: false,
         isCorrect: null,
-        // Keep the feedback visible until they submit a new answer
-        // feedback: null, // Removed this line
+        feedback: null, // Clear feedback when user clicks Try Again
         // Don't increment attempt count here - it's already incremented when submitting
       }
       return newStates

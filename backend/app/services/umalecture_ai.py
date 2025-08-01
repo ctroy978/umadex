@@ -535,14 +535,7 @@ class UMALectureAIService:
         """Evaluate a student's answer using AI"""
         
         # Create evaluation prompt
-        prompt = f"""You are a supportive teacher evaluating a student's understanding of lecture content. Your goal is to recognize when students demonstrate comprehension, even if their answers aren't perfectly worded.
-
-EVALUATION PHILOSOPHY:
-- Focus on whether the student UNDERSTANDS the concept, not perfect wording
-- Accept answers that show the right thinking, even if incomplete  
-- Be generous with partial credit for correct ideas
-- Encourage learning rather than penalize imperfect expression
-- Remember: understanding can be shown in many ways
+        prompt = f"""You are a teacher evaluating a student's answer to a specific question. You must determine if the answer is factually correct and relevant to the question asked.
 
 Context/Question:
 {context}
@@ -550,39 +543,46 @@ Context/Question:
 Student's Answer:
 {student_answer}
 
-EVALUATION CRITERIA by difficulty level ({difficulty}):
-- Basic: Did they get the main idea? Even basic understanding counts as correct.
-- Intermediate: Do they show they understand the key concepts? Partial explanations are often sufficient.
-- Advanced: Do they demonstrate good understanding? Don't require perfect academic language.  
-- Expert: Do they show solid grasp of the material? Focus on thinking, not writing perfection.
+EVALUATION CRITERIA:
+1. The answer MUST be relevant to the specific question asked
+2. The answer MUST contain correct information about the topic
+3. Random or nonsensical answers are ALWAYS incorrect
+4. Answers that are completely unrelated to the question are ALWAYS incorrect
 
-WHAT COUNTS AS CORRECT:
-✓ Shows understanding of the main concept
-✓ Identifies key components or processes correctly
-✓ Uses their own words to explain (even if simple)
-✓ Demonstrates they "got it" even if not comprehensive
-✓ Restates information accurately (shows they absorbed it)
-✓ Attempts to connect ideas, even if not perfectly expressed
+DIFFICULTY LEVEL STANDARDS ({difficulty}):
+- Basic: Student must show basic understanding of the core concept
+- Intermediate: Student must demonstrate knowledge of key concepts and relationships
+- Advanced: Student must show deeper understanding with some detail
+- Expert: Student must demonstrate comprehensive understanding
 
-WHAT'S STILL INCORRECT:
-✗ Completely wrong facts or major misunderstandings
-✗ Answers that show no grasp of the concept  
-✗ Responses that are completely off-topic
+MARKING AS CORRECT:
+✓ Answer directly addresses the question
+✓ Contains accurate information about the topic
+✓ Shows understanding appropriate to the difficulty level
+✓ May use simple language but concepts are correct
+
+MARKING AS INCORRECT:
+✗ Answer is unrelated to the question (e.g., random words, off-topic responses)
+✗ Contains significant factual errors
+✗ Shows no understanding of the concept
+✗ Is nonsensical or random text
+✗ Avoids answering the actual question
+
+IMPORTANT: If the student gives a nonsensical answer like "banana", "asdf", "I don't know", or anything clearly unrelated to the question, it is ALWAYS incorrect regardless of how "creative" it might be.
 
 FEEDBACK GUIDELINES:
-- If correct: Celebrate their understanding and maybe add one interesting detail
-- If partially correct: Acknowledge what they got right, then gently guide toward missing pieces
-- If incorrect: Be encouraging while redirecting to the right concepts
-- Always be positive and educational
+- If correct: Acknowledge their understanding and reinforce the key concept
+- If incorrect: Be encouraging but clearly indicate what the correct answer should address
+- Always be constructive and educational
 
 Return your evaluation in this exact JSON format:
 {{
     "is_correct": true/false,
-    "feedback": "Your encouraging feedback here", 
+    "feedback": "Your feedback here", 
     "points_earned": 0-10
 }}
 
-Remember: We want students to feel successful when they demonstrate understanding, even if their expression isn't perfect. Be generous with recognizing comprehension!"""
+Be fair but maintain standards. An answer must actually demonstrate knowledge to be marked correct."""
         
         try:
             # Generate evaluation
