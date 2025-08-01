@@ -63,3 +63,6 @@ backend/uploads/
 
 # MCP Configuration
 .mcp.json
+
+#supabase warning cvs
+swarn.csv
