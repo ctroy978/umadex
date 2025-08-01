@@ -72,32 +72,41 @@ export function TopicContentPanel({
           <div className="mt-8 pt-6 border-t border-gray-700">
             <h3 className="text-lg font-medium text-white mb-4">Reference Images</h3>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              {topic.images.map((image, index) => (
-                <button
-                  key={image.id}
-                  onClick={() => setSelectedImage({
-                    url: image.display_url || image.original_url,
-                    description: image.ai_description || image.teacher_description || ''
-                  })}
-                  className="relative group cursor-pointer overflow-hidden rounded-lg shadow-md hover:shadow-xl transition-all duration-200 bg-gray-800"
-                >
-                  <img
-                    src={image.thumbnail_url || image.original_url}
-                    alt={image.teacher_description}
-                    className="w-full h-32 object-cover group-hover:opacity-90 transition-opacity"
-                  />
-                  <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-opacity flex items-center justify-center">
-                    <span className="text-white opacity-0 group-hover:opacity-100 transition-opacity bg-black bg-opacity-70 px-3 py-1 rounded text-sm">
-                      Click to view
-                    </span>
-                  </div>
-                  <div className="p-2">
-                    <p className="text-xs text-gray-400 line-clamp-2">
-                      {image.teacher_description}
-                    </p>
-                  </div>
-                </button>
-              ))}
+              {topic.images.map((image, index) => {
+                // Use public_url as primary source, fallback to original_url
+                const imageUrl = image.public_url || image.display_url || image.original_url
+                const thumbnailUrl = image.public_url || image.thumbnail_url || image.original_url
+                
+                return (
+                  <button
+                    key={image.id}
+                    onClick={() => setSelectedImage({
+                      url: imageUrl,
+                      description: image.ai_description || image.teacher_description || ''
+                    })}
+                    className="relative group cursor-pointer overflow-hidden rounded-lg shadow-md hover:shadow-xl transition-all duration-200 bg-gray-800"
+                  >
+                    <img
+                      src={thumbnailUrl}
+                      alt={image.teacher_description}
+                      className="w-full h-32 object-cover group-hover:opacity-90 transition-opacity"
+                      onError={(e) => {
+                        ;(e.currentTarget as HTMLImageElement).src = '/placeholder-image.png'
+                      }}
+                    />
+                    <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-opacity flex items-center justify-center">
+                      <span className="text-white opacity-0 group-hover:opacity-100 transition-opacity bg-black bg-opacity-70 px-3 py-1 rounded text-sm">
+                        Click to view
+                      </span>
+                    </div>
+                    <div className="p-2">
+                      <p className="text-xs text-gray-400 line-clamp-2">
+                        {image.teacher_description}
+                      </p>
+                    </div>
+                  </button>
+                )
+              })}
             </div>
           </div>
         )}
