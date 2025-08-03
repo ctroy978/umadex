@@ -68,12 +68,16 @@ class SupabaseAuthService:
             # we still need user data to create the local record
             raise ValueError("User data required for new users")
         
+        # If no existing user (neither local nor Supabase) and no user data provided
+        if not existing_user and not supabase_user and not user_data:
+            raise ValueError("User data required for new users")
+        
         try:
             # Send OTP via Supabase
             response = supabase.auth.sign_in_with_otp({
                 "email": email,
                 "options": {
-                    "should_create_user": not existing_user,
+                    "should_create_user": not existing_user and user_data is not None,  # Only create if we have user data
                     "email_redirect_to": None,  # Disable magic link
                     "data": {
                         "first_name": user_data.first_name.strip() if user_data and user_data.first_name else "",
