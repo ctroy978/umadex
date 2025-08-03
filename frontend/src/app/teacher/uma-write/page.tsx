@@ -2,10 +2,11 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { PencilSquareIcon, PlusIcon, PencilIcon, ArchiveBoxArrowDownIcon, ArrowPathIcon, ClipboardDocumentListIcon } from '@heroicons/react/24/outline'
+import { PencilSquareIcon, PlusIcon, PencilIcon, ArchiveBoxArrowDownIcon, ArrowPathIcon, ClipboardDocumentListIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline'
 import { WritingAssignment, WritingAssignmentListResponse } from '@/types/writing'
 import { writingApi } from '@/lib/writingApi'
 import Link from 'next/link'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 
 interface FilterValues {
   gradeLevel: string
@@ -23,6 +24,11 @@ export default function UmaWritePage() {
   const [archivingId, setArchivingId] = useState<string | null>(null)
   const [restoringId, setRestoringId] = useState<string | null>(null)
   const [showSuccessMessage, setShowSuccessMessage] = useState(false)
+  const [errorDialog, setErrorDialog] = useState<{ open: boolean; title: string; message: string }>({
+    open: false,
+    title: '',
+    message: ''
+  })
   
   // Search and filter state
   const [search, setSearch] = useState(searchParams.get('search') || '')
@@ -106,21 +112,35 @@ export default function UmaWritePage() {
   }
 
   const handleArchive = async (assignment: WritingAssignment) => {
-    if (assignment.classroom_count > 0) {
-      alert(`Cannot archive assignment attached to ${assignment.classroom_count} classroom(s). Remove from classrooms first.`)
-      return
-    }
-    
-    if (!confirm(`Are you sure you want to archive "${assignment.title}"?`)) {
-      return
-    }
-    
+    // First, fetch fresh assignment data to check current classroom count
     try {
+      const freshAssignment = await writingApi.getAssignment(assignment.id)
+      
+      // Check if assignment is attached to classrooms using fresh data
+      if (freshAssignment.classroom_count > 0) {
+        setErrorDialog({
+          open: true,
+          title: 'Cannot Archive Assignment',
+          message: `This assignment is currently attached to ${freshAssignment.classroom_count} classroom${freshAssignment.classroom_count > 1 ? 's' : ''}. To archive this assignment, you must first remove it from all classrooms. Go to Classroom Management and remove this assignment from the assigned classrooms.`
+        })
+        return
+      }
+      
+      if (!confirm(`Are you sure you want to archive "${assignment.title}"?`)) {
+        return
+      }
+      
       setArchivingId(assignment.id)
       await writingApi.archiveAssignment(assignment.id)
       await loadAssignments()
-    } catch (err) {
-      alert('Failed to archive assignment')
+    } catch (err: any) {
+      // Display the actual error message from the backend
+      const errorMessage = err.response?.data?.detail || 'Failed to archive assignment'
+      setErrorDialog({
+        open: true,
+        title: 'Archive Failed',
+        message: errorMessage
+      })
     } finally {
       setArchivingId(null)
     }
@@ -146,13 +166,23 @@ export default function UmaWritePage() {
           <PencilSquareIcon className="h-8 w-8 text-orange-500" />
           <h1 className="text-3xl font-bold text-gray-900">Writing Assignments</h1>
         </div>
-        <Link
-          href="/teacher/uma-write/create"
-          className="inline-flex items-center px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
-        >
-          <PlusIcon className="h-5 w-5 mr-2" />
-          Create New Assignment
-        </Link>
+        <div className="flex items-center space-x-3">
+          <button
+            onClick={() => loadAssignments()}
+            disabled={loading}
+            className="inline-flex items-center px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
+            title="Refresh assignment list"
+          >
+            <ArrowPathIcon className={`h-5 w-5 ${loading ? 'animate-spin' : ''}`} />
+          </button>
+          <Link
+            href="/teacher/uma-write/create"
+            className="inline-flex items-center px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
+          >
+            <PlusIcon className="h-5 w-5 mr-2" />
+            Create New Assignment
+          </Link>
+        </div>
       </div>
 
       {/* Success Message */}
@@ -346,6 +376,29 @@ export default function UmaWritePage() {
           )}
         </>
       )}
+
+      {/* Error Dialog */}
+      <Dialog open={errorDialog.open} onOpenChange={(open) => setErrorDialog({ ...errorDialog, open })}>
+        <DialogContent>
+          <DialogHeader>
+            <div className="flex items-center space-x-2">
+              <ExclamationTriangleIcon className="h-6 w-6 text-yellow-600" />
+              <DialogTitle>{errorDialog.title}</DialogTitle>
+            </div>
+          </DialogHeader>
+          <DialogDescription className="text-base">
+            {errorDialog.message}
+          </DialogDescription>
+          <DialogFooter>
+            <button
+              onClick={() => setErrorDialog({ ...errorDialog, open: false })}
+              className="inline-flex justify-center px-4 py-2 text-sm font-medium text-white bg-primary-600 border border-transparent rounded-md hover:bg-primary-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-primary-500"
+            >
+              Got it
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

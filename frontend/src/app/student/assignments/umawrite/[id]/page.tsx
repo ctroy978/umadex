@@ -198,6 +198,18 @@ export default function StudentWritingAssignmentPage() {
     }
   }
 
+  // Handle redirects in useEffect to avoid state updates during render
+  useEffect(() => {
+    // If results view but not completed, redirect to regular view
+    if (isResultsView && (!progress || !progress.is_completed)) {
+      router.push(`/student/assignments/umawrite/${assignmentId}`)
+    }
+    // If assignment is completed but not in results view, redirect to results view
+    else if (!isResultsView && progress && progress.is_completed) {
+      router.push(`/student/assignments/umawrite/${assignmentId}?view=results`)
+    }
+  }, [isResultsView, progress, assignmentId, router])
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -284,18 +296,6 @@ export default function StudentWritingAssignmentPage() {
       </div>
     )
   }
-
-  // Handle redirects in useEffect to avoid state updates during render
-  useEffect(() => {
-    // If results view but not completed, redirect to regular view
-    if (isResultsView && (!progress || !progress.is_completed)) {
-      router.push(`/student/assignments/umawrite/${assignmentId}`)
-    }
-    // If assignment is completed but not in results view, redirect to results view
-    else if (!isResultsView && progress && progress.is_completed) {
-      router.push(`/student/assignments/umawrite/${assignmentId}?view=results`)
-    }
-  }, [isResultsView, progress, assignmentId, router])
 
   return (
     <div className="min-h-screen bg-gray-50">

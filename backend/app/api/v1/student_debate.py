@@ -54,9 +54,9 @@ async def get_student_debate_assignments(
         .where(
             and_(
                 ClassroomStudent.student_id == current_user.id,
-                ClassroomStudent.is_active == True,
+                ClassroomStudent.removed_at.is_(None),  # Active student enrollment
                 ClassroomAssignment.assignment_type == 'debate',
-                ClassroomAssignment.is_active == True,
+                ClassroomAssignment.removed_from_classroom_at.is_(None),  # Only active assignments
                 ClassroomAssignment.access_date <= datetime.now(timezone.utc)
             )
         )

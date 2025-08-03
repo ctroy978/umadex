@@ -72,13 +72,14 @@ async def create_writing_assignment(
     await db.commit()
     await db.refresh(db_assignment)
     
-    # Get classroom count
+    # Get classroom count (only active assignments, not soft-deleted)
     result = await db.execute(
         select(func.count(ClassroomAssignment.id))
         .where(
             and_(
                 ClassroomAssignment.assignment_id == db_assignment.id,
-                ClassroomAssignment.assignment_type == "writing"
+                ClassroomAssignment.assignment_type == "writing",
+                ClassroomAssignment.removed_from_classroom_at.is_(None)
             )
         )
     )
@@ -150,7 +151,8 @@ async def list_writing_assignments(
             .where(
                 and_(
                     ClassroomAssignment.assignment_id == assignment.id,
-                    ClassroomAssignment.assignment_type == "writing"
+                    ClassroomAssignment.assignment_type == "writing",
+                    ClassroomAssignment.removed_from_classroom_at.is_(None)
                 )
             )
         )
@@ -192,13 +194,14 @@ async def get_writing_assignment(
     if not assignment:
         raise HTTPException(status_code=404, detail="Writing assignment not found")
     
-    # Get classroom count
+    # Get classroom count (only active assignments, not soft-deleted)
     count_result = await db.execute(
         select(func.count(ClassroomAssignment.id))
         .where(
             and_(
                 ClassroomAssignment.assignment_id == assignment.id,
-                ClassroomAssignment.assignment_type == "writing"
+                ClassroomAssignment.assignment_type == "writing",
+                ClassroomAssignment.removed_from_classroom_at.is_(None)
             )
         )
     )
@@ -247,13 +250,14 @@ async def update_writing_assignment(
     await db.commit()
     await db.refresh(assignment)
     
-    # Get classroom count
+    # Get classroom count (only active assignments, not soft-deleted)
     count_result = await db.execute(
         select(func.count(ClassroomAssignment.id))
         .where(
             and_(
                 ClassroomAssignment.assignment_id == assignment.id,
-                ClassroomAssignment.assignment_type == "writing"
+                ClassroomAssignment.assignment_type == "writing",
+                ClassroomAssignment.removed_from_classroom_at.is_(None)
             )
         )
     )
@@ -286,13 +290,14 @@ async def archive_writing_assignment(
     if not assignment:
         raise HTTPException(status_code=404, detail="Writing assignment not found")
     
-    # Check if assignment is attached to any classrooms
+    # Check if assignment is attached to any ACTIVE classrooms (not soft-deleted)
     count_result = await db.execute(
         select(func.count(ClassroomAssignment.id))
         .where(
             and_(
                 ClassroomAssignment.assignment_id == assignment.id,
-                ClassroomAssignment.assignment_type == "writing"
+                ClassroomAssignment.assignment_type == "writing",
+                ClassroomAssignment.removed_from_classroom_at.is_(None)
             )
         )
     )
@@ -352,7 +357,8 @@ async def get_student_writing_assignment(
         select(WritingAssignment)
         .join(ClassroomAssignment, and_(
             ClassroomAssignment.assignment_id == WritingAssignment.id,
-            ClassroomAssignment.assignment_type == "writing"
+            ClassroomAssignment.assignment_type == "writing",
+            ClassroomAssignment.removed_from_classroom_at.is_(None)  # Only active assignments
         ))
         .join(Classroom, Classroom.id == ClassroomAssignment.classroom_id)
         .join(ClassroomStudent, and_(
@@ -397,7 +403,8 @@ async def start_writing_assignment(
         .where(
             and_(
                 ClassroomAssignment.assignment_id == assignment_id,
-                ClassroomAssignment.assignment_type == "writing"
+                ClassroomAssignment.assignment_type == "writing",
+                ClassroomAssignment.removed_from_classroom_at.is_(None)  # Only active assignments
             )
         )
     )
@@ -462,13 +469,14 @@ async def save_writing_draft(
     db: AsyncSession = Depends(get_db)
 ):
     """Save a draft of the writing assignment."""
-    # Get the student assignment record
+    # Get the student assignment record (only if classroom assignment is still active)
     result = await db.execute(
         select(StudentAssignment)
         .join(ClassroomAssignment, and_(
             ClassroomAssignment.id == StudentAssignment.classroom_assignment_id,
             ClassroomAssignment.assignment_type == "writing",
-            ClassroomAssignment.assignment_id == assignment_id
+            ClassroomAssignment.assignment_id == assignment_id,
+            ClassroomAssignment.removed_from_classroom_at.is_(None)  # Only active assignments
         ))
         .where(StudentAssignment.student_id == current_user.id)
     )
@@ -487,7 +495,8 @@ async def save_writing_draft(
             .where(
                 and_(
                     ClassroomAssignment.assignment_id == assignment_id,
-                    ClassroomAssignment.assignment_type == "writing"
+                    ClassroomAssignment.assignment_type == "writing",
+                    ClassroomAssignment.removed_from_classroom_at.is_(None)  # Only active assignments
                 )
             )
         )
@@ -536,13 +545,14 @@ async def update_selected_techniques(
     db: AsyncSession = Depends(get_db)
 ):
     """Update the selected writing techniques for an assignment."""
-    # Get the student assignment record
+    # Get the student assignment record (only if classroom assignment is still active)
     result = await db.execute(
         select(StudentAssignment)
         .join(ClassroomAssignment, and_(
             ClassroomAssignment.id == StudentAssignment.classroom_assignment_id,
             ClassroomAssignment.assignment_type == "writing",
-            ClassroomAssignment.assignment_id == assignment_id
+            ClassroomAssignment.assignment_id == assignment_id,
+            ClassroomAssignment.removed_from_classroom_at.is_(None)  # Only active assignments
         ))
         .where(StudentAssignment.student_id == current_user.id)
     )
@@ -571,13 +581,14 @@ async def submit_writing_assignment(
     db: AsyncSession = Depends(get_db)
 ):
     """Submit a final writing response."""
-    # Get the student assignment record
+    # Get the student assignment record (only if classroom assignment is still active)
     result = await db.execute(
         select(StudentAssignment)
         .join(ClassroomAssignment, and_(
             ClassroomAssignment.id == StudentAssignment.classroom_assignment_id,
             ClassroomAssignment.assignment_type == "writing",
-            ClassroomAssignment.assignment_id == assignment_id
+            ClassroomAssignment.assignment_id == assignment_id,
+            ClassroomAssignment.removed_from_classroom_at.is_(None)  # Only active assignments
         ))
         .where(StudentAssignment.student_id == current_user.id)
     )
@@ -757,6 +768,27 @@ async def get_writing_feedback(
     db: AsyncSession = Depends(get_db)
 ):
     """Get AI feedback for a writing submission."""
+    # First verify student still has access to this assignment
+    access_check = await db.execute(
+        select(ClassroomAssignment)
+        .join(Classroom, Classroom.id == ClassroomAssignment.classroom_id)
+        .join(ClassroomStudent, and_(
+            ClassroomStudent.classroom_id == Classroom.id,
+            ClassroomStudent.student_id == current_user.id,
+            ClassroomStudent.removed_at.is_(None)
+        ))
+        .where(
+            and_(
+                ClassroomAssignment.assignment_id == assignment_id,
+                ClassroomAssignment.assignment_type == "writing",
+                ClassroomAssignment.removed_from_classroom_at.is_(None)  # Only active assignments
+            )
+        )
+    )
+    
+    if not access_check.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Assignment not found or access denied")
+    
     # Get the latest submission or specific submission
     stmt = select(StudentWritingSubmission).where(
         and_(
@@ -799,7 +831,8 @@ async def get_writing_progress(
         select(WritingAssignment)
         .join(ClassroomAssignment, and_(
             ClassroomAssignment.assignment_id == WritingAssignment.id,
-            ClassroomAssignment.assignment_type == "writing"
+            ClassroomAssignment.assignment_type == "writing",
+            ClassroomAssignment.removed_from_classroom_at.is_(None)  # Only active assignments
         ))
         .join(Classroom, Classroom.id == ClassroomAssignment.classroom_id)
         .join(ClassroomStudent, and_(
