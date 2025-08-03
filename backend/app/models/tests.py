@@ -132,6 +132,7 @@ class TestQuestionEvaluation(Base):
     
     # Question identification
     question_index = Column(Integer, nullable=False)
+    question_number = Column(Integer, nullable=False)  # 1-based question number
     
     # Evaluation scores
     rubric_score = Column(Integer, nullable=False)  # 0-4 scale

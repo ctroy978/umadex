@@ -66,3 +66,4 @@ backend/uploads/
 
 #supabase warning cvs
 swarn.csv
+seed.sql

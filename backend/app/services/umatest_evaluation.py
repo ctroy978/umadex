@@ -489,11 +489,12 @@ Format your response as JSON:
                 question_eval = TestQuestionEvaluation(
                     test_attempt_id=test_attempt_id,
                     question_index=index,
+                    question_number=index + 1,  # question_number is 1-based
                     rubric_score=evaluation.rubric_score,
                     points_earned=Decimal(str(round(points_earned, 2))),
                     max_points=Decimal(str(round(points_per_question, 2))),
                     scoring_rationale=evaluation.scoring_rationale,
-                    feedback=evaluation.feedback,
+                    feedback_text=evaluation.feedback,
                     key_concepts_identified=evaluation.key_concepts_identified,
                     misconceptions_detected=evaluation.misconceptions_detected,
                     evaluation_confidence=evaluation.confidence
