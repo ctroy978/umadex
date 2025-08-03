@@ -351,22 +351,34 @@ FEEDBACK: [2-3 sentences focusing on strengths and one area for improvement. Be 
         lines = response.strip().split('\n')
         scores = {}
         
+        def extract_score(value_str):
+            """Extract numeric score from string, handling brackets and other formats."""
+            value_str = value_str.strip()
+            # Remove brackets if present
+            if value_str.startswith('[') and value_str.endswith(']'):
+                value_str = value_str[1:-1]
+            return int(value_str)
+        
         for line in lines:
             if line.startswith('CLARITY:'):
-                scores['clarity'] = int(line.split(':')[1].strip())
+                scores['clarity'] = extract_score(line.split(':')[1])
             elif line.startswith('EVIDENCE:'):
-                scores['evidence'] = int(line.split(':')[1].strip())
+                scores['evidence'] = extract_score(line.split(':')[1])
             elif line.startswith('LOGIC:'):
-                scores['logic'] = int(line.split(':')[1].strip())
+                scores['logic'] = extract_score(line.split(':')[1])
             elif line.startswith('PERSUASIVENESS:'):
-                scores['persuasiveness'] = int(line.split(':')[1].strip())
+                scores['persuasiveness'] = extract_score(line.split(':')[1])
             elif line.startswith('REBUTTAL:'):
-                scores['rebuttal'] = int(line.split(':')[1].strip())
+                scores['rebuttal'] = extract_score(line.split(':')[1])
             elif line.startswith('FEEDBACK:'):
                 scores['feedback'] = ':'.join(line.split(':')[1:]).strip()
             elif line.startswith('TECHNIQUE_BONUS:'):
                 try:
-                    scores['technique_bonus'] = float(line.split(':')[1].strip())
+                    value_str = line.split(':')[1].strip()
+                    # Remove brackets if present for float values too
+                    if value_str.startswith('[') and value_str.endswith(']'):
+                        value_str = value_str[1:-1]
+                    scores['technique_bonus'] = float(value_str)
                 except:
                     scores['technique_bonus'] = 0
             elif line.startswith('TECHNIQUE_FEEDBACK:'):
