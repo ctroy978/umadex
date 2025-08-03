@@ -143,24 +143,24 @@ export default function ChunkReader({
       
       if (image) {
         segments.push(
-          <button
-            key={`img-${keyIndex++}`}
-            onClick={() => setSelectedImage(image)}
-            className="float-left mr-4 mb-4 relative group cursor-pointer overflow-hidden rounded-lg shadow-md hover:shadow-xl transition-shadow"
-            style={{ maxWidth: '300px' }}
-          >
-            <img
-              src={image.thumbnail_url || image.url}
-              alt={image.description || ''}
-              className="w-full h-auto object-cover"
-              style={{ maxHeight: '225px' }}
-            />
-            <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-opacity flex items-center justify-center">
-              <span className="text-white opacity-0 group-hover:opacity-100 transition-opacity bg-black bg-opacity-50 px-2 py-1 rounded text-sm">
-                Click to enlarge
-              </span>
-            </div>
-          </button>
+          <div key={`img-wrapper-${keyIndex++}`} className="my-4 flex justify-center clear-both">
+            <button
+              onClick={() => setSelectedImage(image)}
+              className="relative group cursor-pointer overflow-hidden rounded-lg shadow-md hover:shadow-xl transition-shadow"
+              style={{ width: '200px', height: '200px' }}
+            >
+              <img
+                src={image.thumbnail_url || image.url}
+                alt={image.description || ''}
+                className="w-full h-full object-cover"
+              />
+              <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-opacity flex items-center justify-center">
+                <span className="text-white opacity-0 group-hover:opacity-100 transition-opacity bg-black bg-opacity-60 px-2 py-1 rounded text-xs font-medium">
+                  Click to view
+                </span>
+              </div>
+            </button>
+          </div>
         );
       }
       
@@ -228,9 +228,7 @@ export default function ChunkReader({
         {/* Content */}
         <div className={`${largeText ? 'p-8' : 'p-6'} max-h-[80vh] overflow-y-auto`}>
           <div className="prose prose-lg max-w-none">
-            <div className="clearfix">
-              {renderContent()}
-            </div>
+            {renderContent()}
           </div>
         </div>
 

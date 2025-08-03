@@ -797,7 +797,24 @@ async def request_simpler_question(
     """Request a simpler question by reducing difficulty level"""
     
     # Get current difficulty level from DB
-    current_difficulty = 3  # Default difficulty - TODO: get from DB
+    progress_result = await db.execute(
+        select(UmareadAssignmentProgress)
+        .where(
+            and_(
+                UmareadAssignmentProgress.student_id == current_user.id,
+                UmareadAssignmentProgress.assignment_id == assignment_id
+            )
+        )
+    )
+    progress = progress_result.scalar_one_or_none()
+    
+    if not progress:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Assignment progress not found"
+        )
+    
+    current_difficulty = progress.current_difficulty_level
     
     # Can't go below level 1
     if current_difficulty <= 1:
@@ -808,6 +825,10 @@ async def request_simpler_question(
     
     # Reduce difficulty by 1
     new_difficulty = current_difficulty - 1
+    
+    # Update the difficulty level in the database
+    progress.current_difficulty_level = new_difficulty
+    await db.commit()
     
     # Redis difficulty update removed
     

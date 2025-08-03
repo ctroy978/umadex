@@ -169,6 +169,11 @@ export default function NewReadingAssignment() {
     if (!assignment) throw new Error('No assignment created yet');
     
     try {
+      // Debug: Check current session
+      const { data: { session } } = await supabase.auth.getSession();
+      console.log('Current Supabase session:', session);
+      console.log('Session user ID:', session?.user?.id);
+      
       // Generate a unique filename
       const fileExt = file.name.split('.').pop();
       const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
@@ -183,6 +188,7 @@ export default function NewReadingAssignment() {
         });
       
       if (storageError) {
+        console.error('Storage error details:', storageError);
         throw new Error(`Storage upload failed: ${storageError.message}`);
       }
       
