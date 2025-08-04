@@ -13,7 +13,8 @@ import {
   ChartBarIcon,
   ClockIcon,
   StarIcon,
-  LightBulbIcon
+  LightBulbIcon,
+  EyeIcon
 } from '@heroicons/react/24/outline'
 
 interface VocabularyWord {
@@ -256,13 +257,13 @@ export default function ConceptMappingPage() {
         setPassed(result.passed || null)
         setShowEvaluation(true)
 
-        // Handle completion dialog if needed
+        // Store completion result but don't show dialog yet - let student read feedback first
         if (result.is_complete && result.needs_confirmation) {
           setCompletionResult({
             percentage_score: result.percentage_score || 0,
             needs_confirmation: result.needs_confirmation
           })
-          setShowCompletionDialog(true)
+          // Don't show dialog immediately - wait for user to click "See Score"
         }
 
         // Update session for next word if not complete
@@ -690,6 +691,7 @@ export default function ConceptMappingPage() {
               <div className="text-center mb-6">
                 <h2 className="text-2xl font-bold text-gray-900 mb-2">
                   "{session.word?.word}" - Score: {evaluation?.overall_score.toFixed(1)}/4
+                  {isComplete && " (Final Word)"}
                 </h2>
                 <div className="text-3xl mb-2">
                   {evaluation && getScoreDisplay(evaluation.overall_score)}
@@ -769,6 +771,18 @@ export default function ConceptMappingPage() {
                 </div>
               </div>
 
+              {/* Final Word Notice */}
+              {isComplete && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+                  <div className="flex items-center space-x-2">
+                    <EyeIcon className="h-5 w-5 text-blue-600" />
+                    <p className="text-blue-800">
+                      This was your final word! Take your time to read the feedback above, then click "See Score" when you're ready to view your overall results.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {/* Continue Button */}
               <div className="flex justify-center">
                 <button
@@ -777,7 +791,7 @@ export default function ConceptMappingPage() {
                 >
                   {isComplete ? (
                     <>
-                      View Results
+                      See Score
                       <ChartBarIcon className="h-4 w-4 ml-2" />
                     </>
                   ) : (

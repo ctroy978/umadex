@@ -221,10 +221,7 @@ export default function StoryBuilderPage() {
       setShowEvaluation(true)
       setCurrentScore(result.current_score)
       
-      // Show completion dialog if assignment is complete
-      if (result.is_complete && result.needs_confirmation) {
-        setShowCompletionDialog(true)
-      }
+      // Don't show completion dialog immediately - let student read feedback first
 
     } catch (err: any) {
       console.error('Failed to submit story:', err)
@@ -351,7 +348,7 @@ export default function StoryBuilderPage() {
             <div className="flex items-center">
               <button
                 onClick={() => {
-                  if (storySession && !storySession.is_complete) {
+                  if (storySession && !evaluation?.is_complete) {
                     const confirmLeave = window.confirm('You have unsaved progress. Are you sure you want to leave?')
                     if (!confirmLeave) return
                   }
@@ -502,19 +499,20 @@ export default function StoryBuilderPage() {
             <div>
               {/* Evaluation Display */}
               <div className={`p-6 rounded-lg mb-4 ${
-                evaluation?.evaluation.total_score >= 70 ? 'bg-green-50 border border-green-200' : 'bg-amber-50 border border-amber-200'
+                evaluation?.evaluation?.total_score && evaluation.evaluation.total_score >= 70 ? 'bg-green-50 border border-green-200' : 'bg-amber-50 border border-amber-200'
               }`}>
                 <div className="flex items-start space-x-3">
-                  {evaluation?.evaluation.total_score >= 70 ? (
+                  {evaluation?.evaluation?.total_score && evaluation.evaluation.total_score >= 70 ? (
                     <CheckCircleIcon className="h-6 w-6 text-green-600 mt-0.5" />
                   ) : (
                     <ExclamationCircleIcon className="h-6 w-6 text-amber-600 mt-0.5" />
                   )}
                   <div className="flex-1">
                     <h3 className={`font-semibold mb-2 ${
-                      evaluation?.evaluation.total_score >= 70 ? 'text-green-800' : 'text-amber-800'
+                      evaluation?.evaluation?.total_score && evaluation.evaluation.total_score >= 70 ? 'text-green-800' : 'text-amber-800'
                     }`}>
-                      Story Score: {evaluation?.evaluation.total_score}/100
+                      Story Score: {evaluation?.evaluation?.total_score}/100
+                      {evaluation?.is_complete && " (Final Story)"}
                     </h3>
                     <p className="text-gray-700">
                       {evaluation?.evaluation.overall_feedback}
@@ -553,11 +551,23 @@ export default function StoryBuilderPage() {
                 </div>
               )}
 
+              {/* Final Story Notice */}
+              {evaluation?.is_complete && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                  <div className="flex items-center space-x-2">
+                    <EyeIcon className="h-5 w-5 text-blue-600" />
+                    <p className="text-blue-800">
+                      This was your final story! Take your time to read the feedback above, then click "See Score" when you're ready to view your overall results.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {/* Action Button */}
               <button
                 onClick={() => {
                   if (evaluation?.is_complete) {
-                    // Don't automatically redirect - let the dialog handle it
+                    // Show completion dialog when student is ready
                     setShowCompletionDialog(true)
                   } else {
                     handleNextPrompt()
@@ -566,7 +576,10 @@ export default function StoryBuilderPage() {
                 className="w-full px-6 py-3 bg-primary-600 text-white rounded-lg font-medium hover:bg-primary-700 flex items-center justify-center"
               >
                 {evaluation?.is_complete ? (
-                  'View Results'
+                  <>
+                    See Score
+                    <ChartBarIcon className="h-5 w-5 ml-2" />
+                  </>
                 ) : (
                   <>
                     Next Story
@@ -662,9 +675,9 @@ export default function StoryBuilderPage() {
           <div className="bg-white rounded-lg p-8 max-w-md w-full shadow-xl">
             <div className="text-center mb-6">
               <div className={`inline-flex items-center justify-center w-16 h-16 rounded-full mb-4 ${
-                evaluation.percentage_score >= 70 ? 'bg-green-100' : 'bg-amber-100'
+                evaluation.percentage_score && evaluation.percentage_score >= 70 ? 'bg-green-100' : 'bg-amber-100'
               }`}>
-                {evaluation.percentage_score >= 70 ? (
+                {evaluation.percentage_score && evaluation.percentage_score >= 70 ? (
                   <CheckCircleIcon className="h-8 w-8 text-green-600" />
                 ) : (
                   <ExclamationCircleIcon className="h-8 w-8 text-amber-600" />
@@ -674,9 +687,9 @@ export default function StoryBuilderPage() {
                 Story Builder Complete!
               </h3>
               <p className="text-lg text-gray-700 mb-4">
-                You scored <span className="font-bold text-primary-600">{Math.round(evaluation.percentage_score)}%</span>
+                You scored <span className="font-bold text-primary-600">{evaluation.percentage_score ? Math.round(evaluation.percentage_score) : 0}%</span>
               </p>
-              {evaluation.percentage_score >= 70 ? (
+              {evaluation.percentage_score && evaluation.percentage_score >= 70 ? (
                 <p className="text-green-700">
                   Congratulations! You scored 70% or higher.
                   <br />
@@ -691,7 +704,7 @@ export default function StoryBuilderPage() {
               )}
             </div>
 
-            {evaluation.percentage_score >= 70 ? (
+            {evaluation.percentage_score && evaluation.percentage_score >= 70 ? (
               <button
                 onClick={handleConfirmCompletion}
                 disabled={confirmingCompletion}
