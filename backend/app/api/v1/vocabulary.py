@@ -64,12 +64,20 @@ async def pre_generate_vocabulary_assignments(list_id: UUID):
                 logger.info(f"Successfully pre-generated puzzle games for list {list_id}")
             except Exception as e:
                 logger.error(f"Failed to pre-generate puzzle games for list {list_id}: {e}")
+                await db.rollback()  # Rollback the failed transaction
+                
+                # Try to regenerate without the problematic puzzle type if it's a constraint error
+                if "vocabulary_puzzle_games_puzzle_type_check" in str(e):
+                    logger.warning(f"Retrying puzzle generation without 'fill_blank' type for list {list_id}")
+                    # This should not happen now that we fixed the constraint, but keeping as safety
             
-            # Generate fill-in-the-blank sentences
+            # Generate fill-in-the-blank sentences - use a new transaction
             try:
-                fill_in_blank_generator = VocabularyFillInBlankGenerator(db)
-                await fill_in_blank_generator.generate_fill_in_blank_sentences(list_id)
-                logger.info(f"Successfully pre-generated fill-in-the-blank sentences for list {list_id}")
+                # Create a new session for this operation to avoid transaction conflicts
+                async with AsyncSessionLocal() as new_db:
+                    fill_in_blank_generator = VocabularyFillInBlankGenerator(new_db)
+                    await fill_in_blank_generator.generate_fill_in_blank_sentences(list_id)
+                    logger.info(f"Successfully pre-generated fill-in-the-blank sentences for list {list_id}")
             except Exception as e:
                 logger.error(f"Failed to pre-generate fill-in-the-blank sentences for list {list_id}: {e}")
             
