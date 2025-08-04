@@ -403,12 +403,12 @@ class UMALectureService:
         query = sql_text("""
             INSERT INTO lecture_images (
                 id, lecture_id, filename, teacher_description,
-                node_id, position, storage_path, public_url,
-                original_url, display_url, created_at
+                node_id, position, original_url, display_url,
+                created_at
             ) VALUES (
                 :id, :lecture_id, :filename, :teacher_description,
-                :node_id, :position, :storage_path, :public_url,
-                :public_url, :public_url, NOW()
+                :node_id, :position, :original_url, :display_url,
+                NOW()
             )
             RETURNING *
         """)
@@ -422,8 +422,8 @@ class UMALectureService:
                 "teacher_description": teacher_description,
                 "node_id": node_id,
                 "position": position,
-                "storage_path": storage_path,
-                "public_url": public_url
+                "original_url": public_url,
+                "display_url": public_url
             }
         )
         

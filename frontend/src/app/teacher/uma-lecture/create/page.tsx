@@ -52,9 +52,10 @@ const examples = [
     subject: 'Science Example',
     topic: 'Photosynthesis Process',
     subtopics: [
-      'What photosynthesis is and why plants need it',
-      'The step-by-step chemical reactions involved',
-      'How photosynthesis impacts ecosystems and food production'
+      'What photosynthesis is and why plants need it (Basic)',
+      'How photosynthesis impacts the ecosystem (Intermediate)',
+      'Step by step chemical reactions involved (Advanced)',
+      'The actual chemical reactions and equations used (Expert)'
     ]
   },
   {
@@ -64,9 +65,10 @@ const examples = [
     subject: 'English Literature Example',
     topic: 'Symbolism in Romeo and Juliet',
     subtopics: [
-      'Light and darkness imagery throughout the play',
-      'The balcony as symbol of forbidden love',
-      'How symbols foreshadow the tragic ending'
+      'Common symbols and their basic meanings (Basic)',
+      'How Shakespeare uses light and darkness (Intermediate)',
+      'Analysis of balcony scene symbolism (Advanced)',
+      'Comparative analysis with other tragedies (Expert)'
     ]
   }
 ]
@@ -83,13 +85,15 @@ export default function CreateLecturePage() {
     topic: '',
     subtopic1: '',
     subtopic2: '',
-    subtopic3: ''
+    subtopic3: '',
+    subtopic4: ''
   })
 
   const validateForm = () => {
     // Check required fields
     if (!formData.title || !formData.subject || !formData.grade_level || 
-        !formData.topic || !formData.subtopic1 || !formData.subtopic2) {
+        !formData.topic || !formData.subtopic1 || !formData.subtopic2 || 
+        !formData.subtopic3 || !formData.subtopic4) {
       setError('Please fill in all required fields')
       return false
     }
@@ -112,12 +116,10 @@ export default function CreateLecturePage() {
       const learningObjectives = [
         `Understand the key concepts of ${formData.topic.toLowerCase()}`,
         `Explain ${formData.subtopic1.toLowerCase()}`,
-        `Analyze ${formData.subtopic2.toLowerCase()}`
+        `Analyze ${formData.subtopic2.toLowerCase()}`,
+        `Apply ${formData.subtopic3.toLowerCase()}`,
+        `Evaluate ${formData.subtopic4.toLowerCase()}`
       ]
-      
-      if (formData.subtopic3) {
-        learningObjectives.push(`Evaluate ${formData.subtopic3.toLowerCase()}`)
-      }
       
       // Use topic as title if title is not provided
       const lectureTitle = formData.title.trim() || formData.topic.trim()
@@ -135,7 +137,8 @@ export default function CreateLecturePage() {
         subtopics: [
           formData.subtopic1,
           formData.subtopic2,
-          ...(formData.subtopic3 ? [formData.subtopic3] : [])
+          formData.subtopic3,
+          formData.subtopic4
         ]
       }))
       
@@ -177,8 +180,8 @@ export default function CreateLecturePage() {
           <div>
             <p className="text-sm text-blue-800 font-medium">Create focused, digestible content</p>
             <p className="text-sm text-blue-700 mt-1">
-              Focus on one topic with 2-3 key subtopics for best student engagement. 
-              This approach creates 8-12 content sections across difficulty levels.
+              Focus on one topic with 4 key subtopics: 2 for basic/intermediate levels and 2 for advanced/expert levels. 
+              This approach creates differentiated content appropriate for each difficulty level.
             </p>
           </div>
         </div>
@@ -319,61 +322,90 @@ export default function CreateLecturePage() {
             Key Subtopics
           </label>
           <p className="text-sm text-gray-500 mb-3">
-            Break down your topic into 2-3 specific learning points (max 150 characters each)
+            Break down your topic into 4 specific learning points (max 150 characters each)
           </p>
           
-          <div className="space-y-3">
-            {/* Subtopic 1 */}
-            <div>
-              <label htmlFor="subtopic1" className="block text-sm text-gray-600 mb-1">
-                Subtopic 1 <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                id="subtopic1"
-                value={formData.subtopic1}
-                onChange={(e) => setFormData({ ...formData, subtopic1: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                placeholder="e.g., How water evaporates from oceans and lakes"
-                maxLength={150}
-                required
-              />
-              <div className="mt-1 text-xs text-gray-500">{formData.subtopic1.length}/150 characters</div>
+          <div className="space-y-4">
+            {/* Basic/Intermediate Content */}
+            <div className="bg-blue-50 p-3 rounded-md">
+              <h4 className="text-sm font-semibold text-blue-900 mb-2">Basic & Intermediate Content</h4>
+              
+              {/* Subtopic 1 */}
+              <div className="mb-3">
+                <label htmlFor="subtopic1" className="block text-sm text-gray-600 mb-1">
+                  Subtopic 1 - Basic Concepts <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  id="subtopic1"
+                  value={formData.subtopic1}
+                  onChange={(e) => setFormData({ ...formData, subtopic1: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                  placeholder="e.g., What photosynthesis is and why plants need it"
+                  maxLength={150}
+                  required
+                />
+                <div className="mt-1 text-xs text-gray-500">{formData.subtopic1.length}/150 characters</div>
+              </div>
+
+              {/* Subtopic 2 */}
+              <div>
+                <label htmlFor="subtopic2" className="block text-sm text-gray-600 mb-1">
+                  Subtopic 2 - Intermediate Understanding <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  id="subtopic2"
+                  value={formData.subtopic2}
+                  onChange={(e) => setFormData({ ...formData, subtopic2: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                  placeholder="e.g., How photosynthesis impacts ecosystems"
+                  maxLength={150}
+                  required
+                />
+                <div className="mt-1 text-xs text-gray-500">{formData.subtopic2.length}/150 characters</div>
+              </div>
             </div>
 
-            {/* Subtopic 2 */}
-            <div>
-              <label htmlFor="subtopic2" className="block text-sm text-gray-600 mb-1">
-                Subtopic 2 <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                id="subtopic2"
-                value={formData.subtopic2}
-                onChange={(e) => setFormData({ ...formData, subtopic2: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                placeholder="e.g., Cloud formation and types of precipitation"
-                maxLength={150}
-                required
-              />
-              <div className="mt-1 text-xs text-gray-500">{formData.subtopic2.length}/150 characters</div>
-            </div>
+            {/* Advanced/Expert Content */}
+            <div className="bg-purple-50 p-3 rounded-md">
+              <h4 className="text-sm font-semibold text-purple-900 mb-2">Advanced & Expert Content</h4>
+              
+              {/* Subtopic 3 */}
+              <div className="mb-3">
+                <label htmlFor="subtopic3" className="block text-sm text-gray-600 mb-1">
+                  Subtopic 3 - Advanced Analysis <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  id="subtopic3"
+                  value={formData.subtopic3}
+                  onChange={(e) => setFormData({ ...formData, subtopic3: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                  placeholder="e.g., Step-by-step chemical reactions involved"
+                  maxLength={150}
+                  required
+                />
+                <div className="mt-1 text-xs text-gray-500">{formData.subtopic3.length}/150 characters</div>
+              </div>
 
-            {/* Subtopic 3 (Optional) */}
-            <div>
-              <label htmlFor="subtopic3" className="block text-sm text-gray-600 mb-1">
-                Subtopic 3 <span className="text-gray-400">(Optional)</span>
-              </label>
-              <input
-                type="text"
-                id="subtopic3"
-                value={formData.subtopic3}
-                onChange={(e) => setFormData({ ...formData, subtopic3: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                placeholder="e.g., Human impact on the water cycle"
-                maxLength={150}
-              />
-              <div className="mt-1 text-xs text-gray-500">{formData.subtopic3.length}/150 characters</div>
+              {/* Subtopic 4 */}
+              <div>
+                <label htmlFor="subtopic4" className="block text-sm text-gray-600 mb-1">
+                  Subtopic 4 - Expert Knowledge <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  id="subtopic4"
+                  value={formData.subtopic4}
+                  onChange={(e) => setFormData({ ...formData, subtopic4: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                  placeholder="e.g., Chemical equations and reaction mechanisms"
+                  maxLength={150}
+                  required
+                />
+                <div className="mt-1 text-xs text-gray-500">{formData.subtopic4.length}/150 characters</div>
+              </div>
             </div>
           </div>
         </div>
@@ -383,20 +415,27 @@ export default function CreateLecturePage() {
           <div className="mb-6 bg-gray-50 border border-gray-200 rounded-lg p-4">
             <h3 className="text-sm font-medium text-gray-700 mb-2">Preview</h3>
             <p className="text-sm text-gray-600">
-              This will create 8-12 interactive content sections covering:
+              This will create differentiated content across 4 difficulty levels:
             </p>
             {formData.topic && (
               <div className="mt-2 text-sm text-gray-700">
                 <span className="font-medium">Topic:</span> {formData.topic}
-                <div className="ml-4 mt-1">
-                  {formData.subtopic1 && <div>• {formData.subtopic1}</div>}
-                  {formData.subtopic2 && <div>• {formData.subtopic2}</div>}
-                  {formData.subtopic3 && <div>• {formData.subtopic3}</div>}
+                <div className="mt-2">
+                  <div className="font-medium text-blue-700">Basic & Intermediate:</div>
+                  <div className="ml-4">
+                    {formData.subtopic1 && <div>• {formData.subtopic1}</div>}
+                    {formData.subtopic2 && <div>• {formData.subtopic2}</div>}
+                  </div>
+                  <div className="font-medium text-purple-700 mt-2">Advanced & Expert:</div>
+                  <div className="ml-4">
+                    {formData.subtopic3 && <div>• {formData.subtopic3}</div>}
+                    {formData.subtopic4 && <div>• {formData.subtopic4}</div>}
+                  </div>
                 </div>
               </div>
             )}
             <p className="text-sm text-gray-600 mt-2">
-              Each subtopic will have content at Basic, Intermediate, Advanced, and Expert levels.
+              Students will progress through increasingly complex content based on their level.
             </p>
           </div>
         )}

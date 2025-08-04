@@ -283,6 +283,10 @@ class UMALectureAIService:
     ) -> Dict[str, Any]:
         """Generate the complete lecture structure"""
         
+        # Extract subtopics from outline
+        subtopics = self._extract_subtopics_from_outline(outline)
+        print(f"Extracted {len(subtopics)} subtopics from outline: {subtopics}")
+        
         # First, parse the outline into topics
         parse_prompt = self.prompt_manager.get_outline_parsing_prompt(outline, objectives)
         
@@ -335,7 +339,8 @@ class UMALectureAIService:
                         grade_level,
                         subject,
                         [desc["educational_description"] for desc in topic_images],
-                        objectives  # Add this line - learning_objectives is already available in scope
+                        objectives,  # Add this line - learning_objectives is already available in scope
+                        subtopics  # Pass the subtopics
                     )
                     
                     content_text = await self._generate_content_async(content_prompt)
@@ -480,6 +485,29 @@ class UMALectureAIService:
                     })
         
         return topics if topics else [{"id": "main_topic", "title": "Main Topic"}]
+    
+    def _extract_subtopics_from_outline(self, outline: str) -> List[str]:
+        """Extract subtopics from the outline structure"""
+        subtopics = []
+        lines = outline.strip().split('\n')
+        
+        for line in lines:
+            line = line.strip()
+            # Skip empty lines
+            if not line:
+                continue
+            
+            # Skip the main topic line
+            if line.startswith('Topic:'):
+                continue
+                
+            # Extract subtopics (lines that start with -)
+            if line.startswith('-'):
+                subtopic = line.lstrip('- ').strip()
+                if subtopic:
+                    subtopics.append(subtopic)
+        
+        return subtopics
     
     def _parse_questions_response(self, response_text: str, difficulty: str) -> List[Dict[str, Any]]:
         """Parse AI response into question list"""

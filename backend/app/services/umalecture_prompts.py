@@ -34,7 +34,8 @@ Return a structured list of topics with their relationships."""
         grade_level: str,
         subject: str,
         image_descriptions: List[str],
-        learning_objectives: List[str] = None  # Add this parameter
+        learning_objectives: List[str] = None,  # Add this parameter
+        subtopics: List[str] = None  # Add subtopics parameter
     ) -> str:
         """Get prompt for generating content at a specific difficulty"""
         
@@ -52,11 +53,32 @@ Return a structured list of topics with their relationships."""
             "expert": "Mark 3-5 research terminology, interdisciplinary connections, and advanced concepts"
         }
         
+        # Determine which subtopics to focus on based on difficulty
+        subtopic_focus = ""
+        if subtopics and len(subtopics) >= 4:
+            if difficulty in ["basic", "intermediate"]:
+                relevant_subtopics = subtopics[:2]  # First two subtopics
+                subtopic_focus = f"""
+FOCUS SUBTOPICS FOR {difficulty.upper()} LEVEL:
+You should focus your content PRIMARILY on these two subtopics:
+{chr(10).join(f"- {subtopic}" for subtopic in relevant_subtopics)}
+
+These subtopics are designed for foundational understanding. Do NOT include advanced concepts from subtopics 3 and 4."""
+            else:  # advanced or expert
+                relevant_subtopics = subtopics[2:4]  # Last two subtopics
+                subtopic_focus = f"""
+FOCUS SUBTOPICS FOR {difficulty.upper()} LEVEL:
+You should focus your content PRIMARILY on these two subtopics:
+{chr(10).join(f"- {subtopic}" for subtopic in relevant_subtopics)}
+
+These subtopics contain more complex material. You may reference basic concepts from subtopics 1 and 2 as foundation, but focus on the advanced aspects."""
+        
         return f"""Create educational content for this topic at {difficulty} level:
 
 TOPIC: {topic_title}
 GRADE LEVEL: {grade_level}
 DIFFICULTY: {difficulty} - {difficulty_guidelines[difficulty]}
+{subtopic_focus}
 
 LEARNING OBJECTIVES:
 {chr(10).join(f"- {obj}" for obj in learning_objectives) if learning_objectives else "No specific learning objectives provided"}
@@ -112,37 +134,81 @@ Focus on understanding the specific topic as outlined, not general subject knowl
         """Get prompt for generating questions"""
         
         question_types = {
-            "basic": "factual recall, simple comprehension",
-            "intermediate": "application, cause-and-effect",
-            "advanced": "analysis, synthesis, evaluation",
-            "expert": "critical thinking, hypothetical scenarios"
+            "basic": "factual recall, simple comprehension, identifying key concepts",
+            "intermediate": "application of concepts, cause-and-effect relationships, making connections",
+            "advanced": "analysis of complex ideas, synthesis of information, evaluation of concepts",
+            "expert": "critical thinking, hypothetical scenarios, innovative applications"
         }
         
-        return f"""Generate 2-3 educational questions for this content:
+        difficulty_examples = {
+            "basic": [
+                "What is the main function of [concept]?",
+                "Name two key features of [process].",
+                "In your own words, describe what [term] means."
+            ],
+            "intermediate": [
+                "Explain how [process A] leads to [outcome B].",
+                "Why is [concept] important for [broader topic]?",
+                "Compare and contrast [item A] with [item B]."
+            ],
+            "advanced": [
+                "Analyze the role of [concept] in [complex system].",
+                "How would [process] be affected if [variable] changed?",
+                "Evaluate the effectiveness of [method] for achieving [goal]."
+            ],
+            "expert": [
+                "Design an experiment to test [hypothesis about concept].",
+                "Propose a novel application of [concept] in [new context].",
+                "Critique the current understanding of [topic] and suggest improvements."
+            ]
+        }
+        
+        return f"""Generate exactly 3 educational questions based on this content. Each question must be carefully crafted to test genuine understanding.
 
 TOPIC: {topic_title}
-DIFFICULTY: {difficulty}
-QUESTION TYPES: {question_types[difficulty]}
+DIFFICULTY LEVEL: {difficulty}
+FOCUS AREAS: {question_types[difficulty]}
 
-CONTENT:
+CONTENT TO BASE QUESTIONS ON:
 {content}
 
-CRITICAL QUESTION FORMAT REQUIREMENTS:
-- These are SHORT ANSWER questions where students type their own responses
-- Do NOT use "which of the following" or "select the best answer"
-- Do NOT reference answer choices that don't exist
-- Ask direct questions expecting written responses
-- Use formats like "What is...", "Explain why...", "Describe how..."
+STRICT FORMATTING REQUIREMENTS:
+You must format your response EXACTLY as follows:
 
-Requirements:
-1. Test understanding, not just memorization
-2. {"Include at least one visual question using the images" if with_images else "Focus on text comprehension"}
-3. All questions must be SHORT ANSWER format
-4. Provide clear, unambiguous questions
-5. Include correct answers and brief explanations
-6. Make questions progressively challenging within the difficulty level
+Question 1: [Your first question here]
+Answer: [A complete but concise answer - 1-3 sentences]
+Explanation: [Brief explanation of why this answer is correct and what concept it tests]
 
-Ensure questions encourage thinking and exploration."""
+Question 2: [Your second question here]
+Answer: [A complete but concise answer - 1-3 sentences]
+Explanation: [Brief explanation of why this answer is correct and what concept it tests]
+
+Question 3: [Your third question here]
+Answer: [A complete but concise answer - 1-3 sentences]
+Explanation: [Brief explanation of why this answer is correct and what concept it tests]
+
+CRITICAL REQUIREMENTS:
+1. ALL questions must be SHORT ANSWER format - students will type their responses
+2. NEVER use multiple choice format or reference non-existent options
+3. Questions must be directly answerable from the provided content
+4. Avoid yes/no questions - require explanation or description
+5. Each question should test a different aspect or concept from the content
+6. Questions should progress in complexity within the {difficulty} level
+7. Use clear, specific language appropriate for the difficulty level
+8. {"At least one question should reference the visual elements described in the content" if with_images else "Focus entirely on the text content provided"}
+
+EXAMPLE QUESTIONS FOR {difficulty.upper()} LEVEL:
+{chr(10).join(f"- {ex}" for ex in difficulty_examples[difficulty])}
+
+AVOID THESE COMMON ISSUES:
+- Questions that are too vague or open-ended
+- Questions that can be answered without reading the content
+- Questions that test trivial details instead of key concepts
+- Questions that are not directly related to the provided content
+- Questions that assume knowledge not present in the content
+- Leading questions that give away the answer
+
+Remember: Questions should guide students to demonstrate their understanding of the core concepts presented in the content."""
     
     @staticmethod
     def get_image_enhancement_prompt(
