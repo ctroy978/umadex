@@ -324,6 +324,45 @@ Requirements:
 Focus on helping the student understand this specific concept deeply."""
     
     @staticmethod
+    def get_structured_question_prompt(
+        topic_title: str,
+        content: str,
+        difficulty: str,
+        with_images: bool = False
+    ) -> str:
+        """Get prompt specifically designed for structured Pydantic AI output"""
+        
+        question_types = {
+            "basic": "factual recall, simple comprehension, identifying key concepts",
+            "intermediate": "application of concepts, cause-and-effect relationships, making connections",
+            "advanced": "analysis of complex ideas, synthesis of information, evaluation of concepts",
+            "expert": "critical thinking, hypothetical scenarios, innovative applications"
+        }
+        
+        return f"""Generate exactly 3 educational questions based on the following content.
+
+TOPIC: {topic_title}
+DIFFICULTY LEVEL: {difficulty}
+FOCUS: {question_types[difficulty]}
+
+CONTENT:
+{content}
+
+REQUIREMENTS:
+1. Each question must be answerable from the provided content
+2. Questions should test understanding at the {difficulty} level
+3. All questions must be short-answer format (no multiple choice)
+4. Answers should be 1-3 sentences
+5. Include a brief explanation for each answer
+6. {"At least one question should reference visual elements if mentioned in content" if with_images else "Focus on text content only"}
+7. Questions should progress in complexity
+8. Avoid yes/no questions
+9. Each question should test a different concept
+10. For each question, set uses_images to true if the question references images, diagrams, or visual content
+
+Generate exactly 3 questions that genuinely test student understanding of the material."""
+    
+    @staticmethod
     def get_exploration_redirect_prompt(exploration_term: str, student_question: str) -> str:
         """Get prompt for redirecting off-topic questions"""
         return f"""The student asked an off-topic question while exploring a specific term.

@@ -47,6 +47,10 @@ WRITING_ASSISTANCE_MODEL = os.getenv("WRITING_ASSISTANCE_MODEL", "claude-3-5-son
 # from source materials
 LECTURE_GENERATION_MODEL = os.getenv("LECTURE_GENERATION_MODEL", "gemini-2.0-flash")
 
+# Lecture Question Generation AI
+# Used in: UMALecture module - generates structured questions for each difficulty level
+LECTURE_QUESTION_MODEL = os.getenv("LECTURE_QUESTION_MODEL", "gemini-2.0-flash-exp")
+
 
 def get_model_config(model_type: str) -> Optional[str]:
     """
@@ -67,6 +71,7 @@ def get_model_config(model_type: str) -> Optional[str]:
         'speech_analysis': SPEECH_ANALYSIS_MODEL,
         'writing_assistance': WRITING_ASSISTANCE_MODEL,
         'lecture_generation': LECTURE_GENERATION_MODEL,
+        'lecture_question': LECTURE_QUESTION_MODEL,
     }
     
     return model_mapping.get(model_type)
@@ -88,4 +93,5 @@ def get_all_models() -> dict:
         'speech_analysis': SPEECH_ANALYSIS_MODEL,
         'writing_assistance': WRITING_ASSISTANCE_MODEL,
         'lecture_generation': LECTURE_GENERATION_MODEL,
+        'lecture_question': LECTURE_QUESTION_MODEL,
     }

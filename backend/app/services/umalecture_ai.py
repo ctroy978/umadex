@@ -12,12 +12,30 @@ from sqlalchemy import select, text as sql_text
 import google.generativeai as genai
 import os
 from concurrent.futures import ThreadPoolExecutor
+from pydantic import BaseModel, Field
+from pydantic_ai import Agent
 
 from app.core.database import get_db
 from app.services.image_processing import ImageProcessor
 from app.services.umalecture_prompts import UMALecturePromptManager
 from app.config.ai_config import get_gemini_config
-from app.config.ai_models import LECTURE_GENERATION_MODEL
+from app.config.ai_models import LECTURE_GENERATION_MODEL, LECTURE_QUESTION_MODEL
+
+
+class LectureQuestion(BaseModel):
+    """Model for a single lecture question"""
+    question: str = Field(description="The question text")
+    answer: str = Field(description="A complete but concise answer (1-3 sentences)")
+    uses_images: bool = Field(default=False, description="Whether the question references images")
+
+
+class LectureQuestionSet(BaseModel):
+    """Model for a set of lecture questions"""
+    questions: List[LectureQuestion] = Field(
+        description="List of exactly 3 questions",
+        min_items=3,
+        max_items=3
+    )
 
 
 class UMALectureAIService:
@@ -32,6 +50,13 @@ class UMALectureAIService:
         self.model = genai.GenerativeModel(model_name)
         self.prompt_manager = UMALecturePromptManager()
         self.executor = ThreadPoolExecutor(max_workers=3)
+        
+        # Initialize Pydantic AI agent for structured question generation
+        self.question_agent = Agent(
+            LECTURE_QUESTION_MODEL,  # Use the configured model
+            result_type=LectureQuestionSet,
+            system_prompt="You are an expert educational question generator for interactive lectures."
+        )
     
     async def _generate_content_async(self, prompt: Any) -> str:
         """Wrapper to run synchronous generate_content in thread pool"""
@@ -42,6 +67,56 @@ class UMALectureAIService:
             prompt
         )
         return response.text
+    
+    async def _generate_questions_structured(
+        self,
+        topic_title: str,
+        content: str,
+        difficulty: str,
+        with_images: bool = False
+    ) -> List[Dict[str, Any]]:
+        """Generate questions using Pydantic AI for structured output"""
+        try:
+            # Create the prompt for question generation
+            prompt = self.prompt_manager.get_structured_question_prompt(
+                topic_title,
+                content,
+                difficulty,
+                with_images
+            )
+            
+            # Use Pydantic AI agent to generate structured questions
+            result = await self.question_agent.run(prompt)
+            
+            # Convert Pydantic models to dictionaries
+            questions = []
+            for q in result.data.questions:
+                questions.append({
+                    "question": q.question,
+                    "question_type": "short_answer",  # Always short answer for lectures
+                    "difficulty": difficulty,
+                    "correct_answer": q.answer,
+                    "options": None,  # Always None for short answer questions
+                    "uses_images": q.uses_images
+                })
+            
+            print(f"Successfully generated {len(questions)} questions for {difficulty} level of {topic_title}")
+            return questions
+            
+        except Exception as e:
+            print(f"Error generating structured questions for {difficulty} level: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            
+            # Return fallback questions if generation fails
+            return [{
+                "question": f"What did you learn about {topic_title} at the {difficulty} level?",
+                "question_type": "short_answer",
+                "difficulty": difficulty,
+                "correct_answer": "Student should demonstrate understanding of the topic.",
+                "options": None,
+                "uses_images": False
+            }]
     
     async def process_lecture(self, lecture_id: UUID):
         """Main processing function for a lecture"""
@@ -345,16 +420,13 @@ class UMALectureAIService:
                     
                     content_text = await self._generate_content_async(content_prompt)
                     
-                    # Generate questions
-                    question_prompt = self.prompt_manager.get_question_generation_prompt(
+                    # Generate questions using structured Pydantic AI
+                    questions = await self._generate_questions_structured(
                         topic_title,
                         content_text,
                         difficulty,
                         with_images=len(topic_images) > 0
                     )
-                    
-                    questions_text = await self._generate_content_async(question_prompt)
-                    questions = self._parse_questions_response(questions_text, difficulty)
                     
                     difficulty_levels[difficulty] = {
                         "content": content_text,
