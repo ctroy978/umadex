@@ -42,8 +42,8 @@ interface ImageUpload {
   id: string
   file: File
   preview: string
-  nodeId: string
   description: string
+  difficultyLevel?: string
   uploading?: boolean
   uploaded?: boolean
   error?: string
@@ -149,8 +149,8 @@ export default function CreateLectureContentPage() {
             id: `temp-${Date.now()}-${Math.random()}`,
             file,
             preview: reader.result as string,
-            nodeId: '',
-            description: ''
+            description: '',
+            difficultyLevel: 'basic'
           })
           
           if (newUploads.length === files.length) {
@@ -162,7 +162,7 @@ export default function CreateLectureContentPage() {
     })
   }
 
-  const handleImageUpdate = (id: string, field: 'nodeId' | 'description', value: string) => {
+  const handleImageUpdate = (id: string, field: 'description' | 'difficultyLevel', value: string) => {
     setImageUploads(imageUploads.map(img => 
       img.id === id ? { ...img, [field]: value } : img
     ))
@@ -201,7 +201,7 @@ export default function CreateLectureContentPage() {
 
   const uploadImages = async () => {
     for (const upload of imageUploads) {
-      if (!upload.nodeId || !upload.description) continue
+      if (!upload.description) continue
       
       setImageUploads(prev => prev.map(img => 
         img.id === upload.id ? { ...img, uploading: true } : img
@@ -230,14 +230,17 @@ export default function CreateLectureContentPage() {
           .from('lecture-images')
           .getPublicUrl(filePath)
         
-        // Save reference to backend
+        // Save reference to backend - use difficulty level as the node_id
+        // Use the main topic for all images since there's only one topic per lecture
+        const mainTopic = topicData?.topic || 'lecture'
+        const nodeIdWithDifficulty = `${mainTopic}|${upload.difficultyLevel || 'basic'}`
         const imageReference = await umalectureApi.createImageReference({
           lecture_id: lectureId,
           filename: fileName,
           storage_path: filePath,
           public_url: publicUrl,
           teacher_description: upload.description,
-          node_id: upload.nodeId,
+          node_id: nodeIdWithDifficulty,
           position: 1
         })
         
@@ -442,17 +445,15 @@ export default function CreateLectureContentPage() {
                         />
                         <div className="flex-1">
                           <select
-                            value={upload.nodeId}
-                            onChange={(e) => handleImageUpdate(upload.id, 'nodeId', e.target.value)}
+                            value={upload.difficultyLevel || 'basic'}
+                            onChange={(e) => handleImageUpdate(upload.id, 'difficultyLevel', e.target.value)}
                             className="w-full mb-2 px-3 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
                             disabled={upload.uploading || upload.uploaded}
                           >
-                            <option value="">Select topic or subtopic</option>
-                            {extractedTopics.map((topic, index) => (
-                              <option key={topic} value={topic}>
-                                {index === 0 ? `Topic: ${topic}` : `Subtopic: ${topic}`}
-                              </option>
-                            ))}
+                            <option value="basic">Basic</option>
+                            <option value="intermediate">Intermediate</option>
+                            <option value="advanced">Advanced</option>
+                            <option value="expert">Expert</option>
                           </select>
                           
                           <input
@@ -488,12 +489,12 @@ export default function CreateLectureContentPage() {
                     </div>
                   ))}
                   
-                  {imageUploads.some(img => img.nodeId && img.description && !img.uploading) && (
+                  {imageUploads.some(img => img.description && !img.uploading) && (
                     <button
                       onClick={uploadImages}
                       className="w-full py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 transition-colors"
                     >
-                      Upload {imageUploads.filter(img => img.nodeId && img.description).length} image(s)
+                      Upload {imageUploads.filter(img => img.description).length} image(s)
                     </button>
                   )}
                 </div>
@@ -562,9 +563,9 @@ export default function CreateLectureContentPage() {
               : 'No images added (optional)'}
           </span>
           
-          {imageUploads.filter(img => img.nodeId && img.description).length > 0 && (
+          {imageUploads.filter(img => img.description).length > 0 && (
             <span className="text-sm text-amber-600">
-              {imageUploads.filter(img => img.nodeId && img.description).length} image(s) need uploading
+              {imageUploads.filter(img => img.description).length} image(s) need uploading
             </span>
           )}
           

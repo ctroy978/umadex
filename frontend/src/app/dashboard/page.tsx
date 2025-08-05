@@ -5,7 +5,7 @@ import { useAuthSupabase } from '@/hooks/useAuthSupabase'
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { studentClassroomApi } from '@/lib/classroomApi'
-import { AcademicCapIcon, PlusIcon, ClipboardDocumentListIcon, ArrowRightOnRectangleIcon } from '@heroicons/react/24/outline'
+import { AcademicCapIcon, PlusIcon, ArrowRightOnRectangleIcon } from '@heroicons/react/24/outline'
 import type { Classroom } from '@/types/classroom'
 
 export default function DashboardPage() {
@@ -147,10 +147,6 @@ export default function DashboardPage() {
                             >
                               <h4 className="font-medium text-gray-900">{classroom.name}</h4>
                               <p className="text-sm text-gray-500 mt-1">Code: {classroom.class_code}</p>
-                              <div className="mt-3 flex items-center text-sm text-gray-600">
-                                <ClipboardDocumentListIcon className="h-4 w-4 mr-1" />
-                                <span>{classroom.assignment_count} assignments</span>
-                              </div>
                             </div>
                           ))}
                         </div>

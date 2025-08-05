@@ -217,7 +217,9 @@ class ImageProcessor:
         original.save(original_buffer, 'JPEG', quality=90, optimize=True)
         original_buffer.seek(0)
         
-        original_path = f"assignments/{assignment_id}/{base_key}_original.{format_ext}"
+        # Use appropriate path based on bucket name
+        path_prefix = "lectures" if bucket_name == "lecture-images" else "assignments"
+        original_path = f"{path_prefix}/{assignment_id}/{base_key}_original.{format_ext}"
         storage_response = self.supabase.storage.from_(bucket_name).upload(
             original_path,
             original_buffer.getvalue(),
@@ -237,7 +239,7 @@ class ImageProcessor:
         display.save(display_buffer, 'JPEG', quality=85, optimize=True)
         display_buffer.seek(0)
         
-        display_path = f"assignments/{assignment_id}/{base_key}_display.{format_ext}"
+        display_path = f"{path_prefix}/{assignment_id}/{base_key}_display.{format_ext}"
         storage_response = self.supabase.storage.from_(bucket_name).upload(
             display_path,
             display_buffer.getvalue(),
@@ -257,7 +259,7 @@ class ImageProcessor:
         thumbnail.save(thumb_buffer, 'JPEG', quality=80, optimize=True)
         thumb_buffer.seek(0)
         
-        thumb_path = f"assignments/{assignment_id}/{base_key}_thumb.{format_ext}"
+        thumb_path = f"{path_prefix}/{assignment_id}/{base_key}_thumb.{format_ext}"
         storage_response = self.supabase.storage.from_(bucket_name).upload(
             thumb_path,
             thumb_buffer.getvalue(),
@@ -272,7 +274,7 @@ class ImageProcessor:
         return {
             "image_tag": image_tag,
             "image_key": base_key,
-            "storage_path": f"assignments/{assignment_id}/{base_key}",
+            "storage_path": f"{path_prefix}/{assignment_id}/{base_key}",
             "original_url": urls['original'],
             "display_url": urls['display'],
             "image_url": urls['display'],  # Alias for backward compatibility

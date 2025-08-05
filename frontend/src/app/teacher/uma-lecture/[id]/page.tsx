@@ -37,6 +37,7 @@ export default function TeacherUmaLecturePreview() {
         
         // Load images
         const imageData = await umalectureApi.listImages(params.id as string)
+        console.log('Loaded images:', imageData)
         setImages(imageData)
       } catch (err) {
         setError('Failed to load lecture')
@@ -82,13 +83,24 @@ export default function TeacherUmaLecturePreview() {
     return <div className="whitespace-pre-wrap">{content}</div>
   }
 
-  // Get images for current topic
-  const topicImages = images.filter(img => 
-    img.node_id && currentTopic && 
-    (img.node_id.toLowerCase() === currentTopicId.toLowerCase() ||
-     img.node_id.toLowerCase().includes(currentTopic.title.toLowerCase()) ||
-     currentTopic.title.toLowerCase().includes(img.node_id.toLowerCase()))
-  )
+  // Get images for current topic - be more flexible with matching
+  const topicImages = images.filter(img => {
+    if (!img.node_id || !currentTopic) return false
+    
+    // Try exact match first
+    if (img.node_id.toLowerCase() === currentTopicId.toLowerCase()) return true
+    
+    // Check if any significant words from the topic appear in the node_id
+    const topicWords = currentTopic.title.toLowerCase().split(/\s+/).filter(w => w.length > 3)
+    const nodeWords = img.node_id.toLowerCase()
+    
+    // If any topic word appears in the node_id, consider it a match
+    return topicWords.some(word => nodeWords.includes(word))
+  })
+  
+  console.log('Current topic:', currentTopic?.title)
+  console.log('Topic images filtered:', topicImages)
+  console.log('All images:', images)
 
   const navigateToTopic = (direction: 'prev' | 'next') => {
     const newIndex = direction === 'prev' 
@@ -160,18 +172,18 @@ export default function TeacherUmaLecturePreview() {
                     </div>
                     
                     {/* Display images at the bottom if available */}
-                    {topicImages.length > 0 && (
+                    {images.length > 0 && (
                       <div className="mt-8 pt-6 border-t">
-                        <h3 className="text-lg font-medium text-gray-900 mb-4">Reference Images</h3>
+                        <h3 className="text-lg font-medium text-gray-900 mb-4">Reference Images ({images.length} total, {topicImages.length} for this topic)</h3>
                         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                          {topicImages.map((image, index) => (
+                          {images.map((image, index) => (
                             <div
                               key={image.id}
                               className="relative group cursor-pointer rounded-lg overflow-hidden shadow-md hover:shadow-xl transition-all"
-                              onClick={() => setExpandedImage(image.display_url || image.original_url)}
+                              onClick={() => setExpandedImage(image.original_url || image.display_url || image.thumbnail_url)}
                             >
                               <img
-                                src={image.thumbnail_url || image.original_url}
+                                src={image.original_url || image.display_url || image.thumbnail_url}
                                 alt={image.teacher_description}
                                 className="w-full h-32 object-cover group-hover:opacity-90 transition-opacity"
                               />

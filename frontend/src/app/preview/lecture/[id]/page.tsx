@@ -101,10 +101,34 @@ export default function TeacherLecturePreviewPage() {
   const renderContent = (content: string, topicImages: string[]) => {
     if (!content) return <p className="text-gray-400">Content not available</p>
 
-    // Get relevant images for this topic
-    const relevantImages = images.filter(img => 
-      topicImages?.includes(img.id) || content.includes('[Image')
-    )
+    // Get relevant images for this topic and difficulty level
+    const topicTitle = currentTopic ? lectureStructure.topics[currentTopic]?.title : ''
+    const currentDifficulty = currentTab // currentTab holds the difficulty level
+    
+    const relevantImages = images.filter(img => {
+      if (!img.node_id) return false
+      
+      // Check if node_id contains difficulty level (format: "topic|difficulty")
+      if (img.node_id.includes('|')) {
+        const [imgTopic, imgDifficulty] = img.node_id.split('|')
+        // Check if difficulty matches
+        if (imgDifficulty !== currentDifficulty) return false
+        // Check if topic matches
+        const nodeWords = imgTopic.toLowerCase()
+        const topicWords = topicTitle.toLowerCase().split(/\s+/).filter(w => w.length > 3)
+        return topicWords.some(word => nodeWords.includes(word))
+      } else {
+        // Legacy format without difficulty - show in all tabs for backward compatibility
+        const nodeWords = img.node_id.toLowerCase()
+        const topicWords = topicTitle.toLowerCase().split(/\s+/).filter(w => w.length > 3)
+        return topicWords.some(word => nodeWords.includes(word))
+      }
+    })
+    
+    console.log('Preview - All images:', images)
+    console.log('Preview - Topic title:', topicTitle)
+    console.log('Preview - Current difficulty:', currentDifficulty)
+    console.log('Preview - Relevant images:', relevantImages)
 
     // Split content into paragraphs
     const paragraphs = content.split('\n\n')
@@ -144,6 +168,29 @@ export default function TeacherLecturePreviewPage() {
             </p>
           )
         })}
+        
+        {/* Display images at the bottom if there are any */}
+        {relevantImages.length > 0 && (
+          <div className="mt-8 pt-6 border-t border-gray-700">
+            <h3 className="text-lg font-medium text-gray-200 mb-4">Reference Images</h3>
+            <div className="grid grid-cols-2 gap-4">
+              {relevantImages.map((image, idx) => (
+                <div
+                  key={image.id}
+                  className="cursor-pointer group"
+                  onClick={() => setExpandedImage(image.original_url || image.display_url || image.thumbnail_url)}
+                >
+                  <img
+                    src={image.original_url || image.display_url || image.thumbnail_url}
+                    alt={image.teacher_description}
+                    className="w-full h-32 object-cover rounded-lg shadow-lg group-hover:opacity-90 transition-opacity"
+                  />
+                  <p className="text-xs text-gray-400 mt-2">{image.teacher_description}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     )
   }

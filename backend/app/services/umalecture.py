@@ -403,11 +403,11 @@ class UMALectureService:
         query = sql_text("""
             INSERT INTO lecture_images (
                 id, lecture_id, filename, teacher_description,
-                node_id, position, original_url, display_url,
+                node_id, position, original_url, display_url, thumbnail_url,
                 created_at
             ) VALUES (
                 :id, :lecture_id, :filename, :teacher_description,
-                :node_id, :position, :original_url, :display_url,
+                :node_id, :position, :original_url, :display_url, :thumbnail_url,
                 NOW()
             )
             RETURNING *
@@ -423,7 +423,8 @@ class UMALectureService:
                 "node_id": node_id,
                 "position": position,
                 "original_url": public_url,
-                "display_url": public_url
+                "display_url": public_url,
+                "thumbnail_url": public_url  # Use same URL for thumbnail too
             }
         )
         
@@ -444,11 +445,12 @@ class UMALectureService:
         """Add an image to a lecture"""
         # Use the same validation and processing as reading assignments
         try:
-            # Process image using the same method as reading assignments
-            processed_data = await self.image_processor.validate_and_process_image(
+            # Process image using Supabase storage
+            processed_data = await self.image_processor.validate_and_process_image_supabase(
                 file=file,
                 assignment_id=str(lecture_id),
-                image_number=position
+                image_number=position,
+                bucket_name="lecture-images"  # Using lecture-specific bucket
             )
             
             # Insert into database

@@ -331,14 +331,15 @@ async def soft_delete_test(
     if not test or test.teacher_id != current_user.id or test.deleted_at:
         raise HTTPException(status_code=404, detail="Test not found")
     
-    # Check if test is attached to any classrooms
+    # Check if test is attached to any classrooms (excluding soft-deleted assignments)
     from app.models.classroom import ClassroomAssignment
     count_result = await db.execute(
         select(func.count(ClassroomAssignment.id))
         .where(
             and_(
                 ClassroomAssignment.assignment_id == test.id,
-                ClassroomAssignment.assignment_type == "test"
+                ClassroomAssignment.assignment_type == "test",
+                ClassroomAssignment.removed_from_classroom_at.is_(None)
             )
         )
     )

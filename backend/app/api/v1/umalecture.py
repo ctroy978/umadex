@@ -136,7 +136,7 @@ async def get_lecture_classroom_assignments(
             and_(
                 ClassroomAssignment.assignment_id == lecture_id,
                 ClassroomAssignment.assignment_type == "UMALecture",
-                ClassroomAssignment.deleted_at.is_(None)  # Only show active assignments
+                ClassroomAssignment.removed_from_classroom_at.is_(None)  # Only show active assignments
             )
         )
     )
@@ -164,9 +164,6 @@ async def delete_lecture(
     db: AsyncSession = Depends(get_db)
 ):
     """Soft delete a lecture assignment"""
-    # For now, skip the classroom check since we're testing
-    # In production, you'd want to uncomment this block:
-    """
     # Check if lecture is attached to any ACTIVE classrooms (not soft-deleted)
     from app.models.classroom import ClassroomAssignment
     count_result = await db.execute(
@@ -175,7 +172,7 @@ async def delete_lecture(
             and_(
                 ClassroomAssignment.assignment_id == lecture_id,
                 ClassroomAssignment.assignment_type == "UMALecture",
-                ClassroomAssignment.deleted_at.is_(None)  # Only count non-deleted assignments
+                ClassroomAssignment.removed_from_classroom_at.is_(None)  # Only count non-deleted assignments
             )
         )
     )
@@ -186,7 +183,6 @@ async def delete_lecture(
             status_code=400,
             detail=f"Cannot archive lecture attached to {classroom_count} classroom(s). Remove from classrooms first."
         )
-    """
     
     success = await lecture_service.delete_lecture(db, lecture_id, teacher.id)
     if not success:
