@@ -31,7 +31,7 @@ interface StudentGrade {
   student_name: string;
   assignment_id: string;
   assignment_title: string;
-  assignment_type: string; // 'UMARead' or 'UMAVocab' or 'UMADebate' or 'UMAWrite' or 'UMATest' or 'UMALecture'
+  assignment_type: string; // 'UMARead' or 'UMAVocab' or 'UMADebate' or 'UMAWrite' or 'UMATest'
   work_title: string;
   date_assigned: string;
   date_completed: string | null;
@@ -240,22 +240,6 @@ export default function Gradebook() {
         console.error('Error fetching UMATest assignments:', error);
       }
       
-      // Fetch UMALecture assignments
-      try {
-        const response = await api.get('/v1/umalecture/lectures?status=published&limit=100');
-        const lectureAssignments = response.data
-          .filter((l: any) => l.status === 'published')
-          .map((l: any) => ({
-            id: l.id,
-            title: l.title,
-            workTitle: `${l.grade_level} - ${l.subject}`,
-            type: 'UMALecture'
-          }));
-        allAssignments.push(...lectureAssignments);
-      } catch (error) {
-        console.error('Error fetching UMALecture assignments:', error);
-      }
-      
       setAssignments(allAssignments);
     } catch (error) {
       console.error('Error fetching assignments:', error);
@@ -410,7 +394,7 @@ export default function Gradebook() {
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Gradebook</h2>
           <p className="mt-1 text-sm text-gray-600">
-            View and analyze student test scores across all your UMARead, UMAVocab, UMADebate, UMAWrite, UMATest, and UMALecture assignments
+            View and analyze student test scores across all your UMARead, UMAVocab, UMADebate, UMAWrite, and UMATest assignments
           </p>
         </div>
         <div className="flex gap-2">
@@ -502,7 +486,6 @@ export default function Gradebook() {
                 <option value="UMADebate">UMADebate</option>
                 <option value="UMAWrite">UMAWrite</option>
                 <option value="UMATest">UMATest</option>
-                <option value="UMALecture">UMALecture</option>
               </select>
             </div>
 

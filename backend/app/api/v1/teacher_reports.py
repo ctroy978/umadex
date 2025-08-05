@@ -274,7 +274,7 @@ async def get_gradebook(
     db: AsyncSession = Depends(get_db),
     classrooms: Optional[str] = Query(None, description="Comma-separated classroom IDs"),
     assignments: Optional[str] = Query(None, description="Comma-separated assignment IDs"),
-    assignment_types: Optional[str] = Query(None, description="Comma-separated assignment types (UMARead,UMAVocab,UMADebate,UMAWrite,UMATest,UMALecture)"),
+    assignment_types: Optional[str] = Query(None, description="Comma-separated assignment types (UMARead,UMAVocab,UMADebate,UMAWrite,UMATest)"),
     assigned_after: Optional[datetime] = Query(None),
     assigned_before: Optional[datetime] = Query(None),
     completed_after: Optional[datetime] = Query(None),
@@ -294,7 +294,7 @@ async def get_gradebook(
     # Parse filters
     classroom_ids = [UUID(cid) for cid in classrooms.split(',')] if classrooms else None
     assignment_ids = [UUID(aid) for aid in assignments.split(',')] if assignments else None
-    type_filter = assignment_types.split(',') if assignment_types else ['UMARead', 'UMAVocab', 'UMADebate', 'UMAWrite', 'UMATest', 'UMALecture']
+    type_filter = assignment_types.split(',') if assignment_types else ['UMARead', 'UMAVocab', 'UMADebate', 'UMAWrite', 'UMATest']
     
     # Get all teacher's classrooms if not specified
     if not classroom_ids:
@@ -857,89 +857,6 @@ async def get_gradebook(
         # Add deduplicated UMATest grades to all_grades
         all_grades.extend(umatest_attempts.values())
     
-    # Query 6: Get UMALecture scores from gradebook_entries
-    if 'UMALecture' in type_filter:
-        # Build filters for SQL query
-        quoted_classroom_ids = ','.join([f"'{str(cid)}'" for cid in classroom_ids])
-        lecture_filters = [f"ge.classroom_id IN ({quoted_classroom_ids})"]
-        lecture_filters.append("ge.assignment_type = 'umalecture'")
-        
-        if assignment_ids:
-            quoted_assignment_ids = ','.join([f"'{str(aid)}'" for aid in assignment_ids])
-            lecture_filters.append(f"ge.assignment_id IN ({quoted_assignment_ids})")
-        if assigned_after:
-            lecture_filters.append(f"ca.assigned_at >= '{assigned_after.isoformat()}'")
-        if assigned_before:
-            lecture_filters.append(f"ca.assigned_at <= '{assigned_before.isoformat()}'")
-        if completed_after:
-            lecture_filters.append(f"ge.completed_at >= '{completed_after.isoformat()}'")
-        if completed_before:
-            lecture_filters.append(f"ge.completed_at <= '{completed_before.isoformat()}'")
-        if student_search:
-            lecture_filters.append(f"(LOWER(u.first_name) LIKE LOWER('%{student_search}%') OR LOWER(u.last_name) LIKE LOWER('%{student_search}%'))")
-        if completion_status == 'completed':
-            lecture_filters.append("ge.score_percentage IS NOT NULL")
-        elif completion_status == 'incomplete':
-            lecture_filters.append("ge.score_percentage IS NULL")
-        if min_score is not None:
-            lecture_filters.append(f"ge.score_percentage >= {min_score}")
-        if max_score is not None:
-            lecture_filters.append(f"ge.score_percentage <= {max_score}")
-        
-        # Query gradebook_entries for UMALecture scores
-        lecture_sql = f"""
-            SELECT 
-                ge.id,
-                ge.student_id,
-                ge.assignment_id as lecture_id,
-                ge.classroom_id,
-                ge.score_percentage,
-                ge.completed_at,
-                ge.metadata,
-                u.first_name,
-                u.last_name,
-                la.assignment_title,
-                la.subject,
-                la.grade_level,
-                ca.assigned_at,
-                c.name as classroom_name
-            FROM gradebook_entries ge
-            JOIN users u ON u.id = ge.student_id
-            JOIN reading_assignments la ON la.id = ge.assignment_id
-            JOIN classroom_assignments ca ON ca.assignment_id = ge.assignment_id 
-                AND ca.classroom_id = ge.classroom_id 
-                AND ca.assignment_type = 'UMALecture'
-            JOIN classrooms c ON c.id = ge.classroom_id
-            WHERE {' AND '.join(lecture_filters)}
-            AND c.teacher_id = :teacher_id
-            AND c.deleted_at IS NULL
-            AND u.deleted_at IS NULL
-        """
-        
-        lecture_result = await db.execute(text(lecture_sql), {"teacher_id": teacher.id})
-        lecture_rows = lecture_result.fetchall()
-        
-        # Process UMALecture results
-        for row in lecture_rows:
-            metadata = row.metadata or {}
-            
-            all_grades.append(StudentGrade(
-                id=str(row.id),
-                student_id=row.student_id,
-                student_name=f"{row.last_name}, {row.first_name}",
-                assignment_id=row.lecture_id,
-                assignment_title=row.assignment_title,
-                assignment_type='UMALecture',
-                work_title=f"{row.grade_level} - {row.subject}",
-                date_assigned=row.assigned_at,
-                date_completed=row.completed_at,
-                test_date=row.completed_at,
-                test_score=float(row.score_percentage) if row.score_percentage else None,
-                difficulty_reached=None,  # Could extract from metadata if needed
-                time_spent=metadata.get('time_spent_minutes'),
-                status='completed' if row.score_percentage else 'in_progress'
-            ))
-    
     # Calculate summary statistics
     total_students = len(set(grade.student_id for grade in all_grades))
     scores = [grade.test_score for grade in all_grades if grade.test_score is not None]
@@ -1003,7 +920,7 @@ async def export_gradebook(
     db: AsyncSession = Depends(get_db),
     classrooms: Optional[str] = Query(None, description="Comma-separated classroom IDs"),
     assignments: Optional[str] = Query(None, description="Comma-separated assignment IDs"),
-    assignment_types: Optional[str] = Query(None, description="Comma-separated assignment types (UMARead,UMAVocab,UMADebate,UMAWrite,UMATest,UMALecture)"),
+    assignment_types: Optional[str] = Query(None, description="Comma-separated assignment types (UMARead,UMAVocab,UMADebate,UMAWrite,UMATest)"),
     assigned_after: Optional[datetime] = Query(None),
     assigned_before: Optional[datetime] = Query(None),
     completed_after: Optional[datetime] = Query(None),

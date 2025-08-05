@@ -1412,31 +1412,6 @@ class UMALectureService:
         
         await db.commit()
         
-        # After updating progress, calculate and update grade if a difficulty level was completed
-        if question_index is not None and is_correct is not None and all(topic_progress["questions_correct"][tab]):
-            # Get lecture ID
-            lecture_query = sql_text("""
-                SELECT ca.assignment_id as lecture_id
-                FROM classroom_assignments ca
-                WHERE ca.id = :assignment_id
-                AND ca.assignment_type = 'UMALecture'
-            """)
-            
-            result = await db.execute(
-                lecture_query,
-                {"assignment_id": assignment_id}
-            )
-            
-            lecture_data = result.mappings().first()
-            if lecture_data:
-                # Calculate current grade
-                grade = await self.calculate_lecture_grade(db, student_id, assignment_id)
-                if grade is not None:
-                    # Update gradebook
-                    await self.create_or_update_gradebook_entry(
-                        db, student_id, assignment_id, lecture_data["lecture_id"], grade
-                    )
-        
         return progress_metadata
     
     async def evaluate_student_response(

@@ -111,20 +111,26 @@ export default function EditLecturePage() {
   const saveEdit = async () => {
     if (!editingContent || !lectureStructure) return
     
-    const newStructure = { ...lectureStructure }
-    const topic = newStructure.topics[editingContent.topicId]
-    
-    if (editingContent.field === 'content') {
-      topic.difficulty_levels[editingContent.difficulty].content = editValue
-    } else if (editingContent.field === 'question' && editingContent.index !== undefined) {
-      topic.difficulty_levels[editingContent.difficulty].questions[editingContent.index].question = editValue
+    try {
+      const newStructure = { ...lectureStructure }
+      const topic = newStructure.topics[editingContent.topicId]
+      
+      if (editingContent.field === 'content') {
+        topic.difficulty_levels[editingContent.difficulty].content = editValue
+      } else if (editingContent.field === 'question' && editingContent.index !== undefined) {
+        topic.difficulty_levels[editingContent.difficulty].questions[editingContent.index].question = editValue
+      }
+      
+      // Update local state first
+      setLectureStructure(newStructure)
+      setEditingContent(null)
+      
+      // Auto-save to database
+      await saveLectureStructure(newStructure)
+    } catch (error) {
+      console.error('Error saving edit:', error)
+      setError('Failed to save edit. Please try again.')
     }
-    
-    setLectureStructure(newStructure)
-    setEditingContent(null)
-    
-    // Auto-save
-    await saveLectureStructure(newStructure)
   }
 
   const cancelEdit = () => {
@@ -137,15 +143,21 @@ export default function EditLecturePage() {
     setError(null)
     
     try {
-      await umalectureApi.updateLectureStructure(
+      console.log('Saving lecture structure:', structure || lectureStructure)
+      
+      const response = await umalectureApi.updateLectureStructure(
         lectureId, 
         structure || lectureStructure
       )
+      
+      console.log('Save response:', response)
+      
       setSuccess('Changes saved successfully')
       setTimeout(() => setSuccess(null), 3000)
-    } catch (err) {
-      setError('Failed to save changes')
-      console.error(err)
+    } catch (err: any) {
+      console.error('Error saving lecture structure:', err)
+      const errorMessage = err.response?.data?.detail || err.message || 'Failed to save changes'
+      setError(errorMessage)
     } finally {
       setSaving(false)
     }
@@ -226,6 +238,15 @@ export default function EditLecturePage() {
           </div>
           
           <div className="flex items-center space-x-3">
+            <button
+              onClick={() => saveLectureStructure()}
+              disabled={saving}
+              className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center disabled:opacity-50"
+            >
+              <Save className="w-4 h-4 mr-2" />
+              {saving ? 'Saving...' : 'Save All Changes'}
+            </button>
+            
             <button
               onClick={previewAsStudent}
               className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center"
@@ -329,7 +350,20 @@ export default function EditLecturePage() {
 
                         {/* Content */}
                         <div className="mb-4">
-                          <h4 className="font-medium text-sm text-gray-700 mb-2">Content</h4>
+                          <div className="flex items-center justify-between mb-2">
+                            <h4 className="font-medium text-sm text-gray-700">Content</h4>
+                            {!(editingContent?.topicId === topicId && 
+                              editingContent?.difficulty === difficulty && 
+                              editingContent?.field === 'content') && (
+                              <button
+                                onClick={() => startEditing(topicId, difficulty, 'content', content.content)}
+                                className="text-xs text-primary-600 hover:text-primary-700 flex items-center"
+                              >
+                                <Edit3 className="w-3 h-3 mr-1" />
+                                Edit
+                              </button>
+                            )}
+                          </div>
                           {editingContent?.topicId === topicId && 
                            editingContent?.difficulty === difficulty && 
                            editingContent?.field === 'content' ? (
@@ -339,6 +373,7 @@ export default function EditLecturePage() {
                                 onChange={(e) => setEditValue(e.target.value)}
                                 className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-600 focus:border-transparent"
                                 rows={6}
+                                autoFocus
                               />
                               <div className="mt-2 flex space-x-2">
                                 <button
@@ -357,8 +392,9 @@ export default function EditLecturePage() {
                             </div>
                           ) : (
                             <div 
-                              className="prose prose-sm max-w-none text-gray-700 cursor-pointer hover:bg-gray-50 p-3 rounded"
+                              className="prose prose-sm max-w-none text-gray-700 p-3 rounded border border-gray-200 hover:border-gray-300 hover:bg-gray-50 transition-colors"
                               onClick={() => startEditing(topicId, difficulty, 'content', content.content)}
+                              title="Click to edit"
                             >
                               {content.content}
                             </div>
@@ -372,20 +408,55 @@ export default function EditLecturePage() {
                             <div className="space-y-2">
                               {content.questions.map((question: any, index: number) => (
                                 <div key={index} className="bg-gray-50 rounded p-3">
-                                  <div className="flex items-start justify-between">
-                                    <div className="flex-1">
-                                      <p className="text-sm font-medium">Q{index + 1}: {question.question}</p>
-                                      <p className="text-sm text-gray-600 mt-1">
-                                        Answer: {question.correct_answer}
-                                      </p>
+                                  {editingContent?.topicId === topicId && 
+                                   editingContent?.difficulty === difficulty && 
+                                   editingContent?.field === 'question' &&
+                                   editingContent?.index === index ? (
+                                    <div>
+                                      <textarea
+                                        value={editValue}
+                                        onChange={(e) => setEditValue(e.target.value)}
+                                        className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-600 focus:border-transparent text-sm"
+                                        rows={3}
+                                        autoFocus
+                                      />
+                                      <div className="mt-2 flex space-x-2">
+                                        <button
+                                          onClick={saveEdit}
+                                          className="px-3 py-1 bg-primary-600 text-white rounded text-sm hover:bg-primary-700"
+                                        >
+                                          Save
+                                        </button>
+                                        <button
+                                          onClick={cancelEdit}
+                                          className="px-3 py-1 bg-gray-200 text-gray-700 rounded text-sm hover:bg-gray-300"
+                                        >
+                                          Cancel
+                                        </button>
+                                      </div>
                                     </div>
-                                    <button
-                                      onClick={() => startEditing(topicId, difficulty, 'question', question.question, index)}
-                                      className="ml-2 text-gray-400 hover:text-gray-600"
-                                    >
-                                      <Edit3 className="w-4 h-4" />
-                                    </button>
-                                  </div>
+                                  ) : (
+                                    <div className="flex items-start justify-between">
+                                      <div className="flex-1">
+                                        <p className="text-sm font-medium">Q{index + 1}: {question.question}</p>
+                                        <p className="text-sm text-gray-600 mt-1">
+                                          Answer: {question.correct_answer}
+                                        </p>
+                                        {question.options && (
+                                          <p className="text-xs text-gray-500 mt-1">
+                                            Options: {question.options.join(', ')}
+                                          </p>
+                                        )}
+                                      </div>
+                                      <button
+                                        onClick={() => startEditing(topicId, difficulty, 'question', question.question, index)}
+                                        className="ml-2 text-primary-600 hover:text-primary-700 p-1"
+                                        title="Edit question"
+                                      >
+                                        <Edit3 className="w-4 h-4" />
+                                      </button>
+                                    </div>
+                                  )}
                                 </div>
                               ))}
                             </div>
