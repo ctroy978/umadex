@@ -43,6 +43,7 @@ class LectureAssignmentResponse(LectureAssignmentBase):
     created_at: datetime
     updated_at: datetime
     deleted_at: Optional[datetime] = None
+    classroom_count: Optional[int] = None  # Add classroom_count as optional field for list views
     
     class Config:
         from_attributes = True
@@ -166,3 +167,47 @@ class LectureClassroomAssignment(BaseModel):
     classroom_ids: List[UUID]
     start_date: Optional[datetime] = None
     due_date: Optional[datetime] = None
+
+
+# Progress Report Schemas for Teacher Analytics
+class LectureProgressBadge(BaseModel):
+    """Badge representation for a difficulty level"""
+    level: str  # basic, intermediate, advanced, expert
+    completed: bool
+    questions_correct: int
+    total_questions: int
+
+
+class StudentLectureProgress(BaseModel):
+    """Individual student progress for a lecture"""
+    student_id: UUID
+    student_name: str
+    assignment_id: int
+    lecture_id: UUID
+    lecture_title: str
+    started_at: Optional[datetime]
+    last_activity_at: Optional[datetime]
+    current_topic: Optional[str]
+    current_tab: Optional[str]
+    topics_completed: int
+    total_topics: int
+    badges: List[LectureProgressBadge]
+    overall_progress: float  # Percentage 0-100
+    status: str  # not_started, in_progress, completed
+
+
+class LectureProgressSummary(BaseModel):
+    """Summary statistics for a lecture"""
+    total_students: int
+    students_started: int
+    students_completed: int
+    average_progress: float
+    badge_distribution: Dict[str, int]  # {basic: 15, intermediate: 10, advanced: 5, expert: 2}
+
+
+class LectureProgressReport(BaseModel):
+    """Complete progress report for a classroom's lectures"""
+    classroom_id: UUID
+    classroom_name: str
+    lectures: List[Dict[str, Any]]  # List of lectures with their student progress
+    summary: LectureProgressSummary

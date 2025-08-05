@@ -5,6 +5,7 @@ import { ChartBarIcon, KeyIcon, UserGroupIcon, DocumentTextIcon } from '@heroico
 import BypassCodeUsageReport from '@/components/teacher/reports/BypassCodeUsageReport';
 import Gradebook from '@/components/teacher/reports/Gradebook';
 import StudentAnalysis from '@/components/teacher/reports/StudentAnalysis';
+import AssignmentAnalytics from '@/components/teacher/reports/AssignmentAnalytics';
 
 type ReportType = 'overview' | 'bypass-code' | 'student-progress' | 'assignment-stats';
 
@@ -26,10 +27,9 @@ export default function ReportsPage() {
     },
     {
       id: 'assignment-stats' as ReportType,
-      name: 'Assignment Analytics',
+      name: 'Lecture Progress Tracking',
       icon: DocumentTextIcon,
-      description: 'Detailed statistics on assignment completion and scores',
-      comingSoon: true
+      description: 'Monitor student progress through UMALecture content with visual difficulty badges'
     },
     {
       id: 'bypass-code' as ReportType,
@@ -89,16 +89,7 @@ export default function ReportsPage() {
 
         {activeReport === 'student-progress' && <StudentAnalysis />}
 
-        {activeReport === 'assignment-stats' && (
-          <div className="text-center py-12">
-            <DocumentTextIcon className="h-12 w-12 mx-auto mb-4 text-gray-400" />
-            <h2 className="text-xl font-semibold text-gray-900 mb-2">Assignment Analytics</h2>
-            <p className="text-gray-600">
-              Assignment analytics are coming soon. You'll be able to see completion rates, average scores,
-              time spent on assignments, and identify which questions are most challenging for students.
-            </p>
-          </div>
-        )}
+        {activeReport === 'assignment-stats' && <AssignmentAnalytics />}
       </div>
     </div>
   );

@@ -1763,3 +1763,250 @@ async def get_umatest_analytics(db: AsyncSession, student_id: UUID) -> Dict[Any,
         "conceptMastery": concept_mastery,
         "misconceptions": list(set(all_misconceptions))[:50]  # Unique misconceptions, limited to 50
     }
+
+
+@router.get("/reports/lecture-progress/{classroom_id}")
+async def get_lecture_progress(
+    classroom_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get UMALecture progress for all students in a classroom"""
+    if current_user.role != UserRole.TEACHER:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only teachers can access this endpoint"
+        )
+    
+    # Verify teacher owns this classroom
+    classroom = await db.get(Classroom, classroom_id)
+    if not classroom or classroom.teacher_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied to this classroom"
+        )
+    
+    # Get all UMALecture assignments for this classroom
+    lecture_query = select(
+        ClassroomAssignment.id.label('assignment_id'),
+        ReadingAssignment.id.label('lecture_id'),
+        ReadingAssignment.assignment_title,
+        ReadingAssignment.raw_content
+    ).join(
+        ReadingAssignment,
+        ClassroomAssignment.assignment_id == ReadingAssignment.id
+    ).where(
+        and_(
+            ClassroomAssignment.classroom_id == classroom_id,
+            ClassroomAssignment.assignment_type == 'UMALecture',
+            ClassroomAssignment.removed_from_classroom_at.is_(None),
+            ReadingAssignment.deleted_at.is_(None)
+        )
+    )
+    
+    lecture_result = await db.execute(lecture_query)
+    lectures = lecture_result.all()
+    
+    if not lectures:
+        return {
+            "classroom_id": classroom_id,
+            "classroom_name": classroom.name,
+            "lectures": [],
+            "summary": {
+                "total_students": 0,
+                "students_started": 0,
+                "students_completed": 0,
+                "average_progress": 0.0,
+                "badge_distribution": {}
+            }
+        }
+    
+    # Get all students in the classroom
+    students_query = select(
+        User.id,
+        User.first_name,
+        User.last_name
+    ).join(
+        ClassroomStudent,
+        User.id == ClassroomStudent.student_id
+    ).where(
+        and_(
+            ClassroomStudent.classroom_id == classroom_id,
+            ClassroomStudent.removed_at.is_(None)
+        )
+    ).order_by(User.last_name, User.first_name)
+    
+    students_result = await db.execute(students_query)
+    students = students_result.all()
+    
+    # Process each lecture
+    lecture_reports = []
+    total_badge_distribution = {"basic": 0, "intermediate": 0, "advanced": 0, "expert": 0}
+    all_progress_percentages = []
+    total_students_started = 0
+    total_students_completed = 0
+    
+    for lecture in lectures:
+        lecture_id = lecture.lecture_id
+        assignment_id = lecture.assignment_id
+        lecture_metadata = json.loads(lecture.raw_content or "{}")
+        lecture_structure = lecture_metadata.get("lecture_structure", {})
+        topics = lecture_structure.get("topics", {})
+        total_topics = len(topics)
+        
+        # Get student progress for this lecture
+        progress_query = select(
+            StudentAssignment,
+            User.id,
+            User.first_name,
+            User.last_name
+        ).join(
+            User,
+            StudentAssignment.student_id == User.id
+        ).where(
+            and_(
+                StudentAssignment.classroom_assignment_id == assignment_id,
+                StudentAssignment.assignment_type == 'UMALecture'
+            )
+        )
+        
+        progress_result = await db.execute(progress_query)
+        student_progress_data = progress_result.all()
+        
+        # Process student progress
+        student_progress_list = []
+        lecture_badge_distribution = {"basic": 0, "intermediate": 0, "advanced": 0, "expert": 0}
+        lecture_progress_percentages = []
+        lecture_students_started = 0
+        lecture_students_completed = 0
+        
+        for student in students:
+            # Find progress for this student
+            student_assignment = None
+            for prog_data in student_progress_data:
+                if prog_data[1] == student.id:  # User.id
+                    student_assignment = prog_data[0]  # StudentAssignment
+                    break
+            
+            badges = []
+            topics_completed = 0
+            overall_progress = 0.0
+            status = "not_started"
+            
+            if student_assignment and student_assignment.progress_metadata:
+                progress_meta = student_assignment.progress_metadata
+                topic_completion = progress_meta.get("topic_completion", {})
+                
+                # Calculate badges based on highest difficulty completed across all topics
+                difficulty_levels = ["basic", "intermediate", "advanced", "expert"]
+                for level in difficulty_levels:
+                    completed = False
+                    questions_correct = 0
+                    total_questions = 0
+                    
+                    # Check if this difficulty level is completed in any topic
+                    for topic_id, topic_progress in topic_completion.items():
+                        if level in topic_progress.get("completed_tabs", []):
+                            completed = True
+                            lecture_badge_distribution[level] += 1
+                            total_badge_distribution[level] += 1
+                            break
+                        
+                        # Count questions for this level
+                        level_questions = topic_progress.get("questions_correct", {}).get(level, [])
+                        if level_questions:
+                            questions_correct += sum(1 for q in level_questions if q)
+                            total_questions += len(level_questions)
+                    
+                    badges.append({
+                        "level": level,
+                        "completed": completed,
+                        "questions_correct": questions_correct,
+                        "total_questions": total_questions
+                    })
+                
+                # Calculate topics completed
+                topics_completed = len([t for t in topic_completion.values() 
+                                       if t.get("completed_tabs")])
+                
+                # Calculate overall progress
+                if total_topics > 0:
+                    overall_progress = (topics_completed / total_topics) * 100
+                
+                # Determine status
+                if progress_meta.get("lecture_complete"):
+                    status = "completed"
+                    lecture_students_completed += 1
+                    total_students_completed += 1
+                elif topics_completed > 0 or progress_meta.get("current_topic"):
+                    status = "in_progress"
+                    lecture_students_started += 1
+                    total_students_started += 1
+                else:
+                    # Check if they at least started
+                    if student_assignment.started_at:
+                        status = "in_progress"
+                        lecture_students_started += 1
+                        total_students_started += 1
+                
+                lecture_progress_percentages.append(overall_progress)
+                all_progress_percentages.append(overall_progress)
+            else:
+                # No progress - create empty badges
+                for level in ["basic", "intermediate", "advanced", "expert"]:
+                    badges.append({
+                        "level": level,
+                        "completed": False,
+                        "questions_correct": 0,
+                        "total_questions": 0
+                    })
+            
+            student_progress_list.append({
+                "student_id": student.id,
+                "student_name": f"{student.last_name}, {student.first_name}",
+                "assignment_id": assignment_id,
+                "lecture_id": lecture_id,
+                "lecture_title": lecture.assignment_title,
+                "started_at": student_assignment.started_at if student_assignment else None,
+                "last_activity_at": student_assignment.last_activity_at if student_assignment else None,
+                "current_topic": progress_meta.get("current_topic") if student_assignment and student_assignment.progress_metadata else None,
+                "current_tab": progress_meta.get("current_tab") if student_assignment and student_assignment.progress_metadata else None,
+                "topics_completed": topics_completed,
+                "total_topics": total_topics,
+                "badges": badges,
+                "overall_progress": overall_progress,
+                "status": status
+            })
+        
+        # Calculate lecture summary
+        lecture_avg_progress = sum(lecture_progress_percentages) / len(lecture_progress_percentages) if lecture_progress_percentages else 0.0
+        
+        lecture_reports.append({
+            "lecture_id": lecture_id,
+            "lecture_title": lecture.assignment_title,
+            "assignment_id": assignment_id,
+            "students": student_progress_list,
+            "summary": {
+                "total_students": len(students),
+                "students_started": lecture_students_started,
+                "students_completed": lecture_students_completed,
+                "average_progress": round(lecture_avg_progress, 1),
+                "badge_distribution": lecture_badge_distribution
+            }
+        })
+    
+    # Calculate overall summary
+    overall_avg_progress = sum(all_progress_percentages) / len(all_progress_percentages) if all_progress_percentages else 0.0
+    
+    return {
+        "classroom_id": classroom_id,
+        "classroom_name": classroom.name,
+        "lectures": lecture_reports,
+        "summary": {
+            "total_students": len(students),
+            "students_started": total_students_started,
+            "students_completed": total_students_completed,
+            "average_progress": round(overall_avg_progress, 1),
+            "badge_distribution": total_badge_distribution
+        }
+    }

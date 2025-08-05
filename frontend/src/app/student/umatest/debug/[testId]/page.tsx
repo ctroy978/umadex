@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
-import { authFetch } from '@/lib/api'
+import { api } from '@/lib/api'
 
 export default function UMATestDebugPage() {
   const params = useParams()
@@ -14,12 +14,8 @@ export default function UMATestDebugPage() {
   useEffect(() => {
     async function fetchDebugData() {
       try {
-        const response = await authFetch(`/api/v1/student/umatest/test/debug/${testId}`)
-        if (!response.ok) {
-          throw new Error(`Failed to fetch debug data: ${response.statusText}`)
-        }
-        const data = await response.json()
-        setDebugData(data)
+        const data = await api.get(`/v1/student/umatest/test/debug/${testId}`)
+        setDebugData(data.data)
       } catch (err: any) {
         setError(err.message)
       } finally {
@@ -73,7 +69,7 @@ export default function UMATestDebugPage() {
               {Object.entries(debugData.evaluation_scores).map(([index, score]) => (
                 <tr key={index}>
                   <td>{index}</td>
-                  <td>{score}</td>
+                  <td>{String(score)}</td>
                 </tr>
               ))}
             </tbody>
