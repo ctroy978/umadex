@@ -551,13 +551,43 @@ Format your response as JSON:
             
             # Calculate points per question
             total_questions = len(evaluation_result.question_evaluations)
-            points_per_question = 100.0 / total_questions if total_questions > 0 else 0
+            
+            # Check if it's a hand-built test and calculate actual total points
+            test_type = test_data.get("test_type", "lecture_based")
+            if test_type == "hand_built":
+                # Calculate total points from hand-built questions
+                total_possible_points = 0
+                for topic_data in test_data["questions"].values():
+                    for question in topic_data.get("questions", []):
+                        total_possible_points += question.get("points", 10)
+                logger.info(f"Hand-built test with total possible points: {total_possible_points}")
+            else:
+                # Lecture-based tests are always 100 points
+                total_possible_points = 100.0
+            
+            points_per_question = total_possible_points / total_questions if total_questions > 0 else 0
             
             # Store each question evaluation
             logger.info(f"Starting to store {len(evaluation_result.question_evaluations)} question evaluations")
             
             for index, evaluation in enumerate(evaluation_result.question_evaluations):
-                points_earned = (evaluation.rubric_score / 4.0) * points_per_question
+                # For hand-built tests, use the actual question points
+                if test_type == "hand_built":
+                    # Get the actual points for this question
+                    question_points = 10  # default
+                    question_index = 0
+                    for topic_data in test_data["questions"].values():
+                        for question in topic_data.get("questions", []):
+                            if question_index == index:
+                                question_points = question.get("points", 10)
+                                break
+                            question_index += 1
+                    points_earned = (evaluation.rubric_score / 4.0) * question_points
+                    max_points = question_points
+                else:
+                    # Lecture-based tests use equal points per question
+                    points_earned = (evaluation.rubric_score / 4.0) * points_per_question
+                    max_points = points_per_question
                 
                 logger.info(f"Creating evaluation record for question {index}: Score {evaluation.rubric_score}, Points: {points_earned}")
                 
@@ -567,7 +597,7 @@ Format your response as JSON:
                     question_number=index + 1,  # question_number is 1-based
                     rubric_score=evaluation.rubric_score,
                     points_earned=Decimal(str(round(points_earned, 2))),
-                    max_points=Decimal(str(round(points_per_question, 2))),
+                    max_points=Decimal(str(round(max_points, 2))),
                     scoring_rationale=evaluation.scoring_rationale,
                     feedback_text=evaluation.feedback,
                     key_concepts_identified=evaluation.key_concepts_identified,
@@ -599,22 +629,32 @@ Format your response as JSON:
         )
         evaluations = result.scalars().all()
         
-        # Calculate total score
-        total_score = sum(eval.points_earned for eval in evaluations)
+        # Calculate total score and max possible points
+        total_points_earned = sum(eval.points_earned for eval in evaluations)
+        total_max_points = sum(eval.max_points for eval in evaluations)
+        
+        # Convert to percentage (0-100 scale) for consistent gradebook display
+        if total_max_points > 0:
+            percentage_score = (total_points_earned / total_max_points) * 100
+        else:
+            percentage_score = 0
+        
+        # Round to 2 decimal places
+        final_score = Decimal(str(round(float(percentage_score), 2)))
         
         # Update test attempt
         await self.db.execute(
             update(StudentTestAttempt)
             .where(StudentTestAttempt.id == test_attempt_id)
             .values(
-                score=total_score,
+                score=final_score,
                 evaluated_at=datetime.now(timezone.utc),
-                feedback=self._generate_test_feedback(total_score, len(evaluations))
+                feedback=self._generate_test_feedback(final_score, len(evaluations))
             )
         )
         await self.db.commit()
         
-        return total_score
+        return final_score
     
     def _generate_test_feedback(self, score: Decimal, total_questions: int) -> str:
         """Generate overall test feedback."""
