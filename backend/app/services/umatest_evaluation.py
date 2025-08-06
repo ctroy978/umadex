@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field, validator
 import google.generativeai as genai
 
 from app.models.tests import StudentTestAttempt, TestQuestionEvaluation
-from app.models.umatest import TestAssignment
+from app.models.umatest import TestAssignment, HandBuiltTestQuestion
 from app.models.user import User
 from app.config.ai_models import ANSWER_EVALUATION_MODEL
 from app.config.ai_config import get_gemini_config
@@ -144,12 +144,47 @@ class UMATestEvaluationService:
         # Get student info
         student = test_attempt.student
         
+        # Get questions based on test type
+        questions_data = {}
+        
+        if test_assignment.test_type == 'hand_built':
+            # Load hand-built questions
+            hand_built_questions = await self.db.execute(
+                select(HandBuiltTestQuestion)
+                .where(HandBuiltTestQuestion.test_assignment_id == test_assignment.id)
+                .order_by(HandBuiltTestQuestion.position)
+            )
+            hand_built_questions = hand_built_questions.scalars().all()
+            
+            # Format as similar structure to lecture-based tests for consistency
+            for question in hand_built_questions:
+                question_id = str(question.id)
+                questions_data[question_id] = {
+                    "questions": [{
+                        "id": question_id,
+                        "question_text": question.question_text,
+                        "difficulty_level": question.difficulty_level,
+                        "answer_key": {
+                            "correct_answer": question.correct_answer,
+                            "explanation": question.explanation,
+                            "evaluation_rubric": question.evaluation_rubric
+                        },
+                        "points": question.points
+                    }],
+                    "topic_title": f"Question {question.position}",
+                    "source_lecture_title": "Hand-Built Test"
+                }
+        else:
+            # Lecture-based test - use existing structure
+            questions_data = test_assignment.test_structure.get('topics', {})
+        
         return {
             "test_attempt": test_attempt,
             "test_assignment": test_assignment,
             "student": student,
-            "questions": test_assignment.test_structure.get('topics', {}),
-            "answers": test_attempt.answers_data or {}
+            "questions": questions_data,
+            "answers": test_attempt.answers_data or {},
+            "test_type": test_assignment.test_type
         }
     
     async def _perform_ai_evaluation(self, test_data: Dict[str, Any]) -> TestEvaluationResult:

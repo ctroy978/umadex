@@ -55,21 +55,64 @@ class TestStructure(BaseModel):
     generation_metadata: GenerationMetadata
 
 
+# Hand-built test schemas
+class HandBuiltQuestionCreate(BaseModel):
+    """Create a hand-built test question"""
+    question_text: str = Field(..., min_length=1)
+    correct_answer: str = Field(..., min_length=1)
+    explanation: str = Field(..., min_length=1)
+    evaluation_rubric: str = Field(..., min_length=1)
+    difficulty_level: str = Field(..., pattern='^(basic|intermediate|advanced|expert)$')
+    points: Optional[int] = Field(10, gt=0)
+
+
+class HandBuiltQuestionUpdate(BaseModel):
+    """Update a hand-built test question"""
+    question_text: Optional[str] = Field(None, min_length=1)
+    correct_answer: Optional[str] = Field(None, min_length=1)
+    explanation: Optional[str] = Field(None, min_length=1)
+    evaluation_rubric: Optional[str] = Field(None, min_length=1)
+    difficulty_level: Optional[str] = Field(None, pattern='^(basic|intermediate|advanced|expert)$')
+    points: Optional[int] = Field(None, gt=0)
+
+
+class HandBuiltQuestionResponse(BaseModel):
+    """Response for a hand-built test question"""
+    id: UUID
+    test_assignment_id: UUID
+    question_text: str
+    correct_answer: str
+    explanation: str
+    evaluation_rubric: str
+    difficulty_level: str
+    position: int
+    points: int
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
 # Request schemas
 class CreateTestRequest(BaseModel):
     """Request to create a new test"""
     test_title: str = Field(..., min_length=1, max_length=255)
     test_description: Optional[str] = None
-    selected_lecture_ids: List[UUID] = Field(..., min_items=1)
+    test_type: str = Field('lecture_based', pattern='^(lecture_based|hand_built)$')
+    selected_lecture_ids: Optional[List[UUID]] = None
     time_limit_minutes: Optional[int] = Field(None, gt=0)
     attempt_limit: Optional[int] = Field(1, gt=0)
     randomize_questions: Optional[bool] = False
     show_feedback_immediately: Optional[bool] = True
     
     @validator('selected_lecture_ids')
-    def validate_lecture_ids(cls, v):
-        if len(v) == 0:
-            raise ValueError("At least one lecture must be selected")
+    def validate_lecture_ids(cls, v, values):
+        test_type = values.get('test_type', 'lecture_based')
+        if test_type == 'lecture_based' and (not v or len(v) == 0):
+            raise ValueError("At least one lecture must be selected for lecture-based tests")
+        elif test_type == 'hand_built' and v:
+            raise ValueError("Hand-built tests should not have selected lectures")
         return v
 
 
@@ -97,7 +140,8 @@ class TestAssignmentBase(BaseModel):
     teacher_id: UUID
     test_title: str
     test_description: Optional[str]
-    selected_lecture_ids: List[UUID]
+    test_type: str
+    selected_lecture_ids: Optional[List[UUID]]
     time_limit_minutes: Optional[int]
     attempt_limit: int
     randomize_questions: bool

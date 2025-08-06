@@ -13,7 +13,7 @@ import logging
 from app.core.database import get_db, AsyncSessionLocal
 from app.utils.supabase_deps import get_current_user_supabase as get_current_user
 from app.models.user import User
-from app.models.umatest import TestAssignment, TestGenerationLog
+from app.models.umatest import TestAssignment, TestGenerationLog, HandBuiltTestQuestion
 from app.models.reading import ReadingAssignment
 from app.schemas.umatest import (
     CreateTestRequest,
@@ -24,7 +24,10 @@ from app.schemas.umatest import (
     TestListResponse,
     LectureInfo,
     GenerationLogResponse,
-    calculate_question_counts
+    calculate_question_counts,
+    HandBuiltQuestionCreate,
+    HandBuiltQuestionUpdate,
+    HandBuiltQuestionResponse
 )
 from app.services.umatest_ai import umatest_ai_service
 
@@ -70,28 +73,33 @@ async def create_test(
     if current_user.role not in ["teacher", "admin"]:
         raise HTTPException(status_code=403, detail="Only teachers can create tests")
     
-    # Validate that all selected lectures exist and belong to the teacher
-    lecture_result = await db.execute(
-        select(ReadingAssignment).where(
-            and_(
-                ReadingAssignment.id.in_(request.selected_lecture_ids),
-                ReadingAssignment.assignment_type == 'UMALecture',
-                ReadingAssignment.teacher_id == current_user.id,
-                ReadingAssignment.deleted_at.is_(None)
+    # For lecture-based tests, validate lectures exist and belong to teacher
+    if request.test_type == 'lecture_based':
+        if not request.selected_lecture_ids:
+            raise HTTPException(status_code=400, detail="Lecture-based tests require selected lectures")
+            
+        lecture_result = await db.execute(
+            select(ReadingAssignment).where(
+                and_(
+                    ReadingAssignment.id.in_(request.selected_lecture_ids),
+                    ReadingAssignment.assignment_type == 'UMALecture',
+                    ReadingAssignment.teacher_id == current_user.id,
+                    ReadingAssignment.deleted_at.is_(None)
+                )
             )
         )
-    )
-    lectures = lecture_result.scalars().all()
-    
-    if len(lectures) != len(request.selected_lecture_ids):
-        raise HTTPException(status_code=400, detail="One or more selected lectures not found or not owned by teacher")
+        lectures = lecture_result.scalars().all()
+        
+        if len(lectures) != len(request.selected_lecture_ids):
+            raise HTTPException(status_code=400, detail="One or more selected lectures not found or not owned by teacher")
     
     # Create test assignment
     test_assignment = TestAssignment(
         teacher_id=current_user.id,
         test_title=request.test_title,
         test_description=request.test_description,
-        selected_lecture_ids=request.selected_lecture_ids,
+        test_type=request.test_type,
+        selected_lecture_ids=request.selected_lecture_ids if request.test_type == 'lecture_based' else None,
         time_limit_minutes=request.time_limit_minutes,
         attempt_limit=request.attempt_limit,
         randomize_questions=request.randomize_questions,
@@ -183,36 +191,37 @@ async def get_test_detail(
     if not test or test.teacher_id != current_user.id or test.deleted_at:
         raise HTTPException(status_code=404, detail="Test not found")
     
-    # Get lecture information
-    lecture_result = await db.execute(
-        select(ReadingAssignment).where(
-            ReadingAssignment.id.in_(test.selected_lecture_ids)
-        )
-    )
-    lectures = lecture_result.scalars().all()
-    
-    # Build lecture info
+    # Get lecture information (only for lecture-based tests)
     lecture_info = []
-    for lecture in lectures:
-        # Count topics in lecture structure
-        topic_count = 0
-        if lecture.raw_content:
-            try:
-                import json
-                content = json.loads(lecture.raw_content) if isinstance(lecture.raw_content, str) else lecture.raw_content
-                if 'lecture_structure' in content:
-                    topics = content['lecture_structure'].get('topics', {})
-                    topic_count = len(topics)
-            except:
-                topic_count = 0
+    if test.test_type == 'lecture_based' and test.selected_lecture_ids:
+        lecture_result = await db.execute(
+            select(ReadingAssignment).where(
+                ReadingAssignment.id.in_(test.selected_lecture_ids)
+            )
+        )
+        lectures = lecture_result.scalars().all()
         
-        lecture_info.append(LectureInfo(
-            id=lecture.id,
-            title=lecture.assignment_title,
-            subject=lecture.subject or '',
-            grade_level=lecture.grade_level,
-            topic_count=topic_count
-        ))
+        # Build lecture info
+        for lecture in lectures:
+            # Count topics in lecture structure
+            topic_count = 0
+            if lecture.raw_content:
+                try:
+                    import json
+                    content = json.loads(lecture.raw_content) if isinstance(lecture.raw_content, str) else lecture.raw_content
+                    if 'lecture_structure' in content:
+                        topics = content['lecture_structure'].get('topics', {})
+                        topic_count = len(topics)
+                except:
+                    topic_count = 0
+            
+            lecture_info.append(LectureInfo(
+                id=lecture.id,
+                title=lecture.assignment_title,
+                subject=lecture.subject or '',
+                grade_level=lecture.grade_level,
+                topic_count=topic_count
+            ))
     
     response = TestDetailResponse.from_orm(test)
     response.selected_lectures = lecture_info
@@ -438,3 +447,337 @@ async def get_available_lectures(
         ))
     
     return lecture_info
+
+
+# Hand-built test question endpoints
+@router.post("/tests/{test_id}/questions", response_model=HandBuiltQuestionResponse)
+async def add_question_to_test(
+    test_id: UUID,
+    question: HandBuiltQuestionCreate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Add a question to a hand-built test"""
+    if current_user.role not in ["teacher", "admin"]:
+        raise HTTPException(status_code=403, detail="Only teachers can add questions")
+    
+    # Verify test exists, belongs to teacher, and is hand-built
+    result = await db.execute(
+        select(TestAssignment).where(
+            and_(
+                TestAssignment.id == test_id,
+                TestAssignment.teacher_id == current_user.id,
+                TestAssignment.deleted_at.is_(None)
+            )
+        )
+    )
+    test = result.scalar_one_or_none()
+    
+    if not test:
+        raise HTTPException(status_code=404, detail="Test not found")
+    
+    if test.test_type != 'hand_built':
+        raise HTTPException(status_code=400, detail="Can only add questions to hand-built tests")
+    
+    # Get next position
+    position_result = await db.execute(
+        select(func.coalesce(func.max(HandBuiltTestQuestion.position), 0) + 1).where(
+            HandBuiltTestQuestion.test_assignment_id == test_id
+        )
+    )
+    next_position = position_result.scalar()
+    
+    # Create the question
+    new_question = HandBuiltTestQuestion(
+        test_assignment_id=test_id,
+        question_text=question.question_text,
+        correct_answer=question.correct_answer,
+        explanation=question.explanation,
+        evaluation_rubric=question.evaluation_rubric,
+        difficulty_level=question.difficulty_level,
+        points=question.points,
+        position=next_position
+    )
+    
+    db.add(new_question)
+    await db.commit()
+    await db.refresh(new_question)
+    
+    return new_question
+
+
+@router.get("/tests/{test_id}/questions", response_model=List[HandBuiltQuestionResponse])
+async def get_test_questions(
+    test_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get all questions for a hand-built test"""
+    if current_user.role not in ["teacher", "admin"]:
+        raise HTTPException(status_code=403, detail="Only teachers can view questions")
+    
+    # Verify test exists and belongs to teacher
+    result = await db.execute(
+        select(TestAssignment).where(
+            and_(
+                TestAssignment.id == test_id,
+                TestAssignment.teacher_id == current_user.id,
+                TestAssignment.deleted_at.is_(None)
+            )
+        )
+    )
+    test = result.scalar_one_or_none()
+    
+    if not test:
+        raise HTTPException(status_code=404, detail="Test not found")
+    
+    # Get questions
+    questions_result = await db.execute(
+        select(HandBuiltTestQuestion).where(
+            HandBuiltTestQuestion.test_assignment_id == test_id
+        ).order_by(HandBuiltTestQuestion.position)
+    )
+    questions = questions_result.scalars().all()
+    
+    return questions
+
+
+@router.put("/tests/{test_id}/questions/{question_id}", response_model=HandBuiltQuestionResponse)
+async def update_test_question(
+    test_id: UUID,
+    question_id: UUID,
+    question_update: HandBuiltQuestionUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Update a hand-built test question"""
+    if current_user.role not in ["teacher", "admin"]:
+        raise HTTPException(status_code=403, detail="Only teachers can update questions")
+    
+    # Verify test ownership
+    test_result = await db.execute(
+        select(TestAssignment).where(
+            and_(
+                TestAssignment.id == test_id,
+                TestAssignment.teacher_id == current_user.id,
+                TestAssignment.deleted_at.is_(None)
+            )
+        )
+    )
+    test = test_result.scalar_one_or_none()
+    
+    if not test:
+        raise HTTPException(status_code=404, detail="Test not found")
+    
+    # Get and update question
+    question_result = await db.execute(
+        select(HandBuiltTestQuestion).where(
+            and_(
+                HandBuiltTestQuestion.id == question_id,
+                HandBuiltTestQuestion.test_assignment_id == test_id
+            )
+        )
+    )
+    question = question_result.scalar_one_or_none()
+    
+    if not question:
+        raise HTTPException(status_code=404, detail="Question not found")
+    
+    # Update fields
+    for field, value in question_update.model_dump(exclude_unset=True).items():
+        setattr(question, field, value)
+    
+    await db.commit()
+    await db.refresh(question)
+    
+    return question
+
+
+@router.delete("/tests/{test_id}/questions/{question_id}")
+async def delete_test_question(
+    test_id: UUID,
+    question_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Delete a hand-built test question"""
+    if current_user.role not in ["teacher", "admin"]:
+        raise HTTPException(status_code=403, detail="Only teachers can delete questions")
+    
+    # Verify test ownership
+    test_result = await db.execute(
+        select(TestAssignment).where(
+            and_(
+                TestAssignment.id == test_id,
+                TestAssignment.teacher_id == current_user.id,
+                TestAssignment.deleted_at.is_(None)
+            )
+        )
+    )
+    test = test_result.scalar_one_or_none()
+    
+    if not test:
+        raise HTTPException(status_code=404, detail="Test not found")
+    
+    # Get the question
+    question_result = await db.execute(
+        select(HandBuiltTestQuestion).where(
+            and_(
+                HandBuiltTestQuestion.id == question_id,
+                HandBuiltTestQuestion.test_assignment_id == test_id
+            )
+        )
+    )
+    question = question_result.scalar_one_or_none()
+    
+    if not question:
+        raise HTTPException(status_code=404, detail="Question not found")
+    
+    deleted_position = question.position
+    
+    # Delete the question
+    await db.delete(question)
+    
+    # Update positions of subsequent questions
+    await db.execute(
+        select(HandBuiltTestQuestion).where(
+            and_(
+                HandBuiltTestQuestion.test_assignment_id == test_id,
+                HandBuiltTestQuestion.position > deleted_position
+            )
+        ).with_for_update()
+    )
+    
+    result = await db.execute(
+        select(HandBuiltTestQuestion).where(
+            and_(
+                HandBuiltTestQuestion.test_assignment_id == test_id,
+                HandBuiltTestQuestion.position > deleted_position
+            )
+        )
+    )
+    questions_to_update = result.scalars().all()
+    
+    for q in questions_to_update:
+        q.position -= 1
+    
+    await db.commit()
+    
+    return {"message": "Question deleted successfully"}
+
+
+@router.put("/tests/{test_id}/questions/{question_id}/reorder")
+async def reorder_question(
+    test_id: UUID,
+    question_id: UUID,
+    new_position: int = Query(..., gt=0),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Reorder a question within a hand-built test"""
+    if current_user.role not in ["teacher", "admin"]:
+        raise HTTPException(status_code=403, detail="Only teachers can reorder questions")
+    
+    # Verify test ownership
+    test_result = await db.execute(
+        select(TestAssignment).where(
+            and_(
+                TestAssignment.id == test_id,
+                TestAssignment.teacher_id == current_user.id,
+                TestAssignment.deleted_at.is_(None)
+            )
+        )
+    )
+    test = test_result.scalar_one_or_none()
+    
+    if not test:
+        raise HTTPException(status_code=404, detail="Test not found")
+    
+    # Get the question
+    question_result = await db.execute(
+        select(HandBuiltTestQuestion).where(
+            and_(
+                HandBuiltTestQuestion.id == question_id,
+                HandBuiltTestQuestion.test_assignment_id == test_id
+            )
+        )
+    )
+    question = question_result.scalar_one_or_none()
+    
+    if not question:
+        raise HTTPException(status_code=404, detail="Question not found")
+    
+    old_position = question.position
+    
+    if old_position == new_position:
+        return {"message": "Question already at the specified position"}
+    
+    # Get total question count
+    count_result = await db.execute(
+        select(func.count()).select_from(HandBuiltTestQuestion).where(
+            HandBuiltTestQuestion.test_assignment_id == test_id
+        )
+    )
+    total_questions = count_result.scalar()
+    
+    if new_position > total_questions:
+        raise HTTPException(status_code=400, detail=f"Invalid position. Test has {total_questions} questions")
+    
+    # Reorder questions
+    if old_position < new_position:
+        # Moving down: shift questions in between up
+        await db.execute(
+            select(HandBuiltTestQuestion).where(
+                and_(
+                    HandBuiltTestQuestion.test_assignment_id == test_id,
+                    HandBuiltTestQuestion.position > old_position,
+                    HandBuiltTestQuestion.position <= new_position
+                )
+            ).with_for_update()
+        )
+        
+        result = await db.execute(
+            select(HandBuiltTestQuestion).where(
+                and_(
+                    HandBuiltTestQuestion.test_assignment_id == test_id,
+                    HandBuiltTestQuestion.position > old_position,
+                    HandBuiltTestQuestion.position <= new_position
+                )
+            )
+        )
+        questions_to_shift = result.scalars().all()
+        
+        for q in questions_to_shift:
+            q.position -= 1
+    else:
+        # Moving up: shift questions in between down
+        await db.execute(
+            select(HandBuiltTestQuestion).where(
+                and_(
+                    HandBuiltTestQuestion.test_assignment_id == test_id,
+                    HandBuiltTestQuestion.position >= new_position,
+                    HandBuiltTestQuestion.position < old_position
+                )
+            ).with_for_update()
+        )
+        
+        result = await db.execute(
+            select(HandBuiltTestQuestion).where(
+                and_(
+                    HandBuiltTestQuestion.test_assignment_id == test_id,
+                    HandBuiltTestQuestion.position >= new_position,
+                    HandBuiltTestQuestion.position < old_position
+                )
+            )
+        )
+        questions_to_shift = result.scalars().all()
+        
+        for q in questions_to_shift:
+            q.position += 1
+    
+    # Set the new position for the moved question
+    question.position = new_position
+    
+    await db.commit()
+    
+    return {"message": "Question reordered successfully", "new_position": new_position}

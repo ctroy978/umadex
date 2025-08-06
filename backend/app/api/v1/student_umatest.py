@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 from app.core.database import get_db
 from app.models.user import User, UserRole
 from app.models.classroom import Classroom, ClassroomAssignment, StudentAssignment, ClassroomStudent
-from app.models.umatest import TestAssignment
+from app.models.umatest import TestAssignment, HandBuiltTestQuestion
 from app.models.tests import StudentTestAttempt, TestQuestionEvaluation, TestSecurityIncident
 from app.utils.supabase_deps import get_current_user_supabase as get_current_user
 from app.services.test_schedule import TestScheduleService
@@ -232,18 +232,43 @@ async def start_umatest(
         await db.commit()
         await db.refresh(current_attempt)
     
-    # Extract questions from test structure
+    # Extract questions based on test type
     questions = []
-    if test_assignment.test_structure and 'topics' in test_assignment.test_structure:
-        for topic_id, topic_data in test_assignment.test_structure['topics'].items():
-            for question in topic_data.get('questions', []):
-                questions.append({
-                    'id': question['id'],
-                    'question_text': question['question_text'],
-                    'difficulty_level': question['difficulty_level'],
-                    'source_lecture_title': topic_data.get('source_lecture_title', ''),
-                    'topic_title': topic_data.get('topic_title', '')
-                })
+    
+    if test_assignment.test_type == 'hand_built':
+        # Get questions from hand_built_test_questions table
+        hand_built_questions = await db.execute(
+            select(HandBuiltTestQuestion)
+            .where(HandBuiltTestQuestion.test_assignment_id == test_assignment.id)
+            .order_by(HandBuiltTestQuestion.position)
+        )
+        hand_built_questions = hand_built_questions.scalars().all()
+        
+        for question in hand_built_questions:
+            questions.append({
+                'id': str(question.id),
+                'question_text': question.question_text,
+                'difficulty_level': question.difficulty_level,
+                'source_lecture_title': 'Custom Question',
+                'topic_title': f'Question {question.position}',
+                'points': question.points,
+                'correct_answer': question.correct_answer,
+                'explanation': question.explanation,
+                'evaluation_rubric': question.evaluation_rubric
+            })
+    else:
+        # Lecture-based test - extract from test_structure
+        if test_assignment.test_structure and 'topics' in test_assignment.test_structure:
+            for topic_id, topic_data in test_assignment.test_structure['topics'].items():
+                for question in topic_data.get('questions', []):
+                    questions.append({
+                        'id': question['id'],
+                        'question_text': question['question_text'],
+                        'difficulty_level': question['difficulty_level'],
+                        'source_lecture_title': topic_data.get('source_lecture_title', ''),
+                        'topic_title': topic_data.get('topic_title', ''),
+                        'points': 10  # Default points for lecture-based questions
+                    })
     
     # Randomize questions if configured
     if test_assignment.randomize_questions:

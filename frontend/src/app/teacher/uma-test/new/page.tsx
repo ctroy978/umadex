@@ -11,7 +11,9 @@ import {
   ClockIcon,
   ArrowPathIcon,
   CheckCircleIcon,
-  ExclamationCircleIcon
+  ExclamationCircleIcon,
+  BookOpenIcon,
+  PencilSquareIcon
 } from '@heroicons/react/24/outline'
 import Link from 'next/link'
 
@@ -26,6 +28,7 @@ interface LectureInfo {
 interface CreateTestForm {
   test_title: string
   test_description: string
+  test_type: 'lecture_based' | 'hand_built'
   selected_lecture_ids: string[]
   time_limit_minutes: number | null
   attempt_limit: number
@@ -44,6 +47,7 @@ export default function NewTestPage() {
   const [form, setForm] = useState<CreateTestForm>({
     test_title: '',
     test_description: '',
+    test_type: 'lecture_based',
     selected_lecture_ids: [],
     time_limit_minutes: null,
     attempt_limit: 1,
@@ -52,8 +56,10 @@ export default function NewTestPage() {
   })
 
   useEffect(() => {
-    fetchAvailableLectures()
-  }, [])
+    if (form.test_type === 'lecture_based') {
+      fetchAvailableLectures()
+    }
+  }, [form.test_type])
 
   const fetchAvailableLectures = async () => {
     try {
@@ -91,7 +97,7 @@ export default function NewTestPage() {
       return
     }
     
-    if (form.selected_lecture_ids.length === 0) {
+    if (form.test_type === 'lecture_based' && form.selected_lecture_ids.length === 0) {
       toast.error('Please select at least one lecture')
       return
     }
@@ -102,24 +108,31 @@ export default function NewTestPage() {
       // Create the test
       const createResponse = await api.post('/v1/teacher/umatest/tests', {
         ...form,
+        selected_lecture_ids: form.test_type === 'lecture_based' ? form.selected_lecture_ids : null,
         time_limit_minutes: form.time_limit_minutes || null
       })
       
       const testId = createResponse.data.id
       toast.success('Test created successfully!')
       
-      // Start generating questions
-      setGenerating(true)
-      try {
-        await api.post(`/v1/teacher/umatest/tests/${testId}/generate-questions`)
-        toast.success('Question generation started!')
-      } catch (error) {
-        console.error('Error starting generation:', error)
-        toast.error('Failed to start question generation')
+      // For lecture-based tests, start generating questions
+      if (form.test_type === 'lecture_based') {
+        setGenerating(true)
+        try {
+          await api.post(`/v1/teacher/umatest/tests/${testId}/generate-questions`)
+          toast.success('Question generation started!')
+        } catch (error) {
+          console.error('Error starting generation:', error)
+          toast.error('Failed to start question generation')
+        }
       }
       
-      // Navigate to the test detail page
-      router.push(`/teacher/uma-test/${testId}`)
+      // Navigate to the appropriate page
+      if (form.test_type === 'hand_built') {
+        router.push(`/teacher/uma-test/${testId}/build`)
+      } else {
+        router.push(`/teacher/uma-test/${testId}`)
+      }
       
     } catch (error) {
       console.error('Error creating test:', error)
@@ -144,11 +157,62 @@ export default function NewTestPage() {
         
         <h1 className="mt-4 text-2xl font-bold text-gray-900">Create New Test</h1>
         <p className="mt-2 text-sm text-gray-600">
-          Select UMALecture assignments to generate a comprehensive test with AI-powered questions.
+          Choose between creating a test from UMALecture content or building your own custom questions.
         </p>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-8">
+        {/* Test Type Selection */}
+        <div className="bg-white shadow rounded-lg p-6">
+          <h2 className="text-lg font-medium text-gray-900 mb-4">Test Type</h2>
+          
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <label className="relative cursor-pointer">
+              <input
+                type="radio"
+                name="test_type"
+                value="lecture_based"
+                checked={form.test_type === 'lecture_based'}
+                onChange={(e) => setForm(prev => ({ 
+                  ...prev, 
+                  test_type: 'lecture_based',
+                  selected_lecture_ids: []
+                }))}
+                className="sr-only peer"
+              />
+              <div className="flex items-center p-4 border-2 rounded-lg peer-checked:border-primary-500 peer-checked:bg-primary-50">
+                <BookOpenIcon className="h-8 w-8 text-gray-400 peer-checked:text-primary-600 mr-3" />
+                <div>
+                  <p className="font-medium">Lecture-Based Test</p>
+                  <p className="text-sm text-gray-500">Generate questions from UMALecture content</p>
+                </div>
+              </div>
+            </label>
+
+            <label className="relative cursor-pointer">
+              <input
+                type="radio"
+                name="test_type"
+                value="hand_built"
+                checked={form.test_type === 'hand_built'}
+                onChange={(e) => setForm(prev => ({ 
+                  ...prev, 
+                  test_type: 'hand_built',
+                  selected_lecture_ids: []
+                }))}
+                className="sr-only peer"
+              />
+              <div className="flex items-center p-4 border-2 rounded-lg peer-checked:border-primary-500 peer-checked:bg-primary-50">
+                <PencilSquareIcon className="h-8 w-8 text-gray-400 peer-checked:text-primary-600 mr-3" />
+                <div>
+                  <p className="font-medium">Hand-Built Test</p>
+                  <p className="text-sm text-gray-500">Create your own custom questions</p>
+                </div>
+              </div>
+            </label>
+          </div>
+        </div>
+
         {/* Test Information */}
         <div className="bg-white shadow rounded-lg p-6">
           <h2 className="text-lg font-medium text-gray-900 mb-4">Test Information</h2>
@@ -210,7 +274,7 @@ export default function NewTestPage() {
 
             <div>
               <label htmlFor="attempts" className="block text-sm font-medium text-gray-700">
-                Attempt Limit
+                Maximum Attempts
               </label>
               <input
                 type="number"
@@ -225,126 +289,146 @@ export default function NewTestPage() {
               />
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-3">
               <label className="flex items-center">
                 <input
                   type="checkbox"
                   checked={form.randomize_questions}
-                  onChange={(e) => setForm(prev => ({ ...prev, randomize_questions: e.target.checked }))}
-                  className="rounded border-gray-300 text-primary-600 shadow-sm focus:border-primary-500 focus:ring-primary-500"
+                  onChange={(e) => setForm(prev => ({ 
+                    ...prev, 
+                    randomize_questions: e.target.checked 
+                  }))}
+                  className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
                 />
-                <span className="ml-2 text-sm text-gray-700">Randomize question order</span>
+                <span className="ml-2 text-sm text-gray-700">
+                  Randomize question order
+                </span>
               </label>
 
               <label className="flex items-center">
                 <input
                   type="checkbox"
                   checked={form.show_feedback_immediately}
-                  onChange={(e) => setForm(prev => ({ ...prev, show_feedback_immediately: e.target.checked }))}
-                  className="rounded border-gray-300 text-primary-600 shadow-sm focus:border-primary-500 focus:ring-primary-500"
+                  onChange={(e) => setForm(prev => ({ 
+                    ...prev, 
+                    show_feedback_immediately: e.target.checked 
+                  }))}
+                  className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
                 />
-                <span className="ml-2 text-sm text-gray-700">Show feedback immediately after each answer</span>
+                <span className="ml-2 text-sm text-gray-700">
+                  Show feedback immediately after submission
+                </span>
               </label>
             </div>
           </div>
         </div>
 
-        {/* Lecture Selection */}
-        <div className="bg-white shadow rounded-lg p-6">
-          <h2 className="text-lg font-medium text-gray-900 mb-4">
-            Select Lectures <span className="text-red-500">*</span>
-          </h2>
-          
-          {loadingLectures ? (
-            <div className="text-center py-8">
-              <div className="inline-flex items-center">
-                <svg className="animate-spin h-5 w-5 mr-3 text-gray-500" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
+        {/* Lecture Selection (only for lecture-based tests) */}
+        {form.test_type === 'lecture_based' && (
+          <div className="bg-white shadow rounded-lg p-6">
+            <h2 className="text-lg font-medium text-gray-900 mb-4">
+              Select Lectures <span className="text-red-500">*</span>
+            </h2>
+            
+            {loadingLectures ? (
+              <div className="text-center py-8 text-gray-500">
                 Loading available lectures...
               </div>
-            </div>
-          ) : lectures.length === 0 ? (
-            <div className="text-center py-8">
-              <ExclamationCircleIcon className="mx-auto h-12 w-12 text-gray-400" />
-              <p className="mt-2 text-sm text-gray-500">
-                No published UMALecture assignments found. Please create and publish some lectures first.
-              </p>
-            </div>
-          ) : (
-            <>
-              <div className="space-y-2 max-h-96 overflow-y-auto">
-                {lectures.map((lecture) => (
-                  <label
-                    key={lecture.id}
-                    className={`flex items-start p-3 border rounded-lg cursor-pointer transition-colors ${
-                      form.selected_lecture_ids.includes(lecture.id)
-                        ? 'bg-primary-50 border-primary-300'
-                        : 'bg-white border-gray-200 hover:bg-gray-50'
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={form.selected_lecture_ids.includes(lecture.id)}
-                      onChange={() => handleLectureToggle(lecture.id)}
-                      className="mt-1 rounded border-gray-300 text-primary-600 shadow-sm focus:border-primary-500 focus:ring-primary-500"
-                    />
-                    <div className="ml-3 flex-1">
-                      <div className="font-medium text-gray-900">{lecture.title}</div>
-                      <div className="text-sm text-gray-500">
-                        {lecture.subject} • {lecture.grade_level} • {lecture.topic_count} topics
-                      </div>
-                      <div className="text-xs text-gray-400 mt-1">
-                        Will generate {lecture.topic_count * 10} questions (10 per topic)
-                      </div>
-                    </div>
-                  </label>
-                ))}
+            ) : lectures.length === 0 ? (
+              <div className="text-center py-8">
+                <ExclamationCircleIcon className="mx-auto h-12 w-12 text-gray-400" />
+                <p className="mt-2 text-sm text-gray-500">
+                  No published UMALecture assignments found
+                </p>
+                <p className="text-xs text-gray-400 mt-1">
+                  Create and publish UMALecture assignments first
+                </p>
               </div>
-
-              {/* Question Summary */}
-              {form.selected_lecture_ids.length > 0 && (
-                <div className="mt-4 p-4 bg-blue-50 rounded-lg">
-                  <div className="flex items-center">
-                    <DocumentCheckIcon className="h-5 w-5 text-blue-600 mr-2" />
-                    <div className="text-sm">
-                      <span className="font-medium text-blue-900">Total questions to be generated: </span>
-                      <span className="text-blue-700">{calculateTotalQuestions()}</span>
-                    </div>
-                  </div>
-                  <div className="mt-2 text-xs text-blue-600">
-                    Distribution per topic: 7 Basic/Intermediate (70%), 2 Advanced (20%), 1 Expert (10%)
-                  </div>
+            ) : (
+              <>
+                <div className="space-y-2 max-h-96 overflow-y-auto">
+                  {lectures.map((lecture) => (
+                    <label
+                      key={lecture.id}
+                      className="flex items-start p-3 border rounded-lg hover:bg-gray-50 cursor-pointer"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={form.selected_lecture_ids.includes(lecture.id)}
+                        onChange={() => handleLectureToggle(lecture.id)}
+                        className="h-4 w-4 mt-1 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                      />
+                      <div className="ml-3 flex-1">
+                        <p className="text-sm font-medium text-gray-900">{lecture.title}</p>
+                        <p className="text-xs text-gray-500">
+                          {lecture.subject} • Grade {lecture.grade_level} • {lecture.topic_count} topics
+                        </p>
+                      </div>
+                    </label>
+                  ))}
                 </div>
-              )}
-            </>
-          )}
-        </div>
+                
+                {form.selected_lecture_ids.length > 0 && (
+                  <div className="mt-4 p-3 bg-blue-50 rounded-lg">
+                    <p className="text-sm text-blue-800">
+                      <span className="font-medium">Selected:</span> {form.selected_lecture_ids.length} lecture(s)
+                    </p>
+                    <p className="text-xs text-blue-600 mt-1">
+                      Estimated questions: ~{calculateTotalQuestions()}
+                    </p>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Hand-Built Test Info (only for hand-built tests) */}
+        {form.test_type === 'hand_built' && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <div className="flex">
+              <ExclamationCircleIcon className="h-5 w-5 text-blue-400 mt-0.5" />
+              <div className="ml-3">
+                <h3 className="text-sm font-medium text-blue-800">Hand-Built Test</h3>
+                <p className="mt-1 text-sm text-blue-700">
+                  After creating the test, you'll be able to add your own questions with:
+                </p>
+                <ul className="mt-2 text-sm text-blue-600 list-disc list-inside">
+                  <li>Custom question text</li>
+                  <li>Correct answer</li>
+                  <li>Explanation for students</li>
+                  <li>Evaluation rubric for grading</li>
+                  <li>Difficulty level (Basic, Intermediate, Advanced, Expert)</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Submit Button */}
-        <div className="flex justify-end gap-4">
+        <div className="flex justify-end space-x-3">
           <Link
             href="/teacher/uma-test"
-            className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+            className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
           >
             Cancel
           </Link>
+          
           <button
             type="submit"
-            disabled={loading || generating || form.selected_lecture_ids.length === 0}
-            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={loading || generating}
+            className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {loading || generating ? (
               <>
-                <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
+                <ArrowPathIcon className="animate-spin -ml-1 mr-2 h-4 w-4" />
                 {generating ? 'Generating Questions...' : 'Creating Test...'}
               </>
             ) : (
-              'Create Test & Generate Questions'
+              <>
+                <CheckCircleIcon className="-ml-1 mr-2 h-4 w-4" />
+                {form.test_type === 'hand_built' ? 'Create & Build Questions' : 'Create Test'}
+              </>
             )}
           </button>
         </div>
