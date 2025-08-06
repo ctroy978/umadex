@@ -92,6 +92,9 @@ class StudentTestAttempt(Base):
     # Attempt tracking
     attempt_number = Column(Integer, default=1)
     
+    # Test metadata (for randomization, etc.)
+    test_metadata = Column(JSONB, default=dict)
+    
     # Security tracking
     security_violations = Column(JSONB, default=list)
     is_locked = Column(Boolean, default=False)

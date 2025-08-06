@@ -278,12 +278,12 @@ async def start_umatest(
         # Store the randomized question order in the test attempt
         # This ensures the evaluator uses the same order
         question_order = [q['id'] for q in questions]
-        current_attempt.metadata = current_attempt.metadata or {}
-        current_attempt.metadata['question_order'] = question_order
-        current_attempt.metadata['randomized'] = True
+        current_attempt.test_metadata = current_attempt.test_metadata or {}
+        current_attempt.test_metadata['question_order'] = question_order
+        current_attempt.test_metadata['randomized'] = True
         
         from sqlalchemy.orm.attributes import flag_modified
-        flag_modified(current_attempt, "metadata")
+        flag_modified(current_attempt, "test_metadata")
         await db.commit()
         await db.refresh(current_attempt)
     

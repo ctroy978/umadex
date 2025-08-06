@@ -61,9 +61,9 @@ class HandBuiltQuestionCreate(BaseModel):
     question_text: str = Field(..., min_length=1)
     correct_answer: str = Field(..., min_length=1)
     explanation: str = Field(..., min_length=1)
-    evaluation_rubric: str = Field(..., min_length=1)
+    evaluation_rubric: Optional[str] = Field(default="", description="Evaluation rubric for grading. If empty, a default rubric will be used.")
     difficulty_level: str = Field(..., pattern='^(basic|intermediate|advanced|expert)$')
-    points: Optional[int] = Field(10, gt=0)
+    points: Optional[int] = Field(default=10, gt=0)
 
 
 class HandBuiltQuestionUpdate(BaseModel):

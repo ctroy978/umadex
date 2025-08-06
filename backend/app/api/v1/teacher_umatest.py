@@ -30,8 +30,12 @@ from app.schemas.umatest import (
     HandBuiltQuestionResponse
 )
 from app.services.umatest_ai import umatest_ai_service
+from app.services.umatest_ai_assistant import UMATestAIAssistant
 
 logger = logging.getLogger(__name__)
+
+# Initialize AI Assistant
+umatest_ai_assistant = UMATestAIAssistant()
 
 router = APIRouter(prefix="/teacher/umatest", tags=["teacher-umatest"])
 
@@ -487,13 +491,47 @@ async def add_question_to_test(
     )
     next_position = position_result.scalar()
     
+    # Create default evaluation rubric if not provided or if it's empty
+    default_rubric = """**Grading Rubric:**
+
+**Full Credit (10 points):**
+- Complete and accurate answer addressing all parts of the question
+- Clear demonstration of understanding
+- Proper use of terminology and concepts
+- Well-organized response
+
+**Partial Credit (7-9 points):**
+- Mostly correct answer with minor errors or omissions
+- Good understanding with some gaps
+- Generally correct use of terminology
+- Reasonably organized response
+
+**Partial Credit (4-6 points):**
+- Basic understanding demonstrated
+- Some correct elements but significant gaps or errors
+- Attempt to use proper terminology
+- Some organization evident
+
+**Minimal Credit (1-3 points):**
+- Limited understanding shown
+- Major errors or misunderstandings
+- Minimal use of proper terminology
+- Poor organization
+
+**No Credit (0 points):**
+- No answer provided or completely incorrect
+- No demonstration of understanding"""
+    
+    # Use provided rubric or default if empty
+    evaluation_rubric = question.evaluation_rubric.strip() if question.evaluation_rubric and question.evaluation_rubric.strip() else default_rubric
+    
     # Create the question
     new_question = HandBuiltTestQuestion(
         test_assignment_id=test_id,
         question_text=question.question_text,
         correct_answer=question.correct_answer,
         explanation=question.explanation,
-        evaluation_rubric=question.evaluation_rubric,
+        evaluation_rubric=evaluation_rubric,
         difficulty_level=question.difficulty_level,
         points=question.points,
         position=next_position
@@ -504,6 +542,48 @@ async def add_question_to_test(
     await db.refresh(new_question)
     
     return new_question
+
+
+@router.post("/tests/{test_id}/questions/ai-assist")
+async def ai_assist_question(
+    test_id: UUID,
+    question: HandBuiltQuestionCreate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Use AI to improve a hand-built test question"""
+    if current_user.role not in ["teacher", "admin"]:
+        raise HTTPException(status_code=403, detail="Only teachers can use AI assistance")
+    
+    # Verify test exists, belongs to teacher, and is hand-built
+    result = await db.execute(
+        select(TestAssignment).where(
+            and_(
+                TestAssignment.id == test_id,
+                TestAssignment.teacher_id == current_user.id,
+                TestAssignment.deleted_at.is_(None)
+            )
+        )
+    )
+    test = result.scalar_one_or_none()
+    
+    if not test:
+        raise HTTPException(status_code=404, detail="Test not found")
+    
+    if test.test_type != 'hand_built':
+        raise HTTPException(status_code=400, detail="AI assistance only available for hand-built tests")
+    
+    # Use AI to improve the question
+    improved_question = await umatest_ai_assistant.improve_question(
+        question_text=question.question_text,
+        correct_answer=question.correct_answer,
+        explanation=question.explanation,
+        evaluation_rubric=question.evaluation_rubric,
+        difficulty_level=question.difficulty_level,
+        points=question.points or 10
+    )
+    
+    return improved_question
 
 
 @router.get("/tests/{test_id}/questions", response_model=List[HandBuiltQuestionResponse])

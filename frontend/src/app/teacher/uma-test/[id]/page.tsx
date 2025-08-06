@@ -67,6 +67,7 @@ interface TestDetail {
   id: string
   test_title: string
   test_description: string | null
+  test_type: 'lecture_based' | 'hand_built'
   selected_lecture_ids: string[]
   time_limit_minutes: number | null
   attempt_limit: number
@@ -102,7 +103,8 @@ export default function TestDetailPage() {
   }, [testId])
 
   useEffect(() => {
-    if (test && (!test.test_structure || Object.keys(test.test_structure?.topics || {}).length === 0)) {
+    // Only check generation status for lecture-based tests without questions
+    if (test && test.test_type === 'lecture_based' && (!test.test_structure || Object.keys(test.test_structure?.topics || {}).length === 0)) {
       // Check generation status if no questions yet
       checkGenerationStatus()
       const interval = setInterval(checkGenerationStatus, 3000)
@@ -498,20 +500,40 @@ export default function TestDetailPage() {
       {(!test.test_structure || !test.test_structure.topics || Object.keys(test.test_structure.topics).length === 0) && !generationStatus && (
         <div className="bg-white rounded-lg shadow p-12 text-center">
           <DocumentCheckIcon className="mx-auto h-12 w-12 text-gray-400" />
-          <h3 className="mt-2 text-sm font-medium text-gray-900">No questions generated yet</h3>
-          <p className="mt-1 text-sm text-gray-500">
-            Click the button below to generate questions for this test.
-          </p>
-          <div className="mt-6">
-            <button
-              onClick={handleRegenerate}
-              disabled={regenerating}
-              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700 disabled:opacity-50"
-            >
-              <ArrowPathIcon className={`mr-2 h-5 w-5 ${regenerating ? 'animate-spin' : ''}`} />
-              Generate Questions
-            </button>
-          </div>
+          {test.test_type === 'hand_built' ? (
+            <>
+              <h3 className="mt-2 text-sm font-medium text-gray-900">Hand-built test</h3>
+              <p className="mt-1 text-sm text-gray-500">
+                Add questions manually using the Build Questions page.
+              </p>
+              <div className="mt-6">
+                <Link
+                  href={`/teacher/uma-test/${testId}/build`}
+                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700"
+                >
+                  <PencilIcon className="mr-2 h-5 w-5" />
+                  Build Questions
+                </Link>
+              </div>
+            </>
+          ) : (
+            <>
+              <h3 className="mt-2 text-sm font-medium text-gray-900">No questions generated yet</h3>
+              <p className="mt-1 text-sm text-gray-500">
+                Click the button below to generate questions for this test.
+              </p>
+              <div className="mt-6">
+                <button
+                  onClick={handleRegenerate}
+                  disabled={regenerating}
+                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700 disabled:opacity-50"
+                >
+                  <ArrowPathIcon className={`mr-2 h-5 w-5 ${regenerating ? 'animate-spin' : ''}`} />
+                  Generate Questions
+                </button>
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>

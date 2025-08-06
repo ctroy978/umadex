@@ -200,8 +200,8 @@ class UMATestEvaluationService:
         logger.info(f"Question structure sample: {list(questions.keys())[:3] if questions else 'No questions'}")
         
         # Check if questions were randomized and get the order
-        randomized = test_attempt.metadata and test_attempt.metadata.get('randomized', False)
-        question_order = test_attempt.metadata.get('question_order', []) if test_attempt.metadata else []
+        randomized = test_attempt.test_metadata and test_attempt.test_metadata.get('randomized', False)
+        question_order = test_attempt.test_metadata.get('question_order', []) if test_attempt.test_metadata else []
         
         logger.info(f"Test randomized: {randomized}, Has question order: {bool(question_order)}")
         
