@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Anti-Copy/Paste Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #fff;
+        }
+        .test-container {
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #2a2a2a;
+            border-radius: 8px;
+        }
+        .test-content {
+            padding: 15px;
+            background: #3a3a3a;
+            border-radius: 4px;
+            margin: 10px 0;
+            /* CSS to prevent text selection */
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+        }
+        textarea {
+            width: 100%;
+            padding: 10px;
+            background: #3a3a3a;
+            color: #fff;
+            border: 1px solid #555;
+            border-radius: 4px;
+            /* Prevent text selection */
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            background: #4a4a4a;
+        }
+        .blocked {
+            background: #8b3a3a;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1>Anti-Copy/Paste Test</h1>
+        <p>This simulates the anti-cheating measures implemented in UmaLecture assignments.</p>
+        
+        <div class="test-content" id="content">
+            <h3>Sample Question Text</h3>
+            <p>Try to select and copy this text. It should be prevented.</p>
+            <p>Right-click context menu should also be disabled.</p>
+        </div>
+        
+        <h3>Answer Input</h3>
+        <textarea 
+            id="answer" 
+            placeholder="Try to paste text here - it should be blocked"
+            rows="4"
+        ></textarea>
+        
+        <div class="status" id="status">
+            Monitoring for copy/paste attempts...
+        </div>
+    </div>
+
+    <script>
+        // Anti-cheating measures
+        const statusEl = document.getElementById('status');
+        let attemptCount = 0;
+
+        // Prevent copy/cut/paste
+        document.addEventListener('copy', function(e) {
+            e.preventDefault();
+            attemptCount++;
+            statusEl.textContent = `Copy attempt blocked! (${attemptCount} total attempts)`;
+            statusEl.classList.add('blocked');
+            setTimeout(() => statusEl.classList.remove('blocked'), 1000);
+            return false;
+        });
+
+        document.addEventListener('cut', function(e) {
+            e.preventDefault();
+            attemptCount++;
+            statusEl.textContent = `Cut attempt blocked! (${attemptCount} total attempts)`;
+            statusEl.classList.add('blocked');
+            setTimeout(() => statusEl.classList.remove('blocked'), 1000);
+            return false;
+        });
+
+        document.addEventListener('paste', function(e) {
+            e.preventDefault();
+            attemptCount++;
+            statusEl.textContent = `Paste attempt blocked! (${attemptCount} total attempts)`;
+            statusEl.classList.add('blocked');
+            setTimeout(() => statusEl.classList.remove('blocked'), 1000);
+            return false;
+        });
+
+        // Prevent text selection
+        document.addEventListener('selectstart', function(e) {
+            e.preventDefault();
+            return false;
+        });
+
+        // Prevent right-click context menu
+        document.addEventListener('contextmenu', function(e) {
+            e.preventDefault();
+            attemptCount++;
+            statusEl.textContent = `Right-click menu blocked! (${attemptCount} total attempts)`;
+            statusEl.classList.add('blocked');
+            setTimeout(() => statusEl.classList.remove('blocked'), 1000);
+            return false;
+        });
+
+        // Additional protection for the textarea
+        const textarea = document.getElementById('answer');
+        textarea.addEventListener('paste', function(e) {
+            e.preventDefault();
+            return false;
+        });
+        textarea.addEventListener('copy', function(e) {
+            e.preventDefault();
+            return false;
+        });
+        textarea.addEventListener('cut', function(e) {
+            e.preventDefault();
+            return false;
+        });
+        textarea.addEventListener('contextmenu', function(e) {
+            e.preventDefault();
+            return false;
+        });
+
+        console.log('Anti-copy/paste measures activated');
+    </script>
+</body>
+</html>

@@ -115,13 +115,13 @@ export default function TeacherLecturePreviewPage() {
         if (imgDifficulty !== currentDifficulty) return false
         // Check if topic matches
         const nodeWords = imgTopic.toLowerCase()
-        const topicWords = topicTitle.toLowerCase().split(/\s+/).filter(w => w.length > 3)
-        return topicWords.some(word => nodeWords.includes(word))
+        const topicWords = topicTitle.toLowerCase().split(/\s+/).filter((w: string) => w.length > 3)
+        return topicWords.some((word: string) => nodeWords.includes(word))
       } else {
         // Legacy format without difficulty - show in all tabs for backward compatibility
         const nodeWords = img.node_id.toLowerCase()
-        const topicWords = topicTitle.toLowerCase().split(/\s+/).filter(w => w.length > 3)
-        return topicWords.some(word => nodeWords.includes(word))
+        const topicWords = topicTitle.toLowerCase().split(/\s+/).filter((w: string) => w.length > 3)
+        return topicWords.some((word: string) => nodeWords.includes(word))
       }
     })
     
@@ -178,7 +178,7 @@ export default function TeacherLecturePreviewPage() {
                 <div
                   key={image.id}
                   className="cursor-pointer group"
-                  onClick={() => setExpandedImage(image.original_url || image.display_url || image.thumbnail_url)}
+                  onClick={() => setExpandedImage(image.original_url || image.display_url || image.thumbnail_url || null)}
                 >
                   <img
                     src={image.original_url || image.display_url || image.thumbnail_url}

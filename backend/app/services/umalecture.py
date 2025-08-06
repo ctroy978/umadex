@@ -1250,16 +1250,37 @@ class UMALectureService:
         # Try to find images by matching the topic title from the structure
         topic_title = topic_data.get("title", "")
         
+        # Clean the topic title - remove "Topic: " prefix if present
+        clean_topic_title = topic_title.replace("Topic: ", "") if topic_title.startswith("Topic: ") else topic_title
+        
+        # Images can have node_id in two formats:
+        # 1. Legacy: just topic name
+        # 2. New: "topic|difficulty" format for difficulty-specific images
         image_query = sql_text("""
             SELECT * FROM lecture_images
             WHERE lecture_id = :lecture_id
             AND (
+                -- Legacy format matches
                 node_id = :topic_id 
                 OR node_id = :topic_title
+                OR node_id = :clean_topic_title
                 OR LOWER(REPLACE(node_id, ' ', '_')) = LOWER(:topic_id)
                 OR LOWER(node_id) = LOWER(:topic_title)
                 OR LOWER(REPLACE(REPLACE(node_id, ':', ''), ' ', '_')) = LOWER(:topic_id)
                 OR LOWER(REPLACE(node_id, ':', '')) = LOWER(REPLACE(:topic_title, ':', ''))
+                -- New format with difficulty (topic|difficulty)
+                OR node_id LIKE :topic_pattern_pipe
+                OR node_id LIKE :title_pattern_pipe
+                OR node_id LIKE :clean_title_pattern_pipe
+                OR LOWER(node_id) LIKE LOWER(:topic_pattern_pipe)
+                OR LOWER(node_id) LIKE LOWER(:title_pattern_pipe)
+                OR LOWER(node_id) LIKE LOWER(:clean_title_pattern_pipe)
+                -- Match when topic_id has topic_ prefix but node_id doesn't
+                OR LOWER(REPLACE(node_id, ' ', '_')) = LOWER(REPLACE(:topic_id, 'topic_', ''))
+                OR LOWER(CONCAT('topic_', REPLACE(node_id, ' ', '_'))) = LOWER(:topic_id)
+                -- Match difficulty format when topic has underscores
+                OR LOWER(SPLIT_PART(node_id, '|', 1)) = LOWER(REPLACE(:clean_topic_title, ' ', '_'))
+                OR LOWER(REPLACE(SPLIT_PART(node_id, '|', 1), ' ', '_')) = LOWER(REPLACE(:topic_id, 'topic_', ''))
             )
             ORDER BY position
         """)
@@ -1269,7 +1290,11 @@ class UMALectureService:
             {
                 "lecture_id": lecture_id, 
                 "topic_id": topic_id,
-                "topic_title": topic_title
+                "topic_title": topic_title,
+                "clean_topic_title": clean_topic_title,
+                "topic_pattern_pipe": f"{topic_id}|%",
+                "title_pattern_pipe": f"{topic_title}|%",
+                "clean_title_pattern_pipe": f"{clean_topic_title}|%"
             }
         )
         

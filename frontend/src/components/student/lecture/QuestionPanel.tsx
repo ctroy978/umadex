@@ -60,6 +60,41 @@ export function QuestionPanel({
     )
   }, [questions, questionsCorrect])
 
+  // Anti-cheating: Prevent copy/paste and text selection
+  useEffect(() => {
+    const preventCopyPaste = (e: Event) => {
+      e.preventDefault()
+      return false
+    }
+
+    const preventSelection = (e: Event) => {
+      e.preventDefault()
+      return false
+    }
+
+    // Prevent context menu (right-click)
+    const preventContextMenu = (e: Event) => {
+      e.preventDefault()
+      return false
+    }
+
+    // Add event listeners
+    document.addEventListener('copy', preventCopyPaste)
+    document.addEventListener('cut', preventCopyPaste)
+    document.addEventListener('paste', preventCopyPaste)
+    document.addEventListener('selectstart', preventSelection)
+    document.addEventListener('contextmenu', preventContextMenu)
+
+    // Cleanup
+    return () => {
+      document.removeEventListener('copy', preventCopyPaste)
+      document.removeEventListener('cut', preventCopyPaste)
+      document.removeEventListener('paste', preventCopyPaste)
+      document.removeEventListener('selectstart', preventSelection)
+      document.removeEventListener('contextmenu', preventContextMenu)
+    }
+  }, [])
+
   const handleAnswerChange = (questionIndex: number, answer: string) => {
     setQuestionStates(prev => {
       const newStates = [...prev]
@@ -169,7 +204,19 @@ export function QuestionPanel({
   }, [allQuestionsCorrect, questions.length, onAllQuestionsComplete])
 
   return (
-    <div className="h-full flex flex-col bg-gray-850">
+    <div 
+      className="h-full flex flex-col bg-gray-850 select-none"
+      onCopy={(e) => e.preventDefault()}
+      onCut={(e) => e.preventDefault()}
+      onPaste={(e) => e.preventDefault()}
+      onContextMenu={(e) => e.preventDefault()}
+      style={{
+        WebkitUserSelect: 'none',
+        MozUserSelect: 'none',
+        msUserSelect: 'none',
+        userSelect: 'none'
+      }}
+    >
       {/* Header */}
       <div className="bg-gray-900 border-b border-gray-700 px-6 py-4">
         <h3 className="text-lg font-medium text-white">Questions</h3>
@@ -254,16 +301,26 @@ export function QuestionPanel({
                 <textarea
                   value={state.answer}
                   onChange={(e) => handleAnswerChange(index, e.target.value)}
+                  onPaste={(e) => e.preventDefault()}
+                  onCopy={(e) => e.preventDefault()}
+                  onCut={(e) => e.preventDefault()}
+                  onContextMenu={(e) => e.preventDefault()}
                   disabled={state.submitted}
                   placeholder="Type your answer here..."
                   className={`
                     w-full px-3 py-2 rounded-lg bg-gray-750 border text-gray-300
-                    placeholder-gray-500 resize-none h-24
+                    placeholder-gray-500 resize-none h-24 select-none
                     ${state.submitted && state.isCorrect === true
                       ? 'border-gray-600 cursor-not-allowed opacity-75' 
                       : 'border-gray-600 focus:border-blue-500 focus:outline-none'
                     }
                   `}
+                  style={{
+                    WebkitUserSelect: 'none',
+                    MozUserSelect: 'none',
+                    msUserSelect: 'none',
+                    userSelect: 'none'
+                  }}
                 />
               )}
 

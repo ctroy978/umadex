@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { CheckCircle, Circle, Lock, X } from 'lucide-react'
 import { ExplorationContent } from './ExplorationContent'
 import ImageModal from '../umaread/ImageModal'
@@ -32,6 +32,40 @@ export function TopicContentPanel({
 }: TopicContentPanelProps) {
   const [selectedImage, setSelectedImage] = useState<{ url: string; description: string } | null>(null)
 
+  // Anti-cheating: Prevent copy/paste and text selection
+  useEffect(() => {
+    const preventCopyPaste = (e: Event) => {
+      e.preventDefault()
+      return false
+    }
+
+    const preventSelection = (e: Event) => {
+      e.preventDefault()
+      return false
+    }
+
+    const preventContextMenu = (e: Event) => {
+      e.preventDefault()
+      return false
+    }
+
+    // Add event listeners
+    document.addEventListener('copy', preventCopyPaste)
+    document.addEventListener('cut', preventCopyPaste)
+    document.addEventListener('paste', preventCopyPaste)
+    document.addEventListener('selectstart', preventSelection)
+    document.addEventListener('contextmenu', preventContextMenu)
+
+    // Cleanup
+    return () => {
+      document.removeEventListener('copy', preventCopyPaste)
+      document.removeEventListener('cut', preventCopyPaste)
+      document.removeEventListener('paste', preventCopyPaste)
+      document.removeEventListener('selectstart', preventSelection)
+      document.removeEventListener('contextmenu', preventContextMenu)
+    }
+  }, [])
+
   const getTabStatus = (tabId: string) => {
     if (completedTabs.includes(tabId)) return 'complete'
     if (questionsCorrect[tabId]?.some(correct => correct === true)) return 'in-progress'
@@ -54,6 +88,32 @@ export function TopicContentPanel({
     const content = topic.difficulty_levels[currentTab]?.content
     if (!content) return <p className="text-gray-400">Content not available</p>
 
+    // Filter images based on current difficulty level
+    const relevantImages = topic.images ? topic.images.filter(img => {
+      if (!img.node_id) return false
+      
+      // Check if node_id contains difficulty level (format: "topic|difficulty")
+      if (img.node_id.includes('|')) {
+        const [imgTopic, imgDifficulty] = img.node_id.split('|')
+        // Check if difficulty matches
+        if (imgDifficulty !== currentTab) return false
+        // Check if topic matches
+        const nodeWords = imgTopic.toLowerCase()
+        const topicWords = topic.title.toLowerCase().split(/\s+/).filter(w => w.length > 3)
+        return topicWords.some(word => nodeWords.includes(word))
+      } else {
+        // Legacy format without difficulty - show in all tabs for backward compatibility
+        const nodeWords = img.node_id.toLowerCase()
+        const topicWords = topic.title.toLowerCase().split(/\s+/).filter(w => w.length > 3)
+        return topicWords.some(word => nodeWords.includes(word))
+      }
+    }) : []
+
+    console.log('Student view - All images:', topic.images)
+    console.log('Student view - Topic title:', topic.title)
+    console.log('Student view - Current difficulty:', currentTab)
+    console.log('Student view - Relevant images:', relevantImages)
+
     return (
       <>
         <div className="prose prose-invert max-w-none">
@@ -68,11 +128,11 @@ export function TopicContentPanel({
         </div>
 
         {/* Display images at the bottom if available */}
-        {topic.images && topic.images.length > 0 && (
+        {relevantImages.length > 0 && (
           <div className="mt-8 pt-6 border-t border-gray-700">
             <h3 className="text-lg font-medium text-white mb-4">Reference Images</h3>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              {topic.images.map((image, index) => {
+              {relevantImages.map((image, index) => {
                 // Use public_url as primary source, fallback to original_url
                 const imageUrl = image.public_url || image.display_url || image.original_url
                 const thumbnailUrl = image.public_url || image.thumbnail_url || image.original_url
@@ -116,7 +176,19 @@ export function TopicContentPanel({
 
 
   return (
-    <div className="h-full flex flex-col">
+    <div 
+      className="h-full flex flex-col select-none"
+      onCopy={(e) => e.preventDefault()}
+      onCut={(e) => e.preventDefault()}
+      onPaste={(e) => e.preventDefault()}
+      onContextMenu={(e) => e.preventDefault()}
+      style={{
+        WebkitUserSelect: 'none',
+        MozUserSelect: 'none',
+        msUserSelect: 'none',
+        userSelect: 'none'
+      }}
+    >
       {/* Tab Navigation */}
       <div className="bg-gray-900 border-b border-gray-700 px-6 py-3">
         <h2 className="text-xl font-medium text-white mb-3">{topic.title}</h2>
