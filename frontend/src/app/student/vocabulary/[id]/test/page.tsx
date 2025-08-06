@@ -60,8 +60,16 @@ export default function VocabularyTestPage() {
   const [overrideCode, setOverrideCode] = useState<string>('')
 
   useEffect(() => {
-    checkEligibility()
-  }, [assignmentId])
+    // Check if there's an override code in the URL params
+    const urlOverrideCode = searchParams.get('override')
+    if (urlOverrideCode) {
+      setOverrideCode(urlOverrideCode)
+      // If there's an override code, go directly to test start
+      startTest(urlOverrideCode)
+    } else {
+      checkEligibility()
+    }
+  }, [assignmentId, searchParams])
 
   const checkEligibility = async () => {
     try {

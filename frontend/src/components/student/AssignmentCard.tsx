@@ -18,6 +18,8 @@ import {
 } from '@heroicons/react/24/outline'
 import { useRouter } from 'next/navigation'
 import { useTestAvailability } from '@/hooks/useTestAvailability'
+import { useState } from 'react'
+import ScheduleLockedTestModal from './ScheduleLockedTestModal'
 
 interface AssignmentCardProps {
   assignment: StudentAssignment
@@ -28,12 +30,24 @@ export default function AssignmentCard({ assignment, classroomId }: AssignmentCa
   const router = useRouter()
   const statusColors = getStatusColor(assignment.status)
   const timeRemaining = assignment.status === 'active' ? getTimeRemaining(assignment.end_date) : null
+  const [showScheduleLockModal, setShowScheduleLockModal] = useState(false)
   
   // Check test availability if this is a completed assignment with a test or a UMATest assignment
   const shouldCheckAvailability = (assignment.is_completed && assignment.has_test) || assignment.type === 'UMATest'
   const { availability } = useTestAvailability(shouldCheckAvailability ? classroomId : null)
 
   const handleAssignmentClick = () => {
+    // Check if this is a schedule-locked test
+    const isTestLocked = availability && !availability.allowed && 
+      ((assignment.type === 'UMATest' && !assignment.test_completed) || 
+       (assignment.is_completed && assignment.has_test && !assignment.test_completed))
+    
+    if (isTestLocked) {
+      // Show the modal for entering bypass code
+      setShowScheduleLockModal(true)
+      return
+    }
+    
     if (assignment.status === 'active') {
       if (assignment.type === 'UMADebate') {
         // Navigate to debate assignment page
@@ -70,6 +84,15 @@ export default function AssignmentCard({ assignment, classroomId }: AssignmentCa
         // Navigate to assignment page for incomplete assignments
         router.push(`/student/assignment/${assignment.item_type}/${assignment.id}?classroomId=${classroomId}`)
       }
+    }
+  }
+
+  const handleBypassCodeSubmit = (code: string) => {
+    // Navigate to the test page with the bypass code
+    if (assignment.type === 'UMATest') {
+      router.push(`/student/umatest/${assignment.id}?override=${encodeURIComponent(code)}`)
+    } else {
+      router.push(`/student/test/${assignment.id}?override=${encodeURIComponent(code)}`)
     }
   }
 
@@ -315,7 +338,7 @@ export default function AssignmentCard({ assignment, classroomId }: AssignmentCa
 
           <button
             onClick={handleAssignmentClick}
-            disabled={assignment.status !== 'active' || ((assignment.is_completed || assignment.type === 'UMATest') && !canStartTest())}
+            disabled={assignment.status !== 'active'}
             className={`flex items-center px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
               assignment.status === 'active'
                 ? assignment.type === 'UMATest'
@@ -323,7 +346,7 @@ export default function AssignmentCard({ assignment, classroomId }: AssignmentCa
                     ? 'bg-blue-600 text-white hover:bg-blue-700'  // Blue for View Results
                     : canStartTest()
                       ? 'bg-red-600 text-white hover:bg-red-700'  // Red for Start Test (UMATest)
-                      : 'bg-red-100 text-red-800 cursor-not-allowed'
+                      : 'bg-amber-600 text-white hover:bg-amber-700 cursor-pointer'  // Amber for locked but clickable
                   : assignment.is_completed
                     ? assignment.type === 'UMAWrite'
                       ? 'bg-blue-600 text-white hover:bg-blue-700'  // Blue for View Results (UMAWrite)
@@ -332,14 +355,14 @@ export default function AssignmentCard({ assignment, classroomId }: AssignmentCa
                           ? 'bg-blue-600 text-white hover:bg-blue-700'  // Blue for View Results
                           : canStartTest()
                             ? 'bg-green-600 text-white hover:bg-green-700'  // Green for Start Test
-                            : 'bg-red-100 text-red-800 cursor-not-allowed'
+                            : 'bg-amber-600 text-white hover:bg-amber-700 cursor-pointer'  // Amber for locked but clickable
                         : 'bg-green-100 text-green-800 cursor-not-allowed'
                     : 'bg-primary-600 text-white hover:bg-primary-700'
                 : 'bg-gray-100 text-gray-400 cursor-not-allowed'
             }`}
           >
             {getButtonText()}
-            {assignment.status === 'active' && (!assignment.is_completed || canStartTest()) && (
+            {assignment.status === 'active' && (
               assignment.type === 'UMAWrite' && assignment.is_completed
                 ? <CheckCircleIcon className="h-4 w-4 ml-2" />  // Check icon for view results (UMAWrite)
                 : assignment.has_test && assignment.is_completed 
@@ -348,11 +371,28 @@ export default function AssignmentCard({ assignment, classroomId }: AssignmentCa
                     : canStartTest()
                       ? <FileCheckIcon className="h-4 w-4 ml-2" />  // Test icon for start test
                       : <LockClosedIcon className="h-4 w-4 ml-2" />  // Lock icon for locked test
-                  : <ArrowRightIcon className="h-4 w-4 ml-2" />  // Arrow for start assignment
+                  : assignment.type === 'UMATest'
+                    ? assignment.test_completed
+                      ? <CheckCircleIcon className="h-4 w-4 ml-2" />  // Check icon for view results
+                      : !canStartTest()
+                        ? <LockClosedIcon className="h-4 w-4 ml-2" />  // Lock icon for locked test
+                        : <FileCheckIcon className="h-4 w-4 ml-2" />  // Test icon for start test
+                    : !assignment.is_completed
+                      ? <ArrowRightIcon className="h-4 w-4 ml-2" />  // Arrow for start assignment
+                      : null
             )}
           </button>
         </div>
       </div>
+      
+      {/* Schedule Lock Modal */}
+      <ScheduleLockedTestModal
+        isOpen={showScheduleLockModal}
+        onClose={() => setShowScheduleLockModal(false)}
+        onCodeSubmit={handleBypassCodeSubmit}
+        testType={assignment.type === 'UMATest' ? 'test' : 'completion test'}
+        nextAvailableTime={availability?.next_window ? new Date(availability.next_window).toLocaleString() : undefined}
+      />
     </div>
   )
 }

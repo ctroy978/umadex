@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { testApi } from '@/lib/testApi'
 import TestInterface from '@/components/student/test/TestInterface'
 import { TestStartResponse, ReadingContentResponse } from '@/types/test'
@@ -10,6 +10,7 @@ import UnlockTestModal from '@/components/student/test/UnlockTestModal'
 
 export default function TestPage({ params }: { params: { testId: string } }) {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { testId: assignmentId } = params // testId is actually the assignment ID
   
   const [loading, setLoading] = useState(true)
@@ -24,8 +25,14 @@ export default function TestPage({ params }: { params: { testId: string } }) {
   const [testAttemptId, setTestAttemptId] = useState<string | null>(null)
 
   useEffect(() => {
-    loadTestData()
-  }, [assignmentId])
+    // Check if there's an override code in the URL params
+    const urlOverrideCode = searchParams.get('override')
+    if (urlOverrideCode) {
+      loadTestData(urlOverrideCode)
+    } else {
+      loadTestData()
+    }
+  }, [assignmentId, searchParams])
 
   const loadTestData = async (retryWithOverride?: string, retryCount: number = 0) => {
     try {

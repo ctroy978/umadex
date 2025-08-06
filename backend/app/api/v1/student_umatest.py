@@ -141,17 +141,37 @@ async def start_umatest(
     if classroom_assignment.classroom_id:
         availability = await TestScheduleService.check_test_availability(
             db,
-            classroom_assignment.classroom_id,
-            override_code
+            classroom_assignment.classroom_id
         )
         
         if not availability.allowed:
-            response = HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=availability.message
-            )
-            response.headers["X-Override-Required"] = "true"
-            raise response
+            # If override code is provided, try to validate it
+            if override_code:
+                # Validate the override code
+                from app.schemas.test_schedule import ValidateOverrideRequest
+                validation_request = ValidateOverrideRequest(
+                    override_code=override_code,
+                    student_id=current_user.id
+                )
+                validation = await TestScheduleService.validate_and_use_override(
+                    db,
+                    validation_request
+                )
+                
+                if not validation.get("valid", False):
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=f"Invalid or expired override code: {validation.get('message', 'Unknown error')}"
+                    )
+                # Override is valid, continue with test
+            else:
+                # No override code provided, deny access
+                response = HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=availability.message
+                )
+                response.headers["X-Override-Required"] = "true"
+                raise response
     
     # Get the test assignment
     test_assignment = await db.execute(
@@ -229,6 +249,18 @@ async def start_umatest(
     if test_assignment.randomize_questions:
         import random
         random.shuffle(questions)
+        
+        # Store the randomized question order in the test attempt
+        # This ensures the evaluator uses the same order
+        question_order = [q['id'] for q in questions]
+        current_attempt.metadata = current_attempt.metadata or {}
+        current_attempt.metadata['question_order'] = question_order
+        current_attempt.metadata['randomized'] = True
+        
+        from sqlalchemy.orm.attributes import flag_modified
+        flag_modified(current_attempt, "metadata")
+        await db.commit()
+        await db.refresh(current_attempt)
     
     return UMATestStartResponse(
         test_attempt_id=current_attempt.id,
@@ -479,7 +511,7 @@ async def get_umatest_results(
             'points_earned': float(eval.points_earned),
             'max_points': float(eval.max_points),
             'scoring_rationale': eval.scoring_rationale,
-            'feedback': eval.feedback or '',
+            'feedback': eval.feedback_text or '',
             'key_concepts_identified': eval.key_concepts_identified or [],
             'misconceptions_detected': eval.misconceptions_detected or []
         })

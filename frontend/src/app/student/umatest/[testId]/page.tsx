@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { umatestApi } from '@/lib/umatestApi'
 import UMATestInterface from '@/components/student/umatest/UMATestInterface'
 import { UMATestStartResponse } from '@/lib/umatestApi'
@@ -9,6 +9,7 @@ import { Loader2 } from 'lucide-react'
 
 export default function UMATestPage({ params }: { params: { testId: string } }) {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { testId: assignmentId } = params // testId is actually the assignment ID
   
   const [loading, setLoading] = useState(true)
@@ -19,8 +20,14 @@ export default function UMATestPage({ params }: { params: { testId: string } }) 
   const [retryAttempt, setRetryAttempt] = useState(0)
 
   useEffect(() => {
-    loadTestData()
-  }, [assignmentId])
+    // Check if there's an override code in the URL params
+    const urlOverrideCode = searchParams.get('override')
+    if (urlOverrideCode) {
+      loadTestData(urlOverrideCode)
+    } else {
+      loadTestData()
+    }
+  }, [assignmentId, searchParams])
 
   const loadTestData = async (retryWithOverride?: string, retryCount: number = 0) => {
     try {

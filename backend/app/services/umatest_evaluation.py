@@ -157,35 +157,75 @@ class UMATestEvaluationService:
         questions = test_data["questions"]
         answers = test_data["answers"]
         test_assignment = test_data["test_assignment"]
+        test_attempt = test_data["test_attempt"]
         
         logger.info(f"Processing test with {len(questions)} topics")
         logger.info(f"Answers data keys: {list(answers.keys()) if answers else 'No answers'}")
         logger.info(f"Answers data: {answers}")
         logger.info(f"Question structure sample: {list(questions.keys())[:3] if questions else 'No questions'}")
         
+        # Check if questions were randomized and get the order
+        randomized = test_attempt.metadata and test_attempt.metadata.get('randomized', False)
+        question_order = test_attempt.metadata.get('question_order', []) if test_attempt.metadata else []
+        
+        logger.info(f"Test randomized: {randomized}, Has question order: {bool(question_order)}")
+        
         # Build list of questions with answers
         question_list = []
         question_index_map = {}
-        index = 0
         
-        for topic_id, topic_data in questions.items():
-            topic_questions = topic_data.get('questions', [])
-            logger.info(f"Topic {topic_id}: {len(topic_questions)} questions, topic_data keys: {list(topic_data.keys())}")
+        if randomized and question_order:
+            # Use the stored randomized order
+            logger.info(f"Using randomized question order with {len(question_order)} questions")
             
-            for q_idx, question in enumerate(topic_questions):
-                answer = answers.get(str(index), '')
-                logger.info(f"Question {index} (topic {topic_id}, q_idx {q_idx}): Has answer: {bool(answer)}, Answer length: {len(answer)}")
-                logger.info(f"Question type: {type(question)}, Question keys: {list(question.keys()) if isinstance(question, dict) else 'Not a dict'}")
+            # First, create a map of question ID to question data
+            all_questions = {}
+            for topic_id, topic_data in questions.items():
+                for question in topic_data.get('questions', []):
+                    all_questions[question['id']] = {
+                        'question': question,
+                        'topic': topic_data.get('topic_title', ''),
+                        'lecture': topic_data.get('source_lecture_title', '')
+                    }
+            
+            # Now build the list in the randomized order
+            for index, question_id in enumerate(question_order):
+                if question_id in all_questions:
+                    q_data = all_questions[question_id]
+                    answer = answers.get(str(index), '')
+                    logger.info(f"Question {index} (id: {question_id}): Has answer: {bool(answer)}")
+                    
+                    question_list.append({
+                        'index': index,
+                        'question': q_data['question'],
+                        'topic': q_data['topic'],
+                        'lecture': q_data['lecture'],
+                        'answer': answer
+                    })
+                    question_index_map[index] = q_data['question']
+        else:
+            # Use original order (iterate through topics)
+            logger.info("Using original topic-based question order")
+            index = 0
+            
+            for topic_id, topic_data in questions.items():
+                topic_questions = topic_data.get('questions', [])
+                logger.info(f"Topic {topic_id}: {len(topic_questions)} questions, topic_data keys: {list(topic_data.keys())}")
                 
-                question_list.append({
-                    'index': index,
-                    'question': question,
-                    'topic': topic_data.get('topic_title', ''),
-                    'lecture': topic_data.get('source_lecture_title', ''),
-                    'answer': answer
-                })
-                question_index_map[index] = question
-                index += 1
+                for q_idx, question in enumerate(topic_questions):
+                    answer = answers.get(str(index), '')
+                    logger.info(f"Question {index} (topic {topic_id}, q_idx {q_idx}): Has answer: {bool(answer)}, Answer length: {len(answer)}")
+                    logger.info(f"Question type: {type(question)}, Question keys: {list(question.keys()) if isinstance(question, dict) else 'Not a dict'}")
+                    
+                    question_list.append({
+                        'index': index,
+                        'question': question,
+                        'topic': topic_data.get('topic_title', ''),
+                        'lecture': topic_data.get('source_lecture_title', ''),
+                        'answer': answer
+                    })
+                    question_index_map[index] = question
+                    index += 1
         
         # Evaluate each question
         evaluations = []

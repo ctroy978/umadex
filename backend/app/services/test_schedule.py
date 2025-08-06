@@ -249,10 +249,10 @@ class TestScheduleService:
         db: AsyncSession,
         validation_data: ValidateOverrideRequest
     ) -> Dict[str, Any]:
-        # Find the override code
+        # Find the override code (case-insensitive comparison)
         result = await db.execute(
             select(ClassroomTestOverride).where(
-                ClassroomTestOverride.override_code == validation_data.override_code
+                func.upper(ClassroomTestOverride.override_code) == validation_data.override_code.upper()
             )
         )
         override = result.scalar_one_or_none()
