@@ -13,9 +13,6 @@ const nextConfig = {
     ignoreBuildErrors: true,
   },
   // Disable static generation for all pages since they need Supabase env vars
-  experimental: {
-    appDir: true,
-  },
   async rewrites() {
     return [
       {

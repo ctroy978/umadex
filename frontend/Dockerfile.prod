@@ -5,9 +5,10 @@ WORKDIR /app
 
 # Copy package files
 COPY package*.json ./
-RUN npm ci --only=production && npm cache clean --force
+# Install ALL dependencies for build (including devDependencies)
+RUN npm ci && npm cache clean --force
 
-# Copy all dependencies for build
+# Copy source code
 COPY . .
 
 # Set production environment for build
