@@ -3,6 +3,10 @@ const nextConfig = {
   reactStrictMode: true,
   swcMinify: true,
   output: 'standalone',
+  // Disable static generation for all pages
+  generateBuildId: async () => {
+    return 'build-' + Date.now()
+  },
   eslint: {
     // Disable ESLint during production builds due to config issues
     ignoreDuringBuilds: true,

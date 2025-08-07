@@ -3,6 +3,10 @@ import { Inter } from 'next/font/google'
 import { Toaster } from 'react-hot-toast'
 import './globals.css'
 
+// Force dynamic rendering to avoid build-time static generation errors
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
