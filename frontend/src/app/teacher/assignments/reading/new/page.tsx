@@ -35,12 +35,9 @@ export default function NewReadingAssignment() {
             assignment_title: loadedAssignment.assignment_title,
             work_title: loadedAssignment.work_title,
             author: loadedAssignment.author,
-            grade_level: loadedAssignment.grade_level,
-            work_type: loadedAssignment.work_type,
-            subject: loadedAssignment.subject,
-            description: loadedAssignment.description,
-            start_date: loadedAssignment.start_date,
-            end_date: loadedAssignment.end_date,
+            grade_level: loadedAssignment.grade_level as "K-2" | "3-5" | "6-8" | "9-10" | "11-12" | "College" | "Adult Education" | undefined,
+            work_type: loadedAssignment.work_type as "fiction" | "non-fiction" | undefined,
+            subject: loadedAssignment.subject as "Science" | "Other" | "English Literature" | "History" | "Social Studies" | "ESL/ELL" | undefined,
           });
           // Set step based on URL or default to content editing
           setStep(stepParam === '1' ? 1 : 2);
@@ -104,7 +101,7 @@ export default function NewReadingAssignment() {
   };
 
   const handleValidate = async () => {
-    if (!assignment) return;
+    if (!assignment) return {} as any;
     
     try {
       // Save content first
@@ -232,11 +229,11 @@ export default function NewReadingAssignment() {
       // Find the image to get its storage path
       const imageToDelete = images.find(img => img.id === imageId);
       
-      if (imageToDelete && imageToDelete.storage_path) {
+      if (imageToDelete && (imageToDelete as any).storage_path) {
         // Delete from Supabase Storage
         const { error: storageError } = await supabase.storage
           .from('reading-images')
-          .remove([imageToDelete.storage_path]);
+          .remove([(imageToDelete as any).storage_path]);
         
         if (storageError) {
           console.error('Error deleting from storage:', storageError);

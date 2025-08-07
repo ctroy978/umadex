@@ -3,11 +3,12 @@ import { ReactNode } from 'react';
 interface CardProps {
   children: ReactNode;
   className?: string;
+  onClick?: () => void;
 }
 
-export function Card({ children, className = '' }: CardProps) {
+export function Card({ children, className = '', onClick }: CardProps) {
   return (
-    <div className={`bg-white rounded-lg shadow ${className}`}>
+    <div className={`bg-white rounded-lg shadow ${className}`} onClick={onClick}>
       {children}
     </div>
   );
@@ -34,5 +35,13 @@ export function CardContent({ children, className = '' }: CardProps) {
     <div className={`px-6 py-4 ${className}`}>
       {children}
     </div>
+  );
+}
+
+export function CardDescription({ children, className = '' }: CardProps) {
+  return (
+    <p className={`text-sm text-gray-600 ${className}`}>
+      {children}
+    </p>
   );
 }

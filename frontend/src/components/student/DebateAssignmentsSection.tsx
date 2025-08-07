@@ -110,7 +110,7 @@ export default function DebateAssignmentsSection() {
             <h3 className="text-sm font-medium text-gray-700 mb-3">In Progress</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {activeAssignments.map((assignment) => (
-                <DebateAssignmentCard key={assignment.assignment_id} assignment={assignment} />
+                <DebateAssignmentCard key={(assignment as any).assignment_id || assignment.assignmentId} assignment={assignment} />
               ))}
             </div>
           </div>
@@ -122,7 +122,7 @@ export default function DebateAssignmentsSection() {
             <h3 className="text-sm font-medium text-gray-700 mb-3">Ready to Start</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {notStartedAssignments.map((assignment) => (
-                <DebateAssignmentCard key={assignment.assignment_id} assignment={assignment} />
+                <DebateAssignmentCard key={(assignment as any).assignment_id || assignment.assignmentId} assignment={assignment} />
               ))}
             </div>
           </div>
@@ -134,7 +134,7 @@ export default function DebateAssignmentsSection() {
             <h3 className="text-sm font-medium text-gray-700 mb-3">Completed</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {completedAssignments.map((assignment) => (
-                <DebateAssignmentCard key={assignment.assignment_id} assignment={assignment} />
+                <DebateAssignmentCard key={(assignment as any).assignment_id || assignment.assignmentId} assignment={assignment} />
               ))}
             </div>
           </div>

@@ -238,7 +238,7 @@ export default function ChunkReader({
       {selectedImage && (
         <ImageModal
           imageUrl={selectedImage.url}
-          altText={selectedImage.description}
+          altText={selectedImage.description || ''}
           onClose={() => setSelectedImage(null)}
         />
       )}

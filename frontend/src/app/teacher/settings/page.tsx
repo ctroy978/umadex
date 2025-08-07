@@ -54,7 +54,7 @@ export default function SettingsPage() {
           <div className="space-y-3">
             <div>
               <label className="text-sm font-medium text-gray-500">Name</label>
-              <p className="text-gray-900">{settings?.full_name || user?.name}</p>
+              <p className="text-gray-900">{settings?.full_name || (user as any)?.name}</p>
             </div>
             <div>
               <label className="text-sm font-medium text-gray-500">Email</label>

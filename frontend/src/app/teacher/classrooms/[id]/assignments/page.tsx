@@ -262,12 +262,12 @@ export default function AssignmentManagementPage() {
   }
 
   const getChanges = () => {
-    const added = [...selectedIds].filter(id => !originalIds.has(id))
-    const removed = [...originalIds].filter(id => !selectedIds.has(id))
+    const added = Array.from(selectedIds).filter(id => !originalIds.has(id))
+    const removed = Array.from(originalIds).filter(id => !selectedIds.has(id))
     
     // Check for date changes on existing assignments
     let dateChanges = false
-    for (const id of selectedIds) {
+    for (const id of Array.from(selectedIds)) {
       if (originalIds.has(id)) {
         const current = schedules.get(id)
         const original = originalSchedules.get(id)
@@ -615,7 +615,7 @@ export default function AssignmentManagementPage() {
                                         <select
                                           value={new Date(schedule.start_date).getHours().toString()}
                                           onChange={(e) => {
-                                            const existingDate = new Date(schedule.start_date)
+                                            const existingDate = new Date(schedule.start_date!)
                                             existingDate.setHours(parseInt(e.target.value), 0, 0, 0)
                                             updateSchedule(assignment.id, 'start_date', existingDate.toISOString())
                                           }}
@@ -656,7 +656,7 @@ export default function AssignmentManagementPage() {
                                         <select
                                           value={new Date(schedule.end_date).getHours().toString()}
                                           onChange={(e) => {
-                                            const existingDate = new Date(schedule.end_date)
+                                            const existingDate = new Date(schedule.end_date!)
                                             existingDate.setHours(parseInt(e.target.value), 59, 59, 999)
                                             updateSchedule(assignment.id, 'end_date', existingDate.toISOString())
                                           }}

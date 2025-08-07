@@ -227,11 +227,11 @@ export default function TestInterface({ testData, readingContent, onComplete }: 
       onComplete()
     } catch (error) {
       console.error('=== FRONTEND: Failed to submit test ===', error)
-      console.error('Error details:', error.response?.data)
+      console.error('Error details:', (error as any).response?.data)
       
       // Still redirect even if submission fails to avoid getting stuck
       // The test attempt is already marked as submitted on the backend
-      if (error.response?.data?.detail?.includes('already submitted')) {
+      if ((error as any).response?.data?.detail?.includes('already submitted')) {
         console.log('Test already submitted, redirecting...')
         onComplete()
       } else {

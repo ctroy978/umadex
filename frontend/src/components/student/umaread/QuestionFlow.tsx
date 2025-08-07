@@ -99,7 +99,7 @@ export default function QuestionFlow({
     
     return {
       level: question.difficulty_level,
-      description: descriptions[question.difficulty_level] || `Level ${question.difficulty_level}`
+      description: (descriptions as any)[question.difficulty_level] || `Level ${question.difficulty_level}`
     };
   };
 
@@ -120,7 +120,7 @@ export default function QuestionFlow({
             </span>
             {getDifficultyInfo() && (
               <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                Level {getDifficultyInfo().level}: {getDifficultyInfo().description}
+                Level {getDifficultyInfo()?.level}: {getDifficultyInfo()?.description}
               </span>
             )}
           </div>

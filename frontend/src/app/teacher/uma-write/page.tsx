@@ -386,8 +386,8 @@ export default function UmaWritePage() {
               <DialogTitle>{errorDialog.title}</DialogTitle>
             </div>
           </DialogHeader>
-          <DialogDescription className="text-base">
-            {errorDialog.message}
+          <DialogDescription>
+            <span className="text-base">{errorDialog.message}</span>
           </DialogDescription>
           <DialogFooter>
             <button

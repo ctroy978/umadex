@@ -119,8 +119,6 @@ export default function AssignmentCard({ assignment, classroomId }: AssignmentCa
         return <DocumentCheckIcon className="h-5 w-5 text-amber-600" />
       case 'lecture':
         return <AcademicCapIcon className="h-5 w-5 text-indigo-600" />
-      case 'test':
-        return <DocumentCheckIcon className="h-5 w-5 text-red-600" />
       default:
         return <BookOpenIcon className="h-5 w-5 text-gray-600" />
     }

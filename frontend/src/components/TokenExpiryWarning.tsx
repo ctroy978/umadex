@@ -4,7 +4,7 @@ import { useAuthSupabase } from '@/hooks/useAuthSupabase'
 import { authService } from '@/lib/auth'
 
 export default function TokenExpiryWarning() {
-  const { tokenExpirySeconds } = useAuthSupabase()
+  const { tokenExpirySeconds } = useAuthSupabase() as any
   
   // Only show in development
   if (process.env.NODE_ENV !== 'development') {

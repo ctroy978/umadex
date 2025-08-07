@@ -128,7 +128,7 @@ export default function VocabularyTestPage() {
   }
 
   const handleTestComplete = (testResults: VocabularyTestAttemptResponse) => {
-    setResults(testResults)
+    setResults(testResults as any)
     setPageState('results')
   }
 

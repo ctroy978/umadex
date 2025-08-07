@@ -52,12 +52,12 @@ export default function ReportsPage() {
           {reportSections.map((section) => (
             <button
               key={section.id}
-              onClick={() => !section.comingSoon && setActiveReport(section.id)}
-              disabled={section.comingSoon}
+              onClick={() => !(section as any).comingSoon && setActiveReport(section.id)}
+              disabled={(section as any).comingSoon}
               className={`p-4 rounded-lg border-2 transition-all text-left ${
                 activeReport === section.id
                   ? 'border-primary-500 bg-primary-50'
-                  : section.comingSoon
+                  : (section as any).comingSoon
                   ? 'border-gray-200 bg-gray-50 cursor-not-allowed opacity-60'
                   : 'border-gray-200 hover:border-gray-300 bg-white'
               }`}
@@ -69,7 +69,7 @@ export default function ReportsPage() {
                 <h3 className="font-medium text-gray-900">{section.name}</h3>
               </div>
               <p className="text-sm text-gray-600">{section.description}</p>
-              {section.comingSoon && (
+              {(section as any).comingSoon && (
                 <span className="inline-block mt-2 text-xs bg-gray-200 text-gray-600 px-2 py-1 rounded">
                   Coming Soon
                 </span>

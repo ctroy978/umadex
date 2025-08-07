@@ -64,13 +64,13 @@ export default function VocabularyViewPage({ params }: { params: { id: string } 
         
         // Title
         doc.setFontSize(20)
-        doc.setFont(undefined, 'bold')
+        doc.setFont('helvetica', 'bold')
         doc.text(list.title, pageWidth / 2, yPosition, { align: 'center' })
         yPosition += lineHeight * 2
         
         // Metadata
         doc.setFontSize(12)
-        doc.setFont(undefined, 'normal')
+        doc.setFont('helvetica', 'normal')
         doc.text(`Grade: ${list.grade_level} | Subject: ${list.subject_area}`, pageWidth / 2, yPosition, { align: 'center' })
         yPosition += lineHeight
         doc.text(`Context: ${list.context_description}`, pageWidth / 2, yPosition, { align: 'center' })
@@ -89,13 +89,13 @@ export default function VocabularyViewPage({ params }: { params: { id: string } 
           
           // Word number and term
           doc.setFontSize(14)
-          doc.setFont(undefined, 'bold')
+          doc.setFont('helvetica', 'bold')
           doc.text(`${index + 1}. ${word.word}`, margin, yPosition)
           yPosition += lineHeight
           
           // Definition
           doc.setFontSize(11)
-          doc.setFont(undefined, 'normal')
+          doc.setFont('helvetica', 'normal')
           const definition = word.definition_source === 'teacher' 
             ? word.teacher_definition 
             : word.ai_definition
@@ -112,7 +112,7 @@ export default function VocabularyViewPage({ params }: { params: { id: string } 
           })
           
           // Example sentences
-          doc.setFont(undefined, 'normal')
+          doc.setFont('helvetica', 'normal')
           const example1 = word.examples_source === 'teacher'
             ? word.teacher_example_1
             : word.ai_example_1
@@ -145,9 +145,9 @@ export default function VocabularyViewPage({ params }: { params: { id: string } 
         
         // Add footer with creation date
         doc.setFontSize(10)
-        doc.setFont(undefined, 'italic')
-        const currentPage = doc.internal.getCurrentPageInfo().pageNumber
-        const totalPages = doc.internal.getNumberOfPages()
+        doc.setFont('helvetica', 'italic')
+        const currentPage = (doc.internal as any).getCurrentPageInfo?.().pageNumber || 1
+        const totalPages = (doc.internal as any).getNumberOfPages?.() || 1
         for (let i = 1; i <= totalPages; i++) {
           doc.setPage(i)
           doc.text(

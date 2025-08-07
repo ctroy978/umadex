@@ -91,11 +91,11 @@ export default function TeacherUmaLecturePreview() {
     if (img.node_id.toLowerCase() === currentTopicId.toLowerCase()) return true
     
     // Check if any significant words from the topic appear in the node_id
-    const topicWords = currentTopic.title.toLowerCase().split(/\s+/).filter(w => w.length > 3)
+    const topicWords = currentTopic.title.toLowerCase().split(/\s+/).filter((w: string) => w.length > 3)
     const nodeWords = img.node_id.toLowerCase()
     
     // If any topic word appears in the node_id, consider it a match
-    return topicWords.some(word => nodeWords.includes(word))
+    return topicWords.some((word: string) => nodeWords.includes(word))
   })
   
   console.log('Current topic:', currentTopic?.title)
@@ -180,7 +180,7 @@ export default function TeacherUmaLecturePreview() {
                             <div
                               key={image.id}
                               className="relative group cursor-pointer rounded-lg overflow-hidden shadow-md hover:shadow-xl transition-all"
-                              onClick={() => setExpandedImage(image.original_url || image.display_url || image.thumbnail_url)}
+                              onClick={() => setExpandedImage(image.original_url || image.display_url || image.thumbnail_url || null)}
                             >
                               <img
                                 src={image.original_url || image.display_url || image.thumbnail_url}
@@ -265,7 +265,7 @@ export default function TeacherUmaLecturePreview() {
                 <div className="p-4 max-h-[600px] overflow-y-auto">
                   {currentQuestions.length > 0 ? (
                     <div className="space-y-4">
-                      {currentQuestions.map((question, idx) => (
+                      {currentQuestions.map((question: any, idx: number) => (
                         <div key={idx} className="border rounded-lg p-4 bg-gray-50">
                           <div className="flex items-start justify-between mb-2">
                             <span className="text-sm font-medium text-gray-700">
@@ -280,7 +280,7 @@ export default function TeacherUmaLecturePreview() {
                           
                           {question.question_type === 'multiple_choice' && question.options && (
                             <div className="space-y-2 mb-3">
-                              {question.options.map((option, optIdx) => (
+                              {question.options.map((option: any, optIdx: number) => (
                                 <div
                                   key={optIdx}
                                   className={`flex items-center text-sm p-2 rounded ${

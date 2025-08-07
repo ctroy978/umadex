@@ -17,7 +17,7 @@ import { umalectureApi } from '@/lib/umalectureApi'
 import { teacherApi } from '@/lib/teacherApi'
 import { teacherClassroomApi } from '@/lib/classroomApi'
 import type { LectureAssignment } from '@/lib/umalectureApi'
-import type { Classroom } from '@/lib/teacherApi'
+import type { Classroom } from '@/lib/classroomApi'
 
 export default function AssignLecturePage() {
   const router = useRouter()
@@ -43,7 +43,7 @@ export default function AssignLecturePage() {
     try {
       const [lectureData, classroomsData] = await Promise.all([
         umalectureApi.getLecture(lectureId),
-        teacherApi.getClassrooms()
+        teacherClassroomApi.listClassrooms()
       ])
       
       setLecture(lectureData)
@@ -89,7 +89,7 @@ export default function AssignLecturePage() {
       const endDateTime = endDate ? new Date(endDate + 'T23:59:59').toISOString() : null
       
       // Use the standard classroom assignment API with scheduling
-      for (const classroomId of selectedClassrooms) {
+      for (const classroomId of Array.from(selectedClassrooms)) {
         await teacherClassroomApi.updateClassroomAssignmentsAll(classroomId, {
           assignments: [{
             assignment_id: lectureId,
@@ -251,9 +251,9 @@ export default function AssignLecturePage() {
                         {classroom.student_count || 0} students
                       </span>
                     </div>
-                    {classroom.description && (
+                    {(classroom as any).description && (
                       <p className="text-sm text-gray-600 mt-1">
-                        {classroom.description}
+                        {(classroom as any).description}
                       </p>
                     )}
                   </div>

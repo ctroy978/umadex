@@ -340,7 +340,7 @@ export default function EditLecturePage() {
                     <div key={difficulty} className="border-b border-gray-100 last:border-0">
                       <div className="px-6 py-4">
                         <div className="flex items-center justify-between mb-3">
-                          <span className={`px-3 py-1 rounded-full text-sm font-medium ${difficultyColors[difficulty]}`}>
+                          <span className={`px-3 py-1 rounded-full text-sm font-medium ${(difficultyColors as any)[difficulty]}`}>
                             {difficulty.charAt(0).toUpperCase() + difficulty.slice(1)} Level
                           </span>
                           <span className="text-sm text-gray-500">

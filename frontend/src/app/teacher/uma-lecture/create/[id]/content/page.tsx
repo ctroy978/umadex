@@ -268,7 +268,7 @@ export default function CreateLectureContentPage() {
     // Check if there are images that have been configured but not uploaded
     const pendingImages = imageUploads.filter(img => !img.uploaded)
     if (pendingImages.length > 0) {
-      const hasValidPending = pendingImages.some(img => img.nodeId && img.description)
+      const hasValidPending = pendingImages.some(img => (img as any).nodeId && img.description)
       if (hasValidPending) {
         setError('Please upload all pending images before creating the lecture. You can also remove these images if you don\'t want to include them.')
         return

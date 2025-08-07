@@ -179,8 +179,8 @@ export default function UmaReadPage() {
 
   const getAvailabilityStatus = (assignment: ReadingAssignmentList) => {
     const now = new Date()
-    const startDate = assignment.start_date ? new Date(assignment.start_date) : null
-    const endDate = assignment.end_date ? new Date(assignment.end_date) : null
+    const startDate = (assignment as any).start_date ? new Date((assignment as any).start_date) : null
+    const endDate = (assignment as any).end_date ? new Date((assignment as any).end_date) : null
 
     if (assignment.status !== 'published') {
       return null

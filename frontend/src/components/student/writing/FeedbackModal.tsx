@@ -138,11 +138,11 @@ export default function FeedbackModal({
 
                 {/* Technique Validation */}
                 {feedback.technique_validation && (
-                  feedback.technique_validation.techniques?.length > 0 ? (
+                  (feedback.technique_validation.techniques as any)?.length > 0 ? (
                     <div className="mb-8">
                       <h4 className="text-lg font-semibold text-gray-900 mb-4">Technique Usage</h4>
                       <div className="space-y-3">
-                        {feedback.technique_validation.techniques.map((technique: any) => (
+                        {(feedback.technique_validation.techniques as any[])?.map((technique: any) => (
                           <div key={technique.name} className={`rounded-lg p-4 border-2 ${
                             technique.found ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'
                           }`}>

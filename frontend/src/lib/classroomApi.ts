@@ -1,4 +1,21 @@
 import api from './api';
+export type {
+  Classroom,
+  ClassroomDetail,
+  ClassroomCreateRequest,
+  ClassroomUpdateRequest,
+  JoinClassroomRequest,
+  JoinClassroomResponse,
+  UpdateClassroomAssignmentsRequest,
+  UpdateClassroomAssignmentsResponse,
+  AvailableAssignment,
+  AvailableAssignmentsResponse,
+  AssignmentInClassroom,
+  StudentInClassroom,
+  CheckAssignmentRemovalResponse,
+  VocabularySettingsResponse,
+  VocabularySettingsUpdate
+}
 import type {
   Classroom,
   ClassroomDetail,

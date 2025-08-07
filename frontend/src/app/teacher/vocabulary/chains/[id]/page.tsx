@@ -38,7 +38,7 @@ export default function VocabularyChainDetailPage({ params }: { params: { id: st
       
       // Load available vocabulary lists
       const listsResponse = await vocabularyApi.getLists({
-        status: 'published',
+        status: 'published' as any,
         per_page: 100
       })
       
@@ -239,7 +239,7 @@ export default function VocabularyChainDetailPage({ params }: { params: { id: st
                   </button>
                   <button
                     onClick={() => handleReorderMember(member.vocabulary_list_id, index, 'down')}
-                    disabled={index === chain.members.length - 1}
+                    disabled={index === (chain.members?.length || 0) - 1}
                     className="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <ArrowDownIcon className="h-5 w-5" />

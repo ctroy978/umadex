@@ -72,7 +72,7 @@ export default function UMALecturePage() {
     const lecture = lectures.find(l => l.id === lectureId)
     
     // Client-side validation like writing module
-    if (lecture && lecture.classroom_count > 0) {
+    if (lecture && lecture.classroom_count && lecture.classroom_count > 0) {
       const forceUnlink = confirm(
         `This lecture appears to be attached to ${lecture.classroom_count} classroom(s).\n\n` +
         'Would you like to force unlink this lecture from all classrooms and archive it?'

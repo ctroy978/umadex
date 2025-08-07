@@ -324,7 +324,7 @@ export default function VocabularyReviewPage({ params }: { params: { id: string 
       
       // Update local state to reflect published status
       if (list) {
-        setList({ ...list, status: 'published' })
+        setList({ ...list, status: 'published' as VocabularyStatus })
       }
       
       // Show success message

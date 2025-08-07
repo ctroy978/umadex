@@ -104,7 +104,7 @@ export function ExplorationModal({
       setMessages([{
         id: Date.now().toString(),
         role: 'assistant',
-        content: response.response,
+        content: response.response || '',
         timestamp: new Date(),
       }])
     } catch (err) {
