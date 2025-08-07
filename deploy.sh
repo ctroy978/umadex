@@ -24,10 +24,10 @@ git pull origin main
 
 # Build and deploy
 echo "🔨 Building Docker images..."
-docker-compose -f $COMPOSE_FILE build
+docker-compose -f $COMPOSE_FILE --env-file $ENV_FILE build
 
 echo "🔄 Stopping old containers..."
-docker-compose -f $COMPOSE_FILE down
+docker-compose -f $COMPOSE_FILE --env-file $ENV_FILE down
 
 echo "🚀 Starting new containers..."
 docker-compose -f $COMPOSE_FILE --env-file $ENV_FILE up -d
@@ -38,11 +38,11 @@ sleep 10
 
 # Check service status
 echo "✅ Checking service status..."
-docker-compose -f $COMPOSE_FILE ps
+docker-compose -f $COMPOSE_FILE --env-file $ENV_FILE ps
 
 # Show logs for debugging if needed
 echo "📋 Recent logs:"
-docker-compose -f $COMPOSE_FILE logs --tail=50
+docker-compose -f $COMPOSE_FILE --env-file $ENV_FILE logs --tail=50
 
 echo "✨ Deployment complete!"
 echo "🌐 Your application should be available at your configured domain"

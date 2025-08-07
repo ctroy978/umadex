@@ -59,7 +59,7 @@ services:
       - backend
     networks:
       - umadex_network
-    command: npm start
+    command: node server.js
 
   nginx:
     image: nginx:alpine
