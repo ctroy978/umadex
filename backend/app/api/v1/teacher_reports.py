@@ -1765,6 +1765,196 @@ async def get_umatest_analytics(db: AsyncSession, student_id: UUID) -> Dict[Any,
     }
 
 
+@router.get("/student-input/{student_id}")
+async def get_student_input(
+    student_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get all written input from a student across all modules (text only, no grades)"""
+    if current_user.role != UserRole.TEACHER:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only teachers can access this endpoint"
+        )
+    
+    # Verify teacher has access to this student
+    student_access = await db.execute(
+        select(ClassroomStudent).join(
+            Classroom, ClassroomStudent.classroom_id == Classroom.id
+        ).where(
+            and_(
+                Classroom.teacher_id == current_user.id,
+                ClassroomStudent.student_id == student_id,
+                ClassroomStudent.removed_at.is_(None)
+            )
+        )
+    )
+    
+    if not student_access.scalar():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied to this student's data"
+        )
+    
+    # Get student info
+    student = await db.get(User, student_id)
+    if not student:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Student not found"
+        )
+    
+    all_input = []
+    
+    # 1. Get UMARead responses (student answers to questions)
+    umaread_responses = await db.execute(
+        select(
+            UmareadStudentResponse.student_answer,
+            UmareadStudentResponse.question_text,
+            UmareadStudentResponse.created_at,
+            ReadingAssignment.assignment_title
+        ).join(
+            ReadingAssignment,
+            UmareadStudentResponse.assignment_id == ReadingAssignment.id
+        ).where(
+            UmareadStudentResponse.student_id == student_id
+        ).order_by(UmareadStudentResponse.created_at.desc())
+    )
+    
+    for response in umaread_responses.all():
+        if response.student_answer:
+            all_input.append({
+                "module": "UMARead",
+                "assignment": response.assignment_title,
+                "question": response.question_text,
+                "content": response.student_answer,
+                "date": response.created_at.isoformat()
+            })
+    
+    # 2. Get UMADebate posts (student arguments)
+    debate_posts = await db.execute(
+        select(
+            DebatePost.content,
+            DebatePost.created_at,
+            DebateAssignment.title,
+            DebateAssignment.topic
+        ).join(
+            StudentDebate, DebatePost.student_debate_id == StudentDebate.id
+        ).join(
+            DebateAssignment, StudentDebate.assignment_id == DebateAssignment.id
+        ).where(
+            and_(
+                StudentDebate.student_id == student_id,
+                DebatePost.post_type == 'student'
+            )
+        ).order_by(DebatePost.created_at.desc())
+    )
+    
+    for post in debate_posts.all():
+        if post.content:
+            all_input.append({
+                "module": "UMADebate",
+                "assignment": post.title,
+                "question": f"Debate topic: {post.topic}",
+                "content": post.content,
+                "date": post.created_at.isoformat()
+            })
+    
+    # 3. Get UMAWrite submissions
+    write_submissions = await db.execute(
+        select(
+            StudentWritingSubmission.response_text,
+            StudentWritingSubmission.submitted_at,
+            WritingAssignment.title,
+            WritingAssignment.prompt_text
+        ).join(
+            WritingAssignment,
+            StudentWritingSubmission.writing_assignment_id == WritingAssignment.id
+        ).where(
+            StudentWritingSubmission.student_id == student_id
+        ).order_by(StudentWritingSubmission.submitted_at.desc())
+    )
+    
+    for submission in write_submissions.all():
+        if submission.response_text:
+            all_input.append({
+                "module": "UMAWrite",
+                "assignment": submission.title,
+                "question": submission.prompt_text[:200] + "..." if len(submission.prompt_text) > 200 else submission.prompt_text,
+                "content": submission.response_text,
+                "date": submission.submitted_at.isoformat()
+            })
+    
+    # 4. Get UMAVocab story responses
+    vocab_stories = await db.execute(
+        select(
+            VocabularyStoryResponse.story_text,
+            VocabularyStoryResponse.submitted_at,
+            VocabularyList.title
+        ).join(
+            VocabularyList,
+            VocabularyStoryResponse.vocabulary_list_id == VocabularyList.id
+        ).where(
+            VocabularyStoryResponse.student_id == student_id
+        ).order_by(VocabularyStoryResponse.submitted_at.desc())
+    )
+    
+    for story in vocab_stories.all():
+        if story.story_text:
+            all_input.append({
+                "module": "UMAVocab",
+                "assignment": story.title,
+                "question": "Creative Story Writing",
+                "content": story.story_text,
+                "date": story.submitted_at.isoformat()
+            })
+    
+    # 5. Get UMATest free-text answers (from StudentTestAttempt answers_data)
+    test_attempts = await db.execute(
+        select(
+            StudentTestAttempt.answers_data,
+            StudentTestAttempt.submitted_at,
+            TestAssignment.test_title
+        ).join(
+            TestAssignment,
+            StudentTestAttempt.test_id == TestAssignment.id
+        ).where(
+            and_(
+                StudentTestAttempt.student_id == student_id,
+                StudentTestAttempt.answers_data.isnot(None)
+            )
+        ).order_by(StudentTestAttempt.submitted_at.desc())
+    )
+    
+    for attempt in test_attempts.all():
+        if attempt.answers_data:
+            # Extract text answers from the JSONB data
+            for question_id, answer_text in attempt.answers_data.items():
+                if answer_text and isinstance(answer_text, str) and len(answer_text.strip()) > 0:
+                    all_input.append({
+                        "module": "UMATest",
+                        "assignment": attempt.test_title,
+                        "question": f"Question {question_id}",
+                        "content": answer_text,
+                        "date": attempt.submitted_at.isoformat() if attempt.submitted_at else datetime.utcnow().isoformat()
+                    })
+    
+    # Sort all input by date (newest first)
+    all_input.sort(key=lambda x: x["date"], reverse=True)
+    
+    return {
+        "student": {
+            "id": student.id,
+            "first_name": student.first_name,
+            "last_name": student.last_name,
+            "email": student.email
+        },
+        "input_count": len(all_input),
+        "inputs": all_input
+    }
+
+
 @router.get("/reports/lecture-progress/{classroom_id}")
 async def get_lecture_progress(
     classroom_id: UUID,

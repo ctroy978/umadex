@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { UserIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
 import { api } from '@/lib/api';
+import AllStudentInput from './AllStudentInput';
 
 interface Student {
   id: string;
@@ -262,6 +263,9 @@ You are analyzing educational performance data for a student. Please provide ins
           )}
         </div>
       )}
+      
+      {/* All Student Input Section */}
+      <AllStudentInput />
     </div>
   );
 }
