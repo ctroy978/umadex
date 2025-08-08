@@ -46,7 +46,7 @@ class SupabaseAuthService:
         
         # Check whitelist
         if not await SupabaseAuthService.check_whitelist(db, email):
-            raise ValueError("Email not in whitelist")
+            raise ValueError("Authentication denied")
         
         # Check if user exists in our database
         result = await db.execute(
