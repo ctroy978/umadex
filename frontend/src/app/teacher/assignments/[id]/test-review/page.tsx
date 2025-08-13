@@ -33,6 +33,7 @@ export default function TestReviewPage({ params }: { params: { id: string } }) {
   const { user, isLoading } = useAuthSupabase();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
   const [test, setTest] = useState<TestData | null>(null);
   const [testId, setTestId] = useState<string | null>(null);
   const [questions, setQuestions] = useState<TestQuestion[]>([]);
@@ -100,7 +101,8 @@ export default function TestReviewPage({ params }: { params: { id: string } }) {
     try {
       // params.id is the assignment ID
       const data = await apiRequest<TestData>(`/v1/tests/${params.id}/generate`, {
-        method: 'POST'
+        method: 'POST',
+        timeout: 120000 // 2 minutes timeout for Gemini API
       });
 
       setTest(data);
@@ -121,7 +123,8 @@ export default function TestReviewPage({ params }: { params: { id: string } }) {
   const regenerateQuestions = async () => {
     if (!testId || !confirm('This will replace all current questions with new ones. Are you sure?')) return;
     
-    setLoading(true);
+    setRegenerating(true);
+    setLoading(true); // Show loading screen
     setError('');
     setSuccess('');
 
@@ -133,16 +136,19 @@ export default function TestReviewPage({ params }: { params: { id: string } }) {
 
       // Clear the testId to ensure the page knows the test was deleted
       setTestId(null);
-      setTest(null);
+      // Don't clear test here - keep it for UI display during regeneration
 
       // Small delay to ensure database transaction completes
       await new Promise(resolve => setTimeout(resolve, 500));
 
       // Generate a new test
       await generateTest();
+      setSuccess('Test questions regenerated successfully!');
     } catch (err) {
       console.error('Error regenerating test:', err);
-      setError('Failed to regenerate test questions');
+      setError('Failed to regenerate test questions. Please try again.');
+    } finally {
+      setRegenerating(false);
       setLoading(false);
     }
   };
@@ -265,10 +271,14 @@ export default function TestReviewPage({ params }: { params: { id: string } }) {
     }
   };
 
-  if (loading) {
+  if (loading || regenerating) {
     return (
         <div className="flex items-center justify-center min-h-screen">
-          <div className="text-lg">Loading...</div>
+          <div className="text-center">
+            <div className="inline-block animate-spin text-4xl mb-4">⟳</div>
+            <div className="text-lg">{regenerating ? 'Regenerating test questions...' : 'Loading test...'}</div>
+            <div className="text-sm text-gray-500 mt-2">{regenerating ? 'This may take up to 2 minutes' : 'Please wait...'}</div>
+          </div>
         </div>
     );
   }
@@ -484,10 +494,19 @@ export default function TestReviewPage({ params }: { params: { id: string } }) {
           {test.status === 'draft' && (
             <button
               onClick={regenerateQuestions}
-              disabled={loading}
-              className="px-4 py-2 border border-amber-300 text-amber-700 rounded-md hover:bg-amber-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={regenerating || loading}
+              className="px-4 py-2 border border-amber-300 text-amber-700 rounded-md hover:bg-amber-50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
-              🔄 Regenerate All Questions
+              {regenerating ? (
+                <>
+                  <span className="inline-block animate-spin">⟳</span>
+                  Regenerating Questions...
+                </>
+              ) : (
+                <>
+                  🔄 Regenerate All Questions
+                </>
+              )}
             </button>
           )}
           <div className="flex-1" />

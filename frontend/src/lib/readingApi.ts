@@ -1,4 +1,6 @@
 import api from './api';
+import axios from 'axios';
+import { supabase } from './supabase';
 import { 
   ReadingAssignmentCreate, 
   ReadingAssignmentUpdate,
@@ -9,6 +11,27 @@ import {
   MarkupValidationResult,
   PublishResult 
 } from '@/types/reading';
+
+// Create a custom axios instance for reading assignments with longer timeout
+const readingApiClient = axios.create({
+  baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost/api',
+  timeout: 60000, // 60 seconds timeout for reading assignments
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
+// Add auth interceptor
+readingApiClient.interceptors.request.use(
+  async (config) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.access_token) {
+      config.headers.Authorization = `Bearer ${session.access_token}`;
+    }
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
 
 export const readingApi = {
   // Create a new draft assignment
@@ -87,7 +110,7 @@ export const readingApi = {
     work_type?: string;
     include_archived?: boolean;
   }): Promise<ReadingAssignmentListResponse> => {
-    const response = await api.get('/v1/teacher/assignments/reading', { params });
+    const response = await readingApiClient.get('/v1/teacher/assignments/reading', { params });
     return response.data;
   },
 

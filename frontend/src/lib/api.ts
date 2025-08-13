@@ -114,11 +114,13 @@ export async function apiRequest<T = any>(url: string, options?: {
   method?: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
   body?: string | FormData;
   headers?: Record<string, string>;
+  timeout?: number;
 }): Promise<T> {
   const method = options?.method || 'GET';
   const config: any = {
     method: method.toLowerCase(),
     headers: options?.headers || {},
+    timeout: options?.timeout,
   };
 
   // Handle different body types
