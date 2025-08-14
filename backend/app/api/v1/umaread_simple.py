@@ -718,6 +718,8 @@ async def crunch_text(
             await db.commit()
         except Exception as e:
             print(f"Warning: Could not log crunch text usage: {e}")
+            # Rollback to clean up the session state
+            await db.rollback()
             # Don't fail the request if logging fails
             pass
         

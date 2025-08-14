@@ -148,7 +148,9 @@ async def cache_simplification(
         )
         await db.commit()
     except Exception as e:
-        print(f"Warning: Could not cache simplification (table may not exist): {e}")
+        print(f"Warning: Could not cache simplification: {e}")
+        # Rollback the failed transaction to prevent contaminating the session
+        await db.rollback()
         # Don't fail if we can't cache - just continue without caching
 
 
