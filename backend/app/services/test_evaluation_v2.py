@@ -257,50 +257,51 @@ class TestEvaluationServiceV2:
     ) -> str:
         """Build comprehensive evaluation prompt."""
         
-        # Format rubric descriptions
-        rubric_descriptions = {
-            score: f"{info['label']} - {info['description']}"
-            for score, info in UMAREAD_SCORING_RUBRIC.items()
-        }
+        # Start with the evaluation prompt intro (already includes rubric)
+        prompt = EVALUATION_PROMPT_INTRO.format(grade_level=grade_level)
         
-        prompt = EVALUATION_PROMPT_INTRO.format(
-            rubric_4_desc=rubric_descriptions[4],
-            rubric_3_desc=rubric_descriptions[3],
-            rubric_2_desc=rubric_descriptions[2],
-            rubric_1_desc=rubric_descriptions[1],
-            rubric_0_desc=rubric_descriptions[0],
-            grade_level=grade_level
-        )
-        
-        prompt += f"\n\nAssignment Context:\n"
+        prompt += f"\n\n## Assignment Context:\n"
         prompt += f"- Type: {assignment_metadata.get('type', 'Unknown')}\n"
         prompt += f"- Difficulty: {assignment_metadata.get('difficulty_level', 'Unknown')}\n"
         prompt += f"- Subject: {assignment_metadata.get('subject', 'Unknown')}\n"
         prompt += f"- Genre: {assignment_metadata.get('genre', 'Unknown')}\n"
         
-        prompt += "\n\nQuestions and Student Responses:\n\n"
+        prompt += "\n## Questions and Student Responses:\n\n"
+        prompt += "Evaluate each response carefully according to the rubric above.\n\n"
         
         for i, question in enumerate(questions):
             student_answer = student_answers.get(str(i), "")
             
-            prompt += f"Question {i+1}:\n"
-            prompt += f"Question Text: {question['question']}\n"
-            prompt += f"Answer Key: {question['answer_key']}\n"
-            prompt += f"Answer Explanation: {question.get('answer_explanation', 'Not provided')}\n"
-            prompt += f"Evaluation Criteria: {question.get('evaluation_criteria', 'Standard criteria apply')}\n"
-            prompt += f"Question Difficulty: {question.get('difficulty', 5)}/8\n"
-            prompt += f"Student Answer: {student_answer if student_answer else '[No answer provided]'}\n"
+            prompt += f"### Question {i+1}:\n"
+            prompt += f"**Question Text:** {question['question']}\n"
+            prompt += f"**Answer Key:** {question['answer_key']}\n"
+            prompt += f"**Answer Explanation:** {question.get('answer_explanation', 'Not provided')}\n"
+            prompt += f"**Evaluation Criteria:** {question.get('evaluation_criteria', 'Standard criteria apply')}\n"
+            prompt += f"**Question Difficulty:** {question.get('difficulty', 5)}/8\n"
+            prompt += f"**Student Answer:** {student_answer if student_answer else '[No answer provided]'}\n"
             prompt += "\n"
         
         prompt += FEEDBACK_GUIDELINES
         
-        prompt += "\n\nProvide your evaluation as a JSON object with this structure:\n"
+        prompt += "\n\n## CRITICAL EVALUATION INSTRUCTIONS:\n"
+        prompt += "1. Compare each student answer directly to the answer key and evaluation criteria\n"
+        prompt += "2. Apply the 4-point rubric scoring STRICTLY:\n"
+        prompt += "   - Score 4 (10 pts): Answer matches answer key, includes all required elements, proper evidence\n"
+        prompt += "   - Score 3 (8 pts): Most elements correct, minor gaps or missing details\n"
+        prompt += "   - Score 2 (5 pts): Some correct elements but missing key information\n"
+        prompt += "   - Score 1 (2 pts): Very limited correct information, major gaps\n"
+        prompt += "   - Score 0 (0 pts): No relevant answer or completely incorrect\n"
+        prompt += "3. Be rigorous - do NOT default to score 3. Most answers should vary between 0-4 based on actual quality\n"
+        prompt += "4. Provide specific, actionable feedback for any score below 4\n"
+        prompt += "5. Base your evaluation on content accuracy, NOT on writing style or length alone\n\n"
+        
+        prompt += "Provide your evaluation as a JSON object with this structure:\n"
         prompt += """
 {
     "question_evaluations": [
         {
             "rubric_score": <0-4>,
-            "scoring_rationale": "<explanation>",
+            "scoring_rationale": "<specific explanation comparing answer to answer key>",
             "feedback": "<constructive feedback for scores below 4, null for score 4>",
             "key_concepts_identified": ["concept1", "concept2"],
             "misconceptions_detected": ["misconception1"],
