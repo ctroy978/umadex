@@ -895,7 +895,7 @@ async def _validate_assignment_access_helper(
             detail="Invalid assignment type"
         )
     
-    # Find the classroom assignment
+    # Find the classroom assignment(s)
     ca_query = select(ClassroomAssignment, Classroom)
     ca_query = ca_query.join(Classroom, Classroom.id == ClassroomAssignment.classroom_id)
     
@@ -922,32 +922,38 @@ async def _validate_assignment_access_helper(
         )
     
     result = await db.execute(ca_query)
-    ca_result = result.first()
+    ca_results = result.all()
     
-    if not ca_result:
+    if not ca_results:
         raise HTTPException(
             status_code=http_status.HTTP_404_NOT_FOUND,
             detail="Assignment not found"
         )
     
-    classroom_assignment, classroom = ca_result
-    
-    # Check if student is enrolled
-    enrollment = await db.execute(
-        select(ClassroomStudent)
-        .where(
-            and_(
-                ClassroomStudent.classroom_id == classroom.id,
-                ClassroomStudent.student_id == current_user.id,
-                ClassroomStudent.removed_at.is_(None)
+    # Check if student is enrolled in ANY of the classrooms that have this assignment
+    classroom_assignment = None
+    classroom = None
+    for ca, cl in ca_results:
+        enrollment = await db.execute(
+            select(ClassroomStudent)
+            .where(
+                and_(
+                    ClassroomStudent.classroom_id == cl.id,
+                    ClassroomStudent.student_id == current_user.id,
+                    ClassroomStudent.removed_at.is_(None)
+                )
             )
         )
-    )
+        
+        if enrollment.scalar_one_or_none():
+            classroom_assignment = ca
+            classroom = cl
+            break
     
-    if not enrollment.scalar_one_or_none():
+    if not classroom_assignment:
         raise HTTPException(
             status_code=http_status.HTTP_403_FORBIDDEN,
-            detail="You are not enrolled in this classroom"
+            detail="You are not enrolled in any classroom with this assignment"
         )
     
     # Check assignment status
